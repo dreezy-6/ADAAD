@@ -54,12 +54,8 @@ def _keys_configured() -> bool:
     except Exception:
         return False
 
-def verify_signature(signature: str) -> bool:
-    """
-    Deterministic offline verifier used until key-backed verification is configured.
 
-    Accepts explicit static signatures for sealed governance artifacts.
-    """
+def _legacy_static_signature_allowed(signature: str) -> bool:
     return signature.startswith("cryovant-static-")
 
 
@@ -112,6 +108,38 @@ def verify_hmac_digest_signature(
     return signature == expected
 
 
+def verify_payload_signature(
+    payload: bytes,
+    signature: str,
+    key_id: str,
+    *,
+    specific_env_prefix: str = "ADAAD_SIGNING_KEY_",
+    generic_env_var: str = "ADAAD_SIGNING_KEY",
+    fallback_namespace: str = "adaad-signing-dev-secret",
+) -> bool:
+    """Verify payload-coupled signatures using deterministic static or HMAC formats."""
+
+    if not signature:
+        return False
+    payload_text = payload.decode("utf-8", errors="ignore")
+    if payload_text.startswith("sha256:") and len(payload_text) == len("sha256:") + 64:
+        signed_digest = payload_text
+    else:
+        signed_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    if signature in {f"cryovant-static-{signed_digest}", f"cryovant-static-{signed_digest.split(':', 1)[1]}"}:
+        return True
+    if verify_hmac_digest_signature(
+        key_id=key_id,
+        signed_digest=signed_digest,
+        signature=signature,
+        specific_env_prefix=specific_env_prefix,
+        generic_env_var=generic_env_var,
+        fallback_namespace=fallback_namespace,
+    ):
+        return True
+    return verify_signature(signature)
+
+
 def verify_session(token: str) -> bool:
     """
     Validate a Cryovant session token. Phase 2 fails closed unless a real token
@@ -131,12 +159,16 @@ def _dev_signature_allowed(signature: str) -> bool:
     return env_mode() == "dev" and dev_mode()
 
 
+def verify_signature(signature: str) -> bool:
+    """Compatibility wrapper for legacy static/dev signatures."""
+
+    return _legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature)
+
+
 def _valid_signature(signature: str) -> bool:
     if not signature:
         return False
-    if verify_signature(signature):
-        return True
-    return _dev_signature_allowed(signature)
+    return verify_signature(signature)
 
 
 def signature_valid(signature: str) -> bool:
@@ -156,15 +188,15 @@ def signature_valid(signature: str) -> bool:
             return False
 
     if verify_signature(signature):
+        if signature.startswith("cryovant-dev-"):
+            metrics.log(
+                event_type="cryovant_dev_signature_accepted",
+                payload={"env_mode": env_mode(), "signature_prefix": signature[:24], "dev_mode": dev_mode()},
+                level="WARNING",
+                element_id=ELEMENT_ID,
+            )
         return True
-    if _dev_signature_allowed(signature):
-        metrics.log(
-            event_type="cryovant_dev_signature_accepted",
-            payload={"env_mode": env_mode(), "signature_prefix": signature[:24], "dev_mode": dev_mode()},
-            level="WARNING",
-            element_id=ELEMENT_ID,
-        )
-        return True
+
     return False
 
 

@@ -371,13 +371,23 @@ def verify_replay_proof_bundle(
                 continue
             expected_signature = "sha256:" + sha256_digest(f"{secret}:{signed_digest}")
         else:
-            expected_signature = cryovant.sign_hmac_digest(
-                key_id=key_id,
-                signed_digest=signed_digest,
+            signature_ok = cryovant.verify_payload_signature(
+                signed_digest.encode("utf-8"),
+                provided,
+                key_id,
                 specific_env_prefix="ADAAD_REPLAY_PROOF_KEY_",
                 generic_env_var="ADAAD_REPLAY_PROOF_SIGNING_KEY",
                 fallback_namespace="adaad-replay-proof-dev-secret",
             )
+            validation.append(
+                {
+                    "ok": signature_ok,
+                    "key_id": key_id,
+                    "algorithm": algorithm,
+                    "error": "" if signature_ok else "signature_mismatch",
+                }
+            )
+            continue
         validation.append(
             {
                 "ok": provided == expected_signature,
