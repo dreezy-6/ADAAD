@@ -70,11 +70,36 @@ class CryovantDevSignatureTest(unittest.TestCase):
 
 
     def test_verify_signature_hmac_against_keys_dir(self) -> None:
-        key_id = "agent-certificate"
         key_material = b"super-secret"
-        (cryovant.KEYS_DIR / f"{key_id}.key").write_bytes(key_material)
+        (cryovant.KEYS_DIR / "agent-certificate.key").write_bytes(key_material)
         digest = cryovant.hmac.new(key_material, b"cryovant", cryovant.hashlib.sha256).hexdigest()
-        self.assertTrue(cryovant.verify_signature(f"{key_id}:{digest}"))
+        self.assertTrue(cryovant.verify_signature(f"sha256:{digest}"))
+
+    def test_verify_signature_rejects_bad_signature(self) -> None:
+        key_material = b"super-secret"
+        (cryovant.KEYS_DIR / "agent-certificate.key").write_bytes(key_material)
+        self.assertFalse(cryovant.verify_signature(f"sha256:{'0' * 64}"))
+
+    def test_verify_signature_rejects_malformed_prefix(self) -> None:
+        key_material = b"super-secret"
+        (cryovant.KEYS_DIR / "agent-certificate.key").write_bytes(key_material)
+        digest = cryovant.hmac.new(key_material, b"cryovant", cryovant.hashlib.sha256).hexdigest()
+        self.assertFalse(cryovant.verify_signature(f"md5:{digest}"))
+
+    def test_verify_signature_rejects_when_key_missing(self) -> None:
+        self.assertFalse(cryovant.verify_signature(f"sha256:{'0' * 64}"))
+
+    def test_verify_signature_accepts_rotated_key_deterministically(self) -> None:
+        old_key_material = b"old-secret"
+        new_key_material = b"new-secret"
+        (cryovant.KEYS_DIR / "001-old.key").write_bytes(old_key_material)
+        (cryovant.KEYS_DIR / "002-current.key").write_bytes(new_key_material)
+
+        new_digest = cryovant.hmac.new(new_key_material, b"cryovant", cryovant.hashlib.sha256).hexdigest()
+        old_digest = cryovant.hmac.new(old_key_material, b"cryovant", cryovant.hashlib.sha256).hexdigest()
+
+        self.assertTrue(cryovant.verify_signature(f"sha256:{new_digest}"))
+        self.assertTrue(cryovant.verify_signature(f"sha256:{old_digest}"))
 
 
     def test_verify_payload_signature_accepts_payload_bound_static_signature(self) -> None:
