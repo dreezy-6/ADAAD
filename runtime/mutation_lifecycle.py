@@ -15,6 +15,7 @@ from runtime import ROOT_DIR, metrics
 from runtime.governance.foundation import canonical_json, sha256_prefixed_digest
 from runtime.timeutils import now_iso
 from runtime.tools.rollback_certificate import issue_rollback_certificate
+from security.promotion_manifests import write_promotion_evidence_bundle
 from security import cryovant
 from security.ledger import journal
 
@@ -156,10 +157,40 @@ def _transition_payload(*, from_state: str, to_state: str, context: MutationLife
     }
 
 
-def _record_success(payload: Dict[str, Any]) -> None:
+def _record_success(payload: Dict[str, Any]) -> str:
     journal.write_entry(agent_id=str(payload["agent_id"]), action="mutation_lifecycle_transition", payload=payload)
-    journal.append_tx(tx_type="mutation_lifecycle_transition", payload=payload)
+    tx_entry = journal.append_tx(tx_type="mutation_lifecycle_transition", payload=payload)
     metrics.log(event_type="mutation_lifecycle_transition", payload=payload, level="INFO", element_id=ELEMENT_ID)
+    return str(tx_entry.get("hash") or "")
+
+
+def _emit_promotion_evidence_bundle(
+    *,
+    context: MutationLifecycleContext,
+    from_state: str,
+    to_state: str,
+    guard_report: Dict[str, Any],
+    ledger_hash: str,
+) -> None:
+    output_dir = context.metadata.get("promotion_manifests_dir")
+    fitness_history = context.metadata.get("fitness_history")
+    if not isinstance(fitness_history, list):
+        fitness_history = [context.fitness_score] if context.fitness_score is not None else []
+    bundle = {
+        "mutation_id": context.mutation_id,
+        "epoch_id": context.epoch_id,
+        "from_state": from_state,
+        "to_state": to_state,
+        "guard_report": guard_report,
+        "cert_refs": dict(context.cert_refs),
+        "fitness_history": list(fitness_history),
+        "ledger_hash_at_promotion": ledger_hash,
+    }
+    write_promotion_evidence_bundle(
+        mutation_id=context.mutation_id,
+        bundle=bundle,
+        output_dir=Path(output_dir) if output_dir else None,
+    )
 
 
 def _record_rejection(payload: Dict[str, Any]) -> None:
@@ -230,7 +261,14 @@ def transition(current_state: str, next_state: str, context: MutationLifecycleCo
     context.stage_timestamps[next_state] = now_iso()
     context.current_state = next_state
     payload = _transition_payload(from_state=current_state, to_state=next_state, context=context, guard_report=guard_report)
-    _record_success(payload)
+    ledger_hash = _record_success(payload)
+    _emit_promotion_evidence_bundle(
+        context=context,
+        from_state=current_state,
+        to_state=next_state,
+        guard_report=guard_report,
+        ledger_hash=ledger_hash,
+    )
     if next_state in {"completed", "pruned"}:
         context.cleanup_state()
     else:
