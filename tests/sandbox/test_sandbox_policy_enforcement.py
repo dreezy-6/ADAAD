@@ -6,13 +6,13 @@ from runtime.sandbox.executor import HardenedSandboxExecutor
 from runtime.sandbox.fs_rules import enforce_write_path_allowlist
 from runtime.sandbox.network_rules import enforce_network_egress_allowlist
 from runtime.sandbox.policy import SandboxPolicy
-from runtime.sandbox.resources import enforce_resource_quotas
+from runtime.sandbox.resources import enforce_resource_quotas, rlimit_enforcement_supported
 from runtime.sandbox.syscall_filter import enforce_syscall_allowlist, syscall_trace_fingerprint
 from runtime.test_sandbox import TestSandboxResult, TestSandboxStatus
 
 
 class _ObservedViolationSandbox:
-    def run_tests_with_retry(self, args=None, retries=1):
+    def run_tests_with_retry(self, args=None, retries=1, preexec_fn=None):
         return TestSandboxResult(
             ok=True,
             output="ok",
@@ -32,7 +32,7 @@ class _ObservedViolationSandbox:
 
 
 class _ObservedNetworkViolationSandbox:
-    def run_tests_with_retry(self, args=None, retries=1):
+    def run_tests_with_retry(self, args=None, retries=1, preexec_fn=None):
         return TestSandboxResult(
             ok=True,
             output="ok",
@@ -94,6 +94,12 @@ def test_resource_quota_enforced():
     )
     assert not verdict["passed"]
     assert not verdict["cpu_ok"]
+
+
+def test_rlimit_support_probe_returns_structured_reason():
+    supported, reason = rlimit_enforcement_supported()
+    assert isinstance(supported, bool)
+    assert isinstance(reason, str)
 
 
 def test_executor_policy_enforcement_uses_observed_telemetry():
