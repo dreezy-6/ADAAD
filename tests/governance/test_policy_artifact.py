@@ -33,7 +33,7 @@ def _artifact(*, signature: str = "sig", previous_hash: str = "sha256:" + "0" * 
 
 
 def test_load_governance_policy_valid(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_signature", lambda sig: sig == "sig")
+    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_payload_signature", lambda payload, sig, key_id, **_kwargs: sig == "sig")
     policy_path = tmp_path / "governance_policy_v1.json"
     policy_path.write_text(json.dumps(_artifact()), encoding="utf-8")
 
@@ -48,7 +48,7 @@ def test_load_governance_policy_valid(tmp_path, monkeypatch) -> None:
 
 
 def test_load_governance_policy_defaults_state_backend_to_json(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_signature", lambda _sig: True)
+    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_payload_signature", lambda _payload, _sig, _key_id, **_kwargs: True)
     artifact = _artifact()
     artifact["payload"].pop("state_backend")
     policy_path = tmp_path / "default_backend.json"
@@ -59,7 +59,7 @@ def test_load_governance_policy_defaults_state_backend_to_json(tmp_path, monkeyp
 
 
 def test_load_governance_policy_rejects_invalid_state_backend(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_signature", lambda _sig: True)
+    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_payload_signature", lambda _payload, _sig, _key_id, **_kwargs: True)
     artifact = _artifact()
     artifact["payload"]["state_backend"] = "postgres"
     policy_path = tmp_path / "invalid_backend.json"
@@ -70,7 +70,7 @@ def test_load_governance_policy_rejects_invalid_state_backend(tmp_path, monkeypa
 
 
 def test_load_governance_policy_rejects_invalid_signature(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_signature", lambda _sig: False)
+    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_payload_signature", lambda _payload, _sig, _key_id, **_kwargs: False)
     policy_path = tmp_path / "invalid_signature.json"
     policy_path.write_text(json.dumps(_artifact(signature="bad-signature")), encoding="utf-8")
 
@@ -79,7 +79,7 @@ def test_load_governance_policy_rejects_invalid_signature(tmp_path, monkeypatch)
 
 
 def test_load_governance_policy_rejects_broken_hash_chain(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_signature", lambda _sig: True)
+    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_payload_signature", lambda _payload, _sig, _key_id, **_kwargs: True)
     policy_path = tmp_path / "broken_chain.json"
     policy_path.write_text(json.dumps(_artifact(previous_hash="not-a-hash")), encoding="utf-8")
 
@@ -88,8 +88,6 @@ def test_load_governance_policy_rejects_broken_hash_chain(tmp_path, monkeypatch)
 
 
 def test_load_governance_policy_accepts_hmac_signature(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_signature", lambda _sig: False)
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.dev_signature_allowed", lambda _sig: False)
     monkeypatch.setenv("ADAAD_POLICY_ARTIFACT_SIGNING_KEY", "policy-secret")
 
     artifact = _artifact(signature="placeholder")
@@ -106,9 +104,10 @@ def test_load_governance_policy_accepts_hmac_signature(tmp_path, monkeypatch) ->
         previous_artifact_hash=artifact["previous_artifact_hash"],
         effective_epoch=artifact["effective_epoch"],
     )
+    digest = policy_artifact_digest(envelope)
     artifact["signature"] = cryovant.sign_hmac_digest(
         key_id="policy-signer-kms",
-        signed_digest=policy_artifact_digest(envelope),
+        signed_digest=digest,
         specific_env_prefix="ADAAD_POLICY_ARTIFACT_KEY_",
         generic_env_var="ADAAD_POLICY_ARTIFACT_SIGNING_KEY",
         fallback_namespace="adaad-policy-artifact-dev-secret",
@@ -121,8 +120,8 @@ def test_load_governance_policy_accepts_hmac_signature(tmp_path, monkeypatch) ->
 
 
 def test_load_governance_policy_accepts_dev_signature_via_public_helper(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.verify_signature", lambda _sig: False)
-    monkeypatch.setattr("runtime.governance.policy_artifact.cryovant.dev_signature_allowed", lambda sig: sig.startswith("cryovant-dev-"))
+    monkeypatch.setenv("ADAAD_ENV", "dev")
+    monkeypatch.setenv("CRYOVANT_DEV_MODE", "1")
     policy_path = tmp_path / "dev_signature.json"
     policy_path.write_text(json.dumps(_artifact(signature="cryovant-dev-local")), encoding="utf-8")
 

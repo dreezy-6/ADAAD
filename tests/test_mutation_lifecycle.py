@@ -152,8 +152,8 @@ def test_retry_transition_retries_until_success(_write_entry, _append_tx) -> Non
 
 @mock.patch("runtime.mutation_lifecycle.journal.append_tx")
 @mock.patch("runtime.mutation_lifecycle.journal.write_entry")
-@mock.patch("runtime.mutation_lifecycle.cryovant.verify_signature", return_value=True)
-def test_mutation_lifecycle_fail_closes_on_founders_key_rotation_failure(_verify_sig, write_entry, append_tx) -> None:
+@mock.patch("runtime.mutation_lifecycle.cryovant.verify_payload_signature", return_value=True)
+def test_mutation_lifecycle_fail_closes_on_founders_key_rotation_failure(_verify_payload_sig, write_entry, append_tx) -> None:
     context = _context(
         cert_refs={"bundle_id": "b-1"},
         fitness_score=0.9,
