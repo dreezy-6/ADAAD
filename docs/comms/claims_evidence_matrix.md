@@ -9,6 +9,7 @@ This matrix maps major external/public claims to objective, versioned repository
 | `forensic-bundle-examples` | "Forensic artifacts are available for incident reconstruction." | [Aponi v2 forensics + health model](../governance/APONI_V2_FORENSICS_AND_HEALTH_MODEL.md); [Forensic bundle lifecycle](../governance/FORENSIC_BUNDLE_LIFECYCLE.md) | Complete |
 | `codeql-status` | "CodeQL analysis status is published and enforceable." | [CodeQL workflow](../../.github/workflows/codeql.yml) | Complete |
 | `versioned-docs-spec-links` | "Public claims are backed by versioned release/spec documentation." | [Versioned release notes](../releases/0.70.0-governance-intelligence.md); [Governance schema versioning spec](../governance/schema_versioning_and_migration.md) | Complete |
+| `promotion-lifecycle-contract` | "Promotion policy lifecycle events are schema-validated and decision IDs remain globally unique in lineage." | [Promotion contract validator](../../runtime/governance/validators/promotion_contract.py); [Promotion event cycle assertion](../../tests/test_promotion_events.py); [Promotion contract tests](../../tests/governance/test_promotion_contract.py) | Complete |
 
 ## Completion standard
 
