@@ -42,10 +42,13 @@ class OrchestratorReplayModeTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(Orchestrator, "_register_elements"))
             stack.enter_context(mock.patch.object(Orchestrator, "_init_runtime"))
             stack.enter_context(mock.patch.object(Orchestrator, "_init_cryovant"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_start_mcp_server"))
             stack.enter_context(mock.patch.object(Orchestrator, "_verify_checkpoint_chain_stage"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_architect"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_dream"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_beast"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_health_check_mcp"))
+            stack.enter_context(mock.patch("runtime.boot.preflight.validate_boot_runtime_profile", return_value={"ok": True, "checks": {}}))
             stack.enter_context(mock.patch("runtime.boot.preflight.run_gatekeeper", return_value={"ok": True}))
             stack.enter_context(mock.patch.object(Orchestrator, "_governance_gate", return_value=True))
             dump = stack.enter_context(mock.patch("app.main.dump"))
@@ -83,10 +86,12 @@ class OrchestratorReplayModeTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(Orchestrator, "_register_elements"))
             stack.enter_context(mock.patch.object(Orchestrator, "_init_runtime", side_effect=_mark("runtime")))
             stack.enter_context(mock.patch.object(Orchestrator, "_init_cryovant", side_effect=_mark("cryovant")))
+            stack.enter_context(mock.patch.object(Orchestrator, "_start_mcp_server", side_effect=_mark("mcp_start")))
             stack.enter_context(mock.patch.object(Orchestrator, "_verify_checkpoint_chain_stage", side_effect=_mark("checkpoint")))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_architect"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_dream"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_beast"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_health_check_mcp"))
             stack.enter_context(mock.patch.object(Orchestrator, "_run_replay_preflight", side_effect=_mark("replay_preflight")))
             stack.enter_context(mock.patch("runtime.boot.preflight.validate_boot_runtime_profile", return_value={"ok": True, "checks": {}}))
             stack.enter_context(mock.patch("runtime.boot.preflight.run_gatekeeper", return_value={"ok": True}))
@@ -99,7 +104,7 @@ class OrchestratorReplayModeTest(unittest.TestCase):
             orch = Orchestrator(replay_mode="off")
             orch.boot()
 
-        self.assertEqual(call_order[:4], ["runtime", "cryovant", "checkpoint", "replay_preflight"])
+        self.assertEqual(call_order[:5], ["runtime", "cryovant", "mcp_start", "checkpoint", "replay_preflight"])
 
     def test_replay_off_skips_verification_and_continues_to_ready(self) -> None:
         with self._boot_context():

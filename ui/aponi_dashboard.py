@@ -87,6 +87,12 @@ UX_EVENT_TYPES = {
     "abandoned_config",
 }
 
+MCP_MUTATION_ENDPOINTS: tuple[str, ...] = (
+    "/mutation/analyze",
+    "/mutation/explain-rejection",
+    "/mutation/rank",
+)
+
 
 INSTABILITY_POLICY_ERROR: str | None = None
 try:
@@ -789,7 +795,7 @@ class AponiDashboard:
 
             def do_POST(self):  # noqa: N802 - required by base class
                 parsed = urlparse(self.path)
-                if serve_mcp and parsed.path in {"/mutation/analyze", "/mutation/explain-rejection", "/mutation/rank"} and not self._require_jwt():
+                if serve_mcp and parsed.path in MCP_MUTATION_ENDPOINTS and not self._require_jwt():
                     return
                 if parsed.path.startswith("/policy/simulate"):
                     self._send_json({"ok": False, "error": "method_not_allowed", "detail": "policy/simulate is GET only"}, status_code=405)
@@ -799,7 +805,7 @@ class AponiDashboard:
                     or parsed.path.startswith("/control/telemetry")
                     or parsed.path.startswith("/ux/events")
                     or parsed.path.startswith("/control/execution")
-                    or (serve_mcp and parsed.path in {"/mutation/analyze", "/mutation/explain-rejection", "/mutation/rank"})
+                    or (serve_mcp and parsed.path in MCP_MUTATION_ENDPOINTS)
                 ):
                     self.send_response(404)
                     self.end_headers()
