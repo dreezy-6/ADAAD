@@ -15,7 +15,7 @@ from runtime.evolution.replay import ReplayEngine
 from runtime.evolution.replay_mode import ReplayMode, normalize_replay_mode
 from runtime.evolution.replay_verifier import ReplayVerifier
 from runtime.evolution.checkpoint_registry import CheckpointRegistry
-from runtime.evolution.checkpoint_verifier import verify_checkpoint_chain
+from runtime.evolution.checkpoint_verifier import verify_checkpoint_chain, verify_epoch_checkpoint_continuity
 from runtime import constitution
 from runtime.governance.foundation import RuntimeDeterminismProvider, require_replay_safe_provider
 
@@ -95,7 +95,15 @@ class EvolutionRuntime:
         self.epoch_digest = self.ledger.get_epoch_digest(epoch.epoch_id)
         return epoch.to_dict()
 
+    def _verify_epoch_checkpoint_continuity(self) -> None:
+        verify_epoch_checkpoint_continuity(
+            self.ledger,
+            current_epoch_id=self.current_epoch_id,
+            provider=self.governor.provider,
+        )
+
     def before_mutation_cycle(self) -> Dict[str, Any]:
+        self._verify_epoch_checkpoint_continuity()
         if self.epoch_manager.should_rotate():
             reason = self.epoch_manager.rotation_reason()
             self.before_epoch_rotation(reason)
