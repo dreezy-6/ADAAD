@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from app.main import Orchestrator, _apply_governance_ci_mode_defaults, _governance_ci_mode_enabled, main
+from runtime.evolution.checkpoint_verifier import CheckpointVerificationError
 from runtime.evolution.replay_mode import ReplayMode, normalize_replay_mode, parse_replay_args
 
 
@@ -41,6 +42,7 @@ class OrchestratorReplayModeTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(Orchestrator, "_register_elements"))
             stack.enter_context(mock.patch.object(Orchestrator, "_init_runtime"))
             stack.enter_context(mock.patch.object(Orchestrator, "_init_cryovant"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_verify_checkpoint_chain"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_architect"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_dream"))
             stack.enter_context(mock.patch.object(Orchestrator, "_health_check_beast"))
@@ -63,6 +65,39 @@ class OrchestratorReplayModeTest(unittest.TestCase):
                 )
             )
             yield dump
+
+
+
+    def test_boot_orders_checkpoint_stage_after_cryovant_before_replay_preflight(self) -> None:
+        call_order: list[str] = []
+
+        def _mark(name: str):
+            def _inner(*args, **kwargs):
+                call_order.append(name)
+                return None
+
+            return _inner
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(Orchestrator, "_register_elements"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_init_runtime", side_effect=_mark("runtime")))
+            stack.enter_context(mock.patch.object(Orchestrator, "_init_cryovant", side_effect=_mark("cryovant")))
+            stack.enter_context(mock.patch.object(Orchestrator, "_verify_checkpoint_chain", side_effect=_mark("checkpoint")))
+            stack.enter_context(mock.patch.object(Orchestrator, "_health_check_architect"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_health_check_dream"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_health_check_beast"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_run_replay_preflight", side_effect=_mark("replay_preflight")))
+            stack.enter_context(mock.patch("app.main.validate_boot_runtime_profile", return_value={"ok": True, "checks": {}}))
+            stack.enter_context(mock.patch("app.main.run_gatekeeper", return_value={"ok": True}))
+            stack.enter_context(mock.patch("app.main.dump"))
+            stack.enter_context(mock.patch("app.main.journal.write_entry"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_register_capabilities"))
+            stack.enter_context(mock.patch.object(Orchestrator, "_init_ui"))
+            stack.enter_context(mock.patch("app.main.metrics.log"))
+            orch = Orchestrator(replay_mode="off")
+            orch.boot()
+
+        self.assertEqual(call_order[:4], ["runtime", "cryovant", "checkpoint", "replay_preflight"])
 
     def test_replay_off_skips_verification_and_continues_to_ready(self) -> None:
         with self._boot_context():
@@ -120,6 +155,31 @@ class OrchestratorReplayModeTest(unittest.TestCase):
             })
             orch.verify_replay_only()
             dump.assert_called_once()
+
+
+class OrchestratorCheckpointStageTest(unittest.TestCase):
+    def test_checkpoint_stage_emits_verified_event_on_success(self) -> None:
+        orch = Orchestrator(replay_mode="off")
+        with mock.patch("app.main.CheckpointVerifier.verify_all_checkpoints", return_value={"epoch_count": 1, "checkpoint_count": 2}) as verify:
+            with mock.patch("app.main.journal.write_entry") as write_entry:
+                orch._verify_checkpoint_chain()
+
+        verify.assert_called_once_with(orch.evolution_runtime.ledger.ledger_path)
+        write_entry.assert_called_once()
+        self.assertEqual(write_entry.call_args.kwargs["action"], "checkpoint_chain_verified")
+
+    def test_checkpoint_stage_emits_violated_event_and_fails_closed(self) -> None:
+        orch = Orchestrator(replay_mode="off")
+        with mock.patch(
+            "app.main.CheckpointVerifier.verify_all_checkpoints",
+            side_effect=CheckpointVerificationError(code="checkpoint_prev_missing", detail="epoch=e1;index=1"),
+        ):
+            with mock.patch("app.main.journal.write_entry") as write_entry:
+                with mock.patch.object(orch, "_fail") as fail:
+                    orch._verify_checkpoint_chain()
+
+        self.assertEqual(write_entry.call_args.kwargs["action"], "checkpoint_chain_violated")
+        fail.assert_called_once_with("checkpoint_chain_violated:checkpoint_prev_missing:epoch=e1;index=1")
 
 
 class GovernanceCIModeTest(unittest.TestCase):

@@ -19,7 +19,7 @@ class _RuntimeStub:
         self.ledger = ledger
 
 
-def test_orchestrator_init_runtime_halts_on_tampered_checkpoint_before_mutation(monkeypatch, tmp_path: Path) -> None:
+def test_orchestrator_checkpoint_stage_halts_on_tampered_chain_before_mutation(monkeypatch, tmp_path: Path) -> None:
     ledger = LineageLedgerV2(tmp_path / "lineage_v2.jsonl")
     epoch_id = "epoch-tampered"
     ledger.append_event("MutationBundleEvent", {"epoch_id": epoch_id, "epoch_digest": "sha256:abc"})
@@ -56,7 +56,15 @@ def test_orchestrator_init_runtime_halts_on_tampered_checkpoint_before_mutation(
 
     orchestrator._fail = _fail
 
-    with pytest.raises(RuntimeError, match=r"^checkpoint_verification_failed:checkpoint_prev_missing:epoch=epoch-tampered;index=1$"):
-        orchestrator._init_runtime()
+    write_events: list[str] = []
+
+    def _write_entry(*, agent_id: str, action: str, payload: dict) -> None:
+        write_events.append(action)
+
+    monkeypatch.setattr("app.main.journal.write_entry", _write_entry)
+
+    with pytest.raises(RuntimeError, match=r"^checkpoint_chain_violated:checkpoint_prev_missing:epoch=epoch-tampered;index=1$"):
+        orchestrator._verify_checkpoint_chain()
 
     assert orchestrator.state["mutation_enabled"] is False
+    assert write_events == ["checkpoint_chain_violated"]

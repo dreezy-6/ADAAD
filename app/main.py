@@ -191,7 +191,7 @@ class Orchestrator:
         self._v("Runtime invariants passed")
         self._init_cryovant()
         self._v("Cryovant validation passed")
-        self._verify_checkpoint_chain_stage()
+        self._verify_checkpoint_chain()
         self._v("Checkpoint chain verification passed")
         epoch_state = self.evolution_runtime.boot()
         self.state["epoch"] = epoch_state
@@ -312,7 +312,7 @@ class Orchestrator:
         self._register_elements()
         self._init_runtime()
         self._init_cryovant()
-        self._verify_checkpoint_chain_stage()
+        self._verify_checkpoint_chain()
         epoch_state = self.evolution_runtime.boot()
         self.state["epoch"] = epoch_state
         self._run_replay_preflight(verify_only=True)
@@ -333,10 +333,23 @@ class Orchestrator:
         ok, failures = verify_all()
         if not ok:
             self._fail(f"invariants_failed:{','.join(failures)}")
+
+    def _verify_checkpoint_chain(self) -> None:
         try:
-            CheckpointVerifier.verify_all_checkpoints(self.evolution_runtime.ledger.ledger_path)
+            verification = CheckpointVerifier.verify_all_checkpoints(self.evolution_runtime.ledger.ledger_path)
         except CheckpointVerificationError as exc:
-            self._fail(f"checkpoint_verification_failed:{exc}")
+            journal.write_entry(
+                agent_id="system",
+                action="checkpoint_chain_violated",
+                payload={"reason": str(exc), "ts": now_iso()},
+            )
+            self._fail(f"checkpoint_chain_violated:{exc}")
+            return
+        journal.write_entry(
+            agent_id="system",
+            action="checkpoint_chain_verified",
+            payload={**verification, "ts": now_iso()},
+        )
 
     def _verify_checkpoint_chain_stage(self) -> None:
         try:
@@ -600,6 +613,37 @@ class Orchestrator:
             level="INFO",
         )
         if not constitutional_verdict.get("passed"):
+            entropy_budget_verdict = next(
+                (
+                    item
+                    for item in constitutional_verdict.get("verdicts", [])
+                    if isinstance(item, dict) and item.get("rule") == "entropy_budget_limit"
+                ),
+                {},
+            )
+            entropy_details = entropy_budget_verdict.get("details") if isinstance(entropy_budget_verdict, dict) else {}
+            entropy_details = entropy_details if isinstance(entropy_details, dict) else {}
+            if isinstance(entropy_details.get("details"), dict):
+                entropy_details = dict(entropy_details["details"])
+            if "entropy_budget_limit" in constitutional_verdict.get("blocking_failures", []):
+                metrics.log(
+                    event_type="mutation_rejected_entropy",
+                    payload={
+                        "agent_id": selected.agent_id,
+                        "epoch_id": active_epoch_id,
+                        "rule": "entropy_budget_limit",
+                        "reason": entropy_details.get("reason") or entropy_budget_verdict.get("reason", "entropy_budget_limit"),
+                        "max_mutation_entropy_bits": entropy_details.get("max_mutation_entropy_bits"),
+                        "epoch_entropy_bits": entropy_details.get("epoch_entropy_bits"),
+                        "constitutional_verdict": constitutional_verdict,
+                        "evidence": {
+                            "rule": "entropy_budget_limit",
+                            "details": entropy_details,
+                            "blocking_failures": constitutional_verdict.get("blocking_failures", []),
+                        },
+                    },
+                    level="ERROR",
+                )
             metrics.log(
                 event_type="mutation_rejected_constitutional",
                 payload={**constitutional_verdict, "epoch_id": active_epoch_id, "decision": "rejected", "evidence": constitutional_verdict},

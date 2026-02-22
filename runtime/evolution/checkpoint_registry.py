@@ -21,6 +21,15 @@ from runtime.governance.foundation import (
 )
 
 
+def _normalize_hash_link(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ZERO_HASH
+    if raw.startswith("sha256:"):
+        return raw
+    return f"sha256:{raw}"
+
+
 def _checkpoint_material(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "epoch_id": payload.get("epoch_id"),
@@ -123,9 +132,10 @@ class CheckpointRegistry:
             promotion_policy_hash=self.promotion_policy_hash,
             evidence_hash=evidence_hash,
             sandbox_policy_hash=self.sandbox_policy_hash,
-            created_at=self.provider.iso_now(),
+            created_at=created_at,
         )
         payload = event.to_payload()
+        prior_checkpoint_event_hash = self._latest_checkpoint_event_hash(epoch_id)
         self.ledger.append_event("EpochCheckpointEvent", payload)
         self.ledger.append_event(
             "checkpoint_created",
