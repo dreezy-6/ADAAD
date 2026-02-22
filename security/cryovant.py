@@ -207,11 +207,20 @@ def verify_payload_signature(
 
 
 def verify_session(token: str) -> bool:
+    """Validate a Cryovant session token.
+
+    Deprecated: production session verification is not yet implemented. This
+    helper only supports explicit development token override via
+    ``CRYOVANT_DEV_TOKEN`` and returns ``False`` otherwise.
     """
-    Validate a Cryovant session token. Phase 2 fails closed unless a real token
-    is available. A dev token can be provided via CRYOVANT_DEV_TOKEN for local
-    workflows.
-    """
+    import warnings
+
+    warnings.warn(
+        "verify_session is not production-ready and always returns False "
+        "unless CRYOVANT_DEV_TOKEN is set. Do not use for access control.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     dev_token = os.environ.get("CRYOVANT_DEV_TOKEN", "").strip()
     if dev_token and token == dev_token:
         return True
@@ -231,10 +240,41 @@ def verify_signature(signature: str) -> bool:
     return _legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature)
 
 
-def _valid_signature(signature: str) -> bool:
+def _valid_signature(
+    signature: str,
+    *,
+    agent_dir: Path | None = None,
+    lineage_hash: str | None = None,
+) -> bool:
+    """Validate certificate signatures with HMAC-first + legacy fallback.
+
+    When ``lineage_hash`` is provided, it is treated as authoritative and
+    ``agent_dir`` is not re-hashed. Callers passing both must ensure the hash
+    matches the referenced agent state.
+    """
     if not signature:
         return False
-    return verify_signature(signature)
+
+    if agent_dir is not None or lineage_hash:
+        resolved_lineage_hash = lineage_hash or (compute_lineage_hash(agent_dir) if agent_dir is not None else "")
+        signed_digest = f"sha256:{resolved_lineage_hash}"
+        if verify_payload_signature(
+            payload=signed_digest.encode("utf-8"),
+            signature=signature,
+            key_id="agent-certificate",
+        ):
+            return True
+
+    if _legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature):
+        metrics.log(
+            event_type="cryovant_legacy_signature_accepted",
+            payload={"signature_prefix": signature[:24], "env_mode": env_mode()},
+            level="WARNING",
+            element_id=ELEMENT_ID,
+        )
+        return True
+
+    return False
 
 
 def signature_valid(signature: str) -> bool:
@@ -414,7 +454,7 @@ def evolve_certificate(agent_id: str, agent_dir: Path, mutation_dir: Path, capab
     bundle = {"certificate.json": base_certificate, "dna.json": dna, "meta.json": meta}
     lineage_hash = hashlib.sha256(json.dumps(bundle, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     signature = existing_cert.get("signature")
-    if not _valid_signature(signature or ""):
+    if not _valid_signature(signature or "", agent_dir=agent_dir, lineage_hash=lineage_hash):
         signature = f"cryovant-dev-{lineage_hash[:12]}"
 
     certificate = {**base_certificate, "lineage_hash": lineage_hash, "signature": signature}
@@ -507,6 +547,8 @@ def certify_agents(app_agents_dir: Path) -> Tuple[bool, List[str]]:
         metrics.log(event_type="cryovant_certified", payload={"agents_dir": str(app_agents_dir), "agents": 0}, level="INFO", element_id=ELEMENT_ID)
         return True, []
 
+    lineage_hash_cache: Dict[Path, str] = {}
+
     for candidate in agent_dirs:
         agent_id = resolve_agent_id(candidate, agents_root)
         meta = candidate / "meta.json"
@@ -518,13 +560,18 @@ def certify_agents(app_agents_dir: Path) -> Tuple[bool, List[str]]:
         if cert.exists():
             certificate = _read_json(cert)
             signature = certificate.get("signature", "")
+
+            if candidate not in lineage_hash_cache:
+                lineage_hash_cache[candidate] = compute_lineage_hash(candidate)
+            computed_lineage_hash = lineage_hash_cache[candidate]
+
             lineage_hash = certificate.get("lineage_hash")
-            if not lineage_hash and _valid_signature(signature):
-                lineage_hash = compute_lineage_hash(candidate)
+            if not lineage_hash and _valid_signature(signature, agent_dir=candidate, lineage_hash=computed_lineage_hash):
+                lineage_hash = computed_lineage_hash
                 certificate["lineage_hash"] = lineage_hash
                 cert.write_text(json.dumps(certificate, indent=2), encoding="utf-8")
                 journal.write_entry(agent_id=agent_id, action="certificate_evolved", payload={"lineage_hash": lineage_hash})
-            if not _valid_signature(signature):
+            if not _valid_signature(signature, agent_dir=candidate, lineage_hash=computed_lineage_hash):
                 signature_failures.append(agent_id)
     if missing or signature_failures:
         errors = missing + [f"{name}:invalid_signature" for name in signature_failures]

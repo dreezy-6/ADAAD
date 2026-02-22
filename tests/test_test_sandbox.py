@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -159,6 +160,44 @@ class TestSandboxTest(unittest.TestCase):
 
         self.assertEqual(len(results), 2)
         self.assertTrue(all(result.ok for result in results))
+
+
+    def test_parallel_sandbox_rlimit_hooks_are_isolated(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        sandbox = TestSandbox(root_dir=root, timeout_s=5)
+
+        calls: list[str] = []
+
+        def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
+            hook = kwargs.get("preexec_fn")
+            self.assertIsNotNone(hook)
+            hook()
+            return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+        def hook_a() -> None:
+            calls.append("A")
+
+        def hook_b() -> None:
+            calls.append("B")
+
+        with patch("runtime.test_sandbox.subprocess.run", side_effect=fake_run):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                result_a = executor.submit(
+                    sandbox.run_tests_with_retry,
+                    args=["tests/test_import_roots.py", "-q"],
+                    retries=0,
+                    preexec_fn=hook_a,
+                )
+                result_b = executor.submit(
+                    sandbox.run_tests_with_retry,
+                    args=["tests/test_import_roots.py", "-q"],
+                    retries=0,
+                    preexec_fn=hook_b,
+                )
+                self.assertTrue(result_a.result().ok)
+                self.assertTrue(result_b.result().ok)
+
+        self.assertCountEqual(calls, ["A", "B"])
 
 
     def test_failed_artifacts_can_be_retained(self) -> None:

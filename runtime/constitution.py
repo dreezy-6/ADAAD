@@ -272,7 +272,7 @@ def _validate_no_banned_tokens(request: MutationRequest) -> Dict[str, Any]:
 
 def validate_lineage_continuity(mutation: Any) -> bool:
     """Blocking lineage continuity gate for constitutional mutation evaluation."""
-    from security.ledger.lineage_v2 import resolve_chain
+    from runtime.evolution.lineage_v2 import resolve_chain
 
     agent_id = str(getattr(mutation, "agent_id", "")).strip()
     if not agent_id:
@@ -299,7 +299,7 @@ def _validate_lineage(_: MutationRequest) -> Dict[str, Any]:
     # while preserving existing genesis/journal invariants below.
     # Invariants: agent_id must be present; chain hashes are canonical lowercase sha256;
     # parent linkage remains append-only and rooted in genesis.
-    from security.ledger.lineage_v2 import LINEAGE_V2_PATH, LineageResolutionError, resolve_chain
+    from runtime.evolution.lineage_v2 import LINEAGE_V2_PATH, LineageResolutionError, resolve_chain
 
     if LINEAGE_V2_PATH.exists():
         agent_id = str(getattr(_, "agent_id", "")).strip()

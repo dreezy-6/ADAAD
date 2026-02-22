@@ -20,7 +20,7 @@ class MockMutation:
     ],
 )
 def test_validate_lineage_continuity(monkeypatch: pytest.MonkeyPatch, resolved_chain, expected_error) -> None:
-    monkeypatch.setattr("security.ledger.lineage_v2.resolve_chain", lambda agent_id: resolved_chain)
+    monkeypatch.setattr("runtime.evolution.lineage_v2.resolve_chain", lambda agent_id: resolved_chain)
     mutation = MockMutation("agent-A")
 
     if expected_error is None:

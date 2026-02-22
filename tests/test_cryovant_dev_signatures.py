@@ -129,5 +129,60 @@ class CryovantDevSignatureTest(unittest.TestCase):
         )
 
 
+    def test_valid_signature_accepts_agent_hmac_signature(self) -> None:
+        agent_dir = self.tmp_root / "agent-a"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        (agent_dir / "meta.json").write_text("{}", encoding="utf-8")
+        (agent_dir / "dna.json").write_text("{}", encoding="utf-8")
+        (agent_dir / "certificate.json").write_text('{"signature": ""}', encoding="utf-8")
+
+        lineage_hash = cryovant.compute_lineage_hash(agent_dir)
+        signed_digest = f"sha256:{lineage_hash}"
+        os.environ["ADAAD_SIGNING_KEY"] = "agent-cert-secret"
+        self.addCleanup(os.environ.pop, "ADAAD_SIGNING_KEY", None)
+        signature = cryovant.sign_hmac_digest(
+            key_id="agent-certificate",
+            signed_digest=signed_digest,
+            specific_env_prefix="ADAAD_SIGNING_KEY_",
+            generic_env_var="ADAAD_SIGNING_KEY",
+            fallback_namespace="adaad-signing-dev-secret",
+        )
+
+        self.assertTrue(cryovant._valid_signature(signature, agent_dir=agent_dir))
+
+    def test_valid_signature_legacy_fallback_logs_warning(self) -> None:
+        with mock.patch("security.cryovant.metrics.log") as metrics_log:
+            self.assertTrue(cryovant._valid_signature("cryovant-static-legacy"))
+
+        metrics_log.assert_called_once()
+        self.assertEqual(metrics_log.call_args.kwargs["event_type"], "cryovant_legacy_signature_accepted")
+        self.assertEqual(metrics_log.call_args.kwargs["level"], "WARNING")
+
+
+    def test_certify_agents_reuses_lineage_hash_per_agent(self) -> None:
+        agents_root = self.tmp_root / "agents"
+        agent_dir = agents_root / "agent-a"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        (agent_dir / "meta.json").write_text('{"id":"agent-a"}', encoding="utf-8")
+        (agent_dir / "dna.json").write_text('{"genes":[]}', encoding="utf-8")
+        (agent_dir / "certificate.json").write_text('{"signature":"sig"}', encoding="utf-8")
+
+        call_counter = {"count": 0}
+        original_compute_lineage_hash = cryovant.compute_lineage_hash
+
+        def counting_compute_lineage_hash(path: Path) -> str:
+            call_counter["count"] += 1
+            return original_compute_lineage_hash(path)
+
+        with mock.patch("security.cryovant._maybe_rotate_keys", return_value=False), mock.patch(
+            "security.cryovant.verify_payload_signature", return_value=True
+        ), mock.patch("security.cryovant.compute_lineage_hash", side_effect=counting_compute_lineage_hash):
+            ok, errors = cryovant.certify_agents(agents_root)
+
+        self.assertTrue(ok)
+        self.assertEqual(errors, [])
+        self.assertEqual(call_counter["count"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

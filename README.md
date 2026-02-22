@@ -94,6 +94,9 @@ Example dry-run output (illustrative):
 - Mutation execution is limited to controlled environments.
 - Unattended production autonomy remains out of scope.
 - Production use should run in dry-run or strict replay modes unless explicitly authorized by policy.
+- Key rotation telemetry and governance checks are implemented, but automated production key lifecycle/issuance remains an infrastructure roadmap item.
+- Sandbox resource controls are enforced; syscall/write/network telemetry still includes inferred baseline fields pending deeper runtime capture instrumentation.
+- The Aponi dashboard router remains a large monolithic module and is slated for incremental refactor to reduce maintenance risk.
 
 **Practical readiness summary:** ADAAD is stable for governed audit/replay workflows and staged mutation review. It is not positioned for unattended production autonomy.
 
