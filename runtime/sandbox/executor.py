@@ -108,7 +108,7 @@ class HardenedSandboxExecutor:
         if any(not control.enforced for control in isolation_preparation.controls):
             raise RuntimeError("sandbox_policy_unenforceable:control_not_enforced")
 
-        result = self.isolation_backend.run(test_sandbox=self.test_sandbox, args=args, retries=retries)
+        result = self.isolation_backend.run(test_sandbox=self.test_sandbox, manifest=manifest, args=args, retries=retries)
         result_payload = asdict(result)
 
         max_wall = float(os.getenv("ADAAD_MAX_WALL_SECONDS", str(manifest.timeout_s)))

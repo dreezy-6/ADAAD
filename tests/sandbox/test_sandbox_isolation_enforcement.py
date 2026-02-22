@@ -15,7 +15,7 @@ class _TrackingSandbox:
     def __init__(self) -> None:
         self.calls = 0
 
-    def run_tests_with_retry(self, args=None, retries=1):
+    def run_tests_with_retry(self, args=None, retries=1, preexec_fn=None):
         self.calls += 1
         return TestSandboxResult(
             ok=True,
@@ -33,6 +33,16 @@ class _TrackingSandbox:
             attempted_write_paths=("reports/safe.txt",),
             attempted_network_hosts=(),
         )
+
+
+class _HookTrackingSandbox(_TrackingSandbox):
+    def __init__(self) -> None:
+        super().__init__()
+        self.preexec_fn = None
+
+    def run_tests_with_retry(self, args=None, retries=1, preexec_fn=None):
+        self.preexec_fn = preexec_fn
+        return super().run_tests_with_retry(args=args, retries=retries)
 
 
 def test_backend_failure_blocks_mutation_execution_before_tests_run():
@@ -87,3 +97,28 @@ def test_preflight_rejects_disallowed_mount_targets():
     preflight = analyze_execution_plan(manifest=manifest, policy=policy)
     assert preflight["ok"] is False
     assert preflight["reason"].startswith("disallowed_mount_target")
+
+
+def test_resource_rlimit_hook_is_passed_into_execution_path():
+    sandbox = _HookTrackingSandbox()
+    executor = HardenedSandboxExecutor(sandbox, provider=SeededDeterminismProvider("seed"))
+    result = executor.run_tests_with_retry(mutation_id="m1", epoch_id="e1", replay_seed="0000000000000001")
+
+    assert result.ok
+    assert sandbox.preexec_fn is not None
+
+
+def test_backend_fails_closed_when_rlimit_enforcement_unavailable(monkeypatch):
+    sandbox = _TrackingSandbox()
+    backend = ProcessIsolationBackend()
+    executor = HardenedSandboxExecutor(
+        sandbox,
+        provider=SeededDeterminismProvider("seed"),
+        isolation_backend=backend,
+    )
+    monkeypatch.setattr("runtime.sandbox.isolation.rlimit_enforcement_supported", lambda: (False, "resource_quotas_platform"))
+
+    with pytest.raises(RuntimeError, match="sandbox_policy_unenforceable:resource_quotas_platform"):
+        executor.run_tests_with_retry(mutation_id="m1", epoch_id="e1", replay_seed="0000000000000001")
+
+    assert sandbox.calls == 0

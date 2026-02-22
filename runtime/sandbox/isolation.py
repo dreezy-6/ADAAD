@@ -8,6 +8,7 @@ from typing import Protocol, Sequence
 
 from runtime.sandbox.manifest import SandboxManifest
 from runtime.sandbox.policy import SandboxPolicy
+from runtime.sandbox.resources import build_rlimit_preexec_hook, rlimit_enforcement_supported
 from runtime.test_sandbox import TestSandbox, TestSandboxResult
 
 
@@ -35,7 +36,14 @@ class IsolationBackend(Protocol):
 
     def prepare(self, *, manifest: SandboxManifest, policy: SandboxPolicy) -> IsolationPreparation: ...
 
-    def run(self, *, test_sandbox: TestSandbox, args: Sequence[str] | None, retries: int) -> TestSandboxResult: ...
+    def run(
+        self,
+        *,
+        test_sandbox: TestSandbox,
+        manifest: SandboxManifest,
+        args: Sequence[str] | None,
+        retries: int,
+    ) -> TestSandboxResult: ...
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,9 @@ class ProcessIsolationBackend:
             raise RuntimeError("sandbox_policy_unenforceable:resource_quotas")
         if manifest.cpu_seconds <= 0 or manifest.memory_mb <= 0 or manifest.disk_mb <= 0 or manifest.timeout_s <= 0:
             raise RuntimeError("sandbox_policy_unenforceable:resource_quotas")
+        supported, reason = rlimit_enforcement_supported()
+        if not supported:
+            raise RuntimeError(f"sandbox_policy_unenforceable:{reason}")
         controls.append(
             EnforcedControl(
                 control="resource_quotas",
@@ -85,8 +96,20 @@ class ProcessIsolationBackend:
         )
         return IsolationPreparation(mode="process", controls=tuple(controls))
 
-    def run(self, *, test_sandbox: TestSandbox, args: Sequence[str] | None, retries: int) -> TestSandboxResult:
-        return test_sandbox.run_tests_with_retry(args=args, retries=retries)
+    def run(
+        self,
+        *,
+        test_sandbox: TestSandbox,
+        manifest: SandboxManifest,
+        args: Sequence[str] | None,
+        retries: int,
+    ) -> TestSandboxResult:
+        preexec_hook = build_rlimit_preexec_hook(
+            cpu_limit_s=manifest.cpu_seconds,
+            memory_limit_mb=manifest.memory_mb,
+            disk_limit_mb=manifest.disk_mb,
+        )
+        return test_sandbox.run_tests_with_retry(args=args, retries=retries, preexec_fn=preexec_hook)
 
 
 @dataclass(frozen=True)
@@ -101,7 +124,15 @@ class ContainerIsolationBackend:
             raise RuntimeError("sandbox_policy_unenforceable:container_runtime")
         return IsolationPreparation(mode="container", controls=())
 
-    def run(self, *, test_sandbox: TestSandbox, args: Sequence[str] | None, retries: int) -> TestSandboxResult:
+    def run(
+        self,
+        *,
+        test_sandbox: TestSandbox,
+        manifest: SandboxManifest,
+        args: Sequence[str] | None,
+        retries: int,
+    ) -> TestSandboxResult:
+        del manifest
         del test_sandbox
         raise RuntimeError("sandbox_backend_unavailable:container")
 
