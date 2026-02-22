@@ -77,7 +77,6 @@ class TestSandbox:
         self.post_hook = post_hook
         self.verbose = verbose
         self.retain_failed_artifacts = retain_failed_artifacts
-        self._preexec_fn: Callable[[], None] | None = None
 
     @staticmethod
     def _with_updates(result: TestSandboxResult, **updates: object) -> TestSandboxResult:
@@ -132,7 +131,12 @@ class TestSandbox:
             )
             return None
 
-    def run_tests(self, args: Sequence[str] | None = None, keep_sandbox: bool = False) -> TestSandboxResult:
+    def run_tests(
+        self,
+        args: Sequence[str] | None = None,
+        keep_sandbox: bool = False,
+        preexec_fn: Callable[[], None] | None = None,
+    ) -> TestSandboxResult:
         """Execute pytest with timeout and tempdir isolation for each invocation."""
         self._run_pre_hook()
 
@@ -155,11 +159,11 @@ class TestSandbox:
         env["TMP"] = str(sandbox_path)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-        preexec_fn = os.environ.get("ADAAD_TEST_SANDBOX_PREEXEC_DISABLED")
-        if preexec_fn is not None:
+        preexec_disabled = os.environ.get("ADAAD_TEST_SANDBOX_PREEXEC_DISABLED")
+        if preexec_disabled is not None:
             preexec = None
         else:
-            preexec = getattr(self, "_preexec_fn", None)
+            preexec = preexec_fn
 
         try:
             completed = subprocess.run(
@@ -293,28 +297,24 @@ class TestSandbox:
         preexec_fn: Callable[[], None] | None = None,
     ) -> TestSandboxResult:
         """Retry sandbox test execution on failure."""
-        self._preexec_fn = preexec_fn
-        try:
-            attempts = 0
-            final = self.run_tests(args=args, keep_sandbox=keep_sandbox)
-            while attempts < retries and not final.ok:
-                attempts += 1
-                metrics.log(
-                    event_type="test_sandbox_retry_attempt",
-                    payload={
-                        "attempt": attempts,
-                        "status": final.status.value,
-                        "returncode": final.returncode,
-                        "duration_s": round(final.duration_s, 4),
-                        "ok": final.ok,
-                    },
-                    level="WARNING",
-                    element_id=ELEMENT_ID,
-                )
-                final = self.run_tests(args=args, keep_sandbox=keep_sandbox)
-            return self._with_updates(final, retries=attempts)
-        finally:
-            self._preexec_fn = None
+        attempts = 0
+        final = self.run_tests(args=args, keep_sandbox=keep_sandbox, preexec_fn=preexec_fn)
+        while attempts < retries and not final.ok:
+            attempts += 1
+            metrics.log(
+                event_type="test_sandbox_retry_attempt",
+                payload={
+                    "attempt": attempts,
+                    "status": final.status.value,
+                    "returncode": final.returncode,
+                    "duration_s": round(final.duration_s, 4),
+                    "ok": final.ok,
+                },
+                level="WARNING",
+                element_id=ELEMENT_ID,
+            )
+            final = self.run_tests(args=args, keep_sandbox=keep_sandbox, preexec_fn=preexec_fn)
+        return self._with_updates(final, retries=attempts)
 
     def run_tests_parallel(self, test_args_list: list[Sequence[str]]) -> list[TestSandboxResult]:
         """Run multiple test sets in parallel in isolated sandboxes."""

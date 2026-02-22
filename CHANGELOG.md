@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Changed
+- Cryovant agent certificate checks now prefer payload-bound HMAC verification with legacy static/dev fallback telemetry during migration.
+- Fixed constitution document version parsing regex so governance version-gate checks evaluate real markdown versions.
+- Test sandbox pre-exec hooks are now invocation-scoped (thread-safe) instead of shared mutable instance state.
+- `verify_session()` now emits a deprecation warning clarifying non-production behavior.
+- Consolidated lineage chain resolution on `runtime.evolution.lineage_v2` and removed the duplicate `security.ledger.lineage_v2` implementation.
 - Hardened replay-mode provider synchronization so `EvolutionRuntime.set_replay_mode()` aligns the epoch manager provider with the governor provider before strict replay checks.
 - Improved deterministic shared-epoch concurrency behavior in governor validation ordering for strict replay lanes.
 - Mutation executor now preserves backwards compatibility with legacy `_run_tests` monkeypatches that do not accept keyword args.

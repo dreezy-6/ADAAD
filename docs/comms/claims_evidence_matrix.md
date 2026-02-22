@@ -15,6 +15,7 @@ This matrix maps major external/public claims to objective, versioned repository
 | `append-only-ledger-lineage` | "Ledger and lineage integrity checks are enforced." | [Ledger guardian tests](../../tests/governance/test_ledger_guardian.py); [lineage integrity tests](../../tests/test_lineage_v2_integrity.py) | Complete |
 | `replay-proof-bundle-verification` | "Replay proof bundles can be generated and verified." | [Replay proof runtime module](../../runtime/evolution/replay_proof.py); [replay proof verification tests](../../tests/test_replay_proof.py) | Complete |
 | `federation-precedence-local-runtime` | "Federation coordination and precedence resolution are policy-gated in local runtime flows." | [Federation coordination runtime](../../runtime/governance/federation/coordination.py); [federation coordination tests](../../tests/governance/test_federation_coordination.py) | Complete |
+| `cryovant-agent-cert-hmac` | "Agent certificate verification is payload-bound (HMAC/signature) with audited migration fallback." | [Cryovant certificate verifier](../../security/cryovant.py); [Cryovant signature tests](../../tests/test_cryovant_dev_signatures.py) | Complete |
 
 ## Completion standard
 
