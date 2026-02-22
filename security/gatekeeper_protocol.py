@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List
+
+LOG = logging.getLogger(__name__)
 
 REQUIRED_DIRS = [
     Path("app"),
@@ -70,11 +73,23 @@ def run_gatekeeper() -> Dict[str, object]:
     drift = prev is not None and prev != digest
 
     persistence_error = None
+    persistence_reason_code = None
     try:
         ledger_hash_file.parent.mkdir(parents=True, exist_ok=True)
         ledger_hash_file.write_text(digest, encoding="utf-8")
-    except Exception as exc:
+    except OSError as exc:
+        reason_code = "hash_persist_failed"
+        persistence_reason_code = reason_code
         persistence_error = f"{type(exc).__name__}: {exc}"
+        LOG.error(
+            "gatekeeper persistence failed",
+            extra={
+                "reason_code": reason_code,
+                "operation_class": "governance-critical",
+                "path": str(ledger_hash_file),
+                "error_type": type(exc).__name__,
+            },
+        )
 
     reasons: List[str] = []
     if missing:
@@ -91,6 +106,7 @@ def run_gatekeeper() -> Dict[str, object]:
         "hash": digest,
         "sub_hashes": sub_hashes,
         "persistence_error": persistence_error,
+        "persistence_reason_code": persistence_reason_code,
         "reasons": reasons,
     }
     if drift:

@@ -101,6 +101,7 @@ class GatekeeperProtocolTest(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertIn("hash_persist_failed", payload["reasons"])
             self.assertIsNotNone(payload["persistence_error"])
+            self.assertEqual(payload["persistence_reason_code"], "hash_persist_failed")
 
     def test_invalid_ledger_path_fails_closed(self) -> None:
         with _in_temp_repo():
@@ -115,6 +116,7 @@ class GatekeeperProtocolTest(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertIn("hash_persist_failed", payload["reasons"])
             self.assertIsNotNone(payload["persistence_error"])
+            self.assertEqual(payload["persistence_reason_code"], "hash_persist_failed")
 
 
 if __name__ == "__main__":
