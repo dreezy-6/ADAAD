@@ -122,6 +122,35 @@ def _canonical_signature(signature: str) -> str:
     return _HMAC_SIGNATURE_PREFIX + candidate.lower()
 
 
+def _parse_sha256_signature(signature: str) -> str:
+    """Normalize ``sha256:<hex>`` signatures and validate strict format."""
+
+    if not isinstance(signature, str):
+        return ""
+    normalized = signature.strip().lower()
+    if not normalized.startswith(_HMAC_SIGNATURE_PREFIX):
+        return ""
+    digest = normalized[len(_HMAC_SIGNATURE_PREFIX) :]
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        return ""
+    return normalized
+
+
+def _active_key_paths() -> List[Path]:
+    """Return active key files in deterministic order for verification."""
+
+    if not KEYS_DIR.exists() or not KEYS_DIR.is_dir():
+        return []
+    key_paths: List[Path] = []
+    for path in sorted(KEYS_DIR.iterdir(), key=lambda candidate: candidate.name):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".key", ".pem", ".txt"}:
+            continue
+        key_paths.append(path)
+    return key_paths
+
+
 def verify_hmac_digest_signature(
     *,
     key_id: str,
@@ -240,36 +269,27 @@ def _dev_signature_allowed(signature: str) -> bool:
 def verify_signature(signature: str) -> bool:
     """Verify HMAC-SHA-256 signature against key material in ``KEYS_DIR``.
 
-    Signature format: ``<key_id>:<sha256_hex>`` where digest is calculated as
-    ``HMAC_SHA256(key_bytes, b"cryovant")``.
+    Signature format: ``sha256:<hex>`` where digest is calculated as
+    ``HMAC_SHA256(key_bytes, b"cryovant")`` for active key material in
+    ``KEYS_DIR``.
     """
 
-    raw = str(signature or "").strip()
-    if not KEYS_DIR.exists():
-        raise FileNotFoundError(f"keys_dir_missing:{KEYS_DIR}")
-    if ":" not in raw:
-        raise ValueError("invalid_signature_format")
-    key_id, provided = raw.split(":", 1)
-    key_id = key_id.strip()
-    provided = provided.strip().lower()
-    if not key_id or len(provided) != 64 or any(ch not in "0123456789abcdef" for ch in provided):
-        raise ValueError("invalid_signature_format")
+    normalized_signature = _parse_sha256_signature(signature)
+    if not normalized_signature:
+        return False
 
-    key_path = None
-    for suffix in (".key", ".pem", ".txt"):
-        candidate = KEYS_DIR / f"{key_id}{suffix}"
-        if candidate.exists():
-            key_path = candidate
-            break
-    if key_path is None:
-        raise FileNotFoundError(f"key_missing:{key_id}")
+    key_paths = _active_key_paths()
+    if not key_paths:
+        return False
 
-    key_material = key_path.read_bytes().strip()
-    if not key_material:
-        raise ValueError(f"key_empty:{key_id}")
-
-    expected = hmac.new(key_material, b"cryovant", hashlib.sha256).hexdigest()
-    return hmac.compare_digest(provided, expected)
+    for key_path in key_paths:
+        key_material = key_path.read_bytes().strip()
+        if not key_material:
+            continue
+        expected = _HMAC_SIGNATURE_PREFIX + hmac.new(key_material, b"cryovant", hashlib.sha256).hexdigest()
+        if hmac.compare_digest(normalized_signature, expected):
+            return True
+    return False
 
 
 def _valid_signature(
