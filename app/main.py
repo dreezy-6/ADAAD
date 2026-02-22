@@ -16,6 +16,7 @@ Deterministic orchestrator entrypoint.
 """
 
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -139,6 +140,8 @@ class Orchestrator:
         self.boot_preflight = BootPreflightService()
         self.replay_service = ReplayVerificationService(manifests_dir=APP_ROOT.parent / "security" / "replay_manifests")
         self.mutation_orchestrator = MutationOrchestrationService()
+        self.mcp_server_name = "mcp-proposal-writer"
+        self.mcp_app: Any | None = None
         self.dry_run = dry_run
         self.verbose = verbose
         self.replay_mode = normalize_replay_mode(replay_mode)
@@ -195,6 +198,8 @@ class Orchestrator:
         self._v("Runtime invariants passed")
         self._init_cryovant()
         self._v("Cryovant validation passed")
+        self._start_mcp_server()
+        self._v("MCP proposal writer startup checks passed")
         self._verify_checkpoint_chain_stage()
         self._v("Checkpoint chain verification passed")
         epoch_state = self.evolution_runtime.boot()
@@ -374,11 +379,32 @@ class Orchestrator:
 
 
     def _health_check_mcp(self) -> None:
+        if self.mcp_app is None:
+            self._fail("mcp_server_not_started")
+        routes = {route.path for route in getattr(self.mcp_app, "routes", []) if hasattr(route, "path")}
+        required_routes = {"/health", "/mutation/propose", "/mutation/analyze", "/mutation/explain-rejection", "/mutation/rank"}
+        missing = sorted(required_routes - routes)
+        if missing:
+            self._fail(f"mcp_server_health_failed:missing_routes={','.join(missing)}")
+        metrics.log(event_type="mcp_server_health_ok", payload={"server": self.mcp_server_name, "routes": sorted(required_routes)}, level="INFO")
+
+    def _start_mcp_server(self) -> None:
         try:
-            create_mcp_app("mcp-proposal-writer")
+            self.mcp_app = create_mcp_app(self.mcp_server_name)
+
+            async def _probe_startup() -> None:
+                assert self.mcp_app is not None
+                async with self.mcp_app.router.lifespan_context(self.mcp_app):
+                    return None
+
+            asyncio.run(_probe_startup())
         except Exception as exc:
-            self._fail(f"mcp_server_health_failed:{exc}")
-        metrics.log(event_type="mcp_server_health_ok", payload={"server": "mcp-proposal-writer"}, level="INFO")
+            self._fail(f"mcp_server_start_failed:{exc}")
+        self.state["mcp_server"] = {
+            "name": self.mcp_server_name,
+            "started": True,
+        }
+        metrics.log(event_type="mcp_server_started", payload={"server": self.mcp_server_name}, level="INFO")
 
     def _governance_gate(self) -> bool:
         checks = [

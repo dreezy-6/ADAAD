@@ -25,3 +25,11 @@ This repository includes a governed MCP integration with four servers and strict
 - `GET /health`
 
 JWT is required for all non-health routes.
+
+
+## Orchestrator boot integration
+
+- `mcp-proposal-writer` startup checks run only after Cryovant preconditions pass.
+- Startup is validated before the mutation cycle transition decision, so boot fails closed if signing/audit prerequisites are unavailable.
+- Orchestrator MCP health checks verify required writer routes are present before mutation work proceeds.
+

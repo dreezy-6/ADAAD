@@ -75,6 +75,21 @@ Dashboard risk and replay classifiers now use canonical governance event types r
 Policy thresholds and model metadata are sourced from `governance/governance_policy_v1.json` via deterministic runtime validation at startup. The `/system/intelligence` payload includes a `policy_fingerprint` field for audit trails.
 
 
+
+## Optional MCP utility surface (`--serve-mcp`)
+
+When launching `ui/aponi_dashboard.py` in standalone mode, `--serve-mcp` enables three MCP mutation utility routes:
+
+- `POST /mutation/analyze`
+- `POST /mutation/explain-rejection`
+- `POST /mutation/rank`
+
+Safety invariants for this mode:
+
+- These routes are disabled unless `--serve-mcp` is explicitly passed.
+- JWT authentication is enforced for the three MCP routes when enabled (`Authorization: Bearer <token>`).
+- Existing dashboard routes keep their prior behavior when `--serve-mcp` is not set.
+
 ## Browser hardening
 
 Aponi HTML responses are sent with `Cache-Control: no-store` and a restrictive CSP.
