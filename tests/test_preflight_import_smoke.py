@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from app.agents.mutation_request import MutationRequest
+import runtime.preflight as preflight
 from runtime.preflight import _import_smoke_check, _legacy_validate_mutation, validate_mutation_proposal_schema
 
 
@@ -44,6 +45,36 @@ def test_import_smoke_check_reports_missing_dependency_from_source() -> None:
 
     assert result["ok"] is False
     assert result["reason"] == "missing_dependency:definitely_missing_package_123"
+    assert result["missing_dependency"] == ["definitely_missing_package_123"]
+    assert result["optional_dependency"] == []
+
+
+def test_import_smoke_check_allows_local_package_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(preflight, "ROOT_DIR", tmp_path)
+    package_root = tmp_path / "localpkg"
+    package_root.mkdir()
+    (package_root / "__init__.py").write_text("", encoding="utf-8")
+
+    result = _import_smoke_check(Path("in_memory.py"), "import localpkg.module")
+
+    assert result["ok"] is True
+    assert result["missing_dependency"] == []
+
+
+def test_import_smoke_check_tracks_optional_dependency() -> None:
+    result = _import_smoke_check(
+        Path("in_memory.py"),
+        """
+try:
+    import definitely_missing_optional_123
+except ImportError:
+    definitely_missing_optional_123 = None
+""",
+    )
+
+    assert result["ok"] is True
+    assert result["missing_dependency"] == []
+    assert result["optional_dependency"] == ["definitely_missing_optional_123"]
 
 
 def test_legacy_preflight_pipeline_preserves_structured_reason_codes(tmp_path: Path) -> None:
@@ -57,6 +88,8 @@ def test_legacy_preflight_pipeline_preserves_structured_reason_codes(tmp_path: P
 
     target_details = legacy["checks"]["targets"][str(target)]["import_smoke"]
     assert target_details["reason"] == "missing_dependency:definitely_missing_package_123"
+    assert target_details["missing_dependency"] == ["definitely_missing_package_123"]
+    assert target_details["optional_dependency"] == []
 
 
 def test_legacy_preflight_pipeline_preserves_syntax_reason(tmp_path: Path) -> None:

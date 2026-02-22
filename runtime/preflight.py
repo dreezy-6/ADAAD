@@ -304,27 +304,100 @@ def _import_smoke_check(target: Path, source: Optional[str]) -> Dict[str, Any]:
         except SyntaxError as exc:
             return {"ok": False, "reason": f"syntax_error:{exc.msg}"}
 
-        imported_roots: Set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
+        def _is_optional_import_handler(handler: ast.ExceptHandler) -> bool:
+            if handler.type is None:
+                return True
+            if isinstance(handler.type, ast.Name):
+                return handler.type.id in {"ImportError", "ModuleNotFoundError"}
+            if isinstance(handler.type, ast.Tuple):
+                return any(
+                    isinstance(item, ast.Name) and item.id in {"ImportError", "ModuleNotFoundError"}
+                    for item in handler.type.elts
+                )
+            return False
+
+        class _ImportCollector(ast.NodeVisitor):
+            def __init__(self) -> None:
+                self.hard_imports: Set[str] = set()
+                self.optional_imports: Set[str] = set()
+                self._optional_depth = 0
+
+            def _record(self, module_name: str) -> None:
+                root = module_name.split(".", 1)[0]
+                if not root:
+                    return
+                if self._optional_depth > 0:
+                    self.optional_imports.add(root)
+                else:
+                    self.hard_imports.add(root)
+
+            def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
                 for alias in node.names:
-                    root = alias.name.split(".", 1)[0]
-                    if root:
-                        imported_roots.add(root)
-            elif isinstance(node, ast.ImportFrom):
+                    self._record(alias.name)
+
+            def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
                 if node.level > 0 or not node.module:
-                    continue
-                root = node.module.split(".", 1)[0]
-                if root:
-                    imported_roots.add(root)
+                    return
+                self._record(node.module)
+
+            def visit_Try(self, node: ast.Try) -> None:  # noqa: N802
+                has_optional_import_handler = any(_is_optional_import_handler(handler) for handler in node.handlers)
+                if has_optional_import_handler:
+                    self._optional_depth += 1
+                    for stmt in node.body:
+                        self.visit(stmt)
+                    self._optional_depth -= 1
+                    for stmt in node.handlers + node.orelse + node.finalbody:
+                        self.visit(stmt)
+                    return
+                self.generic_visit(node)
+
+        collector = _ImportCollector()
+        collector.visit(tree)
+
+        optional_only_imports = collector.optional_imports - collector.hard_imports
+
+        project_root = ROOT_DIR.resolve()
+
+        def _is_local_package_root(module_name: str) -> bool:
+            package_dir = project_root / module_name
+            if package_dir.is_dir() and (
+                (package_dir / "__init__.py").exists() or any(package_dir.glob("*.py"))
+            ):
+                return True
+            return (project_root / f"{module_name}.py").exists()
 
         stdlib_modules = getattr(sys, "stdlib_module_names", set())
-        for module_name in sorted(imported_roots):
+        missing_dependencies: list[str] = []
+        optional_dependencies: list[str] = []
+        for module_name in sorted(collector.hard_imports):
             if module_name in stdlib_modules:
                 continue
+            if _is_local_package_root(module_name):
+                continue
             if importlib.util.find_spec(module_name) is None:
-                return {"ok": False, "reason": f"missing_dependency:{module_name}"}
-        return {"ok": True}
+                missing_dependencies.append(module_name)
+
+        for module_name in sorted(optional_only_imports):
+            if module_name in stdlib_modules:
+                continue
+            if _is_local_package_root(module_name):
+                continue
+            if importlib.util.find_spec(module_name) is None:
+                optional_dependencies.append(module_name)
+
+        if missing_dependencies:
+            return {
+                "ok": False,
+                "reason": f"missing_dependency:{missing_dependencies[0]}",
+                "missing_dependency": missing_dependencies,
+                "optional_dependency": optional_dependencies,
+            }
+        return {
+            "ok": True,
+            "missing_dependency": missing_dependencies,
+            "optional_dependency": optional_dependencies,
+        }
     except Exception as exc:  # pragma: no cover - defensive guardrail
         return {"ok": False, "reason": f"import_analysis_failed:{exc}"}
 
