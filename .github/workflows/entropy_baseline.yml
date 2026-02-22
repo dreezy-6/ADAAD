@@ -1,0 +1,37 @@
+name: entropy-baseline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  entropy-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run entropy baseline profiler
+        run: |
+          python -m runtime.evolution.telemetry_audit.profile_entropy_baseline --out artifact/entropy_baseline.json || python -m runtime.evolution.telemetry_audit --out artifact/entropy_baseline.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifact/entropy_baseline.json').read_text(encoding='utf-8'))
+          if int(report.get('overflow_total', 0)) > 0:
+              raise SystemExit('overflow_total > 0')
+          if bool(report.get('drift_detected', False)):
+              raise SystemExit('drift_detected == true')
+          PY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: entropy-baseline
+          path: artifact/entropy_baseline.json
