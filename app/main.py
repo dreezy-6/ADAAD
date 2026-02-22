@@ -191,6 +191,8 @@ class Orchestrator:
         self._v("Runtime invariants passed")
         self._init_cryovant()
         self._v("Cryovant validation passed")
+        self._verify_checkpoint_chain()
+        self._v("Checkpoint chain verification passed")
         epoch_state = self.evolution_runtime.boot()
         self.state["epoch"] = epoch_state
         self._v("Replay baseline initialized")
@@ -310,6 +312,7 @@ class Orchestrator:
         self._register_elements()
         self._init_runtime()
         self._init_cryovant()
+        self._verify_checkpoint_chain()
         epoch_state = self.evolution_runtime.boot()
         self.state["epoch"] = epoch_state
         self._run_replay_preflight(verify_only=True)
@@ -330,10 +333,23 @@ class Orchestrator:
         ok, failures = verify_all()
         if not ok:
             self._fail(f"invariants_failed:{','.join(failures)}")
+
+    def _verify_checkpoint_chain(self) -> None:
         try:
-            CheckpointVerifier.verify_all_checkpoints(self.evolution_runtime.ledger.ledger_path)
+            verification = CheckpointVerifier.verify_all_checkpoints(self.evolution_runtime.ledger.ledger_path)
         except CheckpointVerificationError as exc:
-            self._fail(f"checkpoint_verification_failed:{exc}")
+            journal.write_entry(
+                agent_id="system",
+                action="checkpoint_chain_violated",
+                payload={"reason": str(exc), "ts": now_iso()},
+            )
+            self._fail(f"checkpoint_chain_violated:{exc}")
+            return
+        journal.write_entry(
+            agent_id="system",
+            action="checkpoint_chain_verified",
+            payload={**verification, "ts": now_iso()},
+        )
 
     def _init_cryovant(self) -> None:
         if not cryovant.validate_environment():
