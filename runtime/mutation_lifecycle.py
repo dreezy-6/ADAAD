@@ -121,8 +121,15 @@ class MutationLifecycleContext:
         )
 
 
-def _signature_valid(signature: str, trust_mode: str) -> tuple[bool, str]:
-    if cryovant.verify_signature(signature):
+def _signature_valid(signature: str, trust_mode: str, context: MutationLifecycleContext) -> tuple[bool, str]:
+    if cryovant.verify_payload_signature(
+        context.epoch_id.encode("utf-8"),
+        signature,
+        context.agent_id,
+        specific_env_prefix="ADAAD_MUTATION_LIFECYCLE_KEY_",
+        generic_env_var="ADAAD_MUTATION_LIFECYCLE_SIGNING_KEY",
+        fallback_namespace="adaad-mutation-lifecycle-dev-secret",
+    ):
         return True, "verified"
     if trust_mode == "dev" and cryovant.dev_signature_allowed(signature):
         return True, "dev_signature"
@@ -226,7 +233,7 @@ def transition(current_state: str, next_state: str, context: MutationLifecycleCo
         raise LifecycleTransitionError(f"undeclared_transition:{current_state}->{next_state}")
 
     trust_mode = (context.trust_mode or os.getenv("ADAAD_TRUST_MODE", "dev")).strip().lower()
-    signature_ok, signature_method = _signature_valid(context.signature or "", trust_mode)
+    signature_ok, signature_method = _signature_valid(context.signature or "", trust_mode, context)
     founders_ok, founders_failures = _founders_law_ok(context)
     cert_ok = True if not rule["require_cert"] else bool(context.cert_refs)
     fitness_ok = True

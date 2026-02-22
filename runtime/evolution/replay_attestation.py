@@ -381,6 +381,15 @@ def verify_replay_proof_bundle(
                 signed_digest=signed_digest,
                 signature=provided,
             )
+            validation.append(
+                {
+                    "ok": signature_ok,
+                    "key_id": key_id,
+                    "algorithm": algorithm,
+                    "error": "" if signature_ok else "signature_mismatch",
+                }
+            )
+            continue
         validation.append(
             {
                 "ok": matches,

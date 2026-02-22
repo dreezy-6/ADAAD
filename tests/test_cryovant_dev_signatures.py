@@ -68,6 +68,35 @@ class CryovantDevSignatureTest(unittest.TestCase):
         self.assertIn("cryovant_signature_verification_without_keys", event_types)
         self.assertIn("cryovant_dev_signature_accepted", event_types)
 
+
+    def test_verify_signature_compatibility_wrapper_accepts_legacy_static(self) -> None:
+        self.assertTrue(cryovant.verify_signature("cryovant-static-legacy"))
+
+    def test_verify_payload_signature_accepts_payload_bound_static_signature(self) -> None:
+        payload = b"governance-envelope"
+        digest = "sha256:" + cryovant.hashlib.sha256(payload).hexdigest()
+        self.assertTrue(
+            cryovant.verify_payload_signature(
+                payload,
+                f"cryovant-static-{digest}",
+                "policy-key",
+            )
+        )
+
+    def test_verify_payload_signature_accepts_hmac_signature(self) -> None:
+        payload = b"replay-proof-digest"
+        digest = "sha256:" + cryovant.hashlib.sha256(payload).hexdigest()
+        os.environ["ADAAD_SIGNING_KEY"] = "signing-secret"
+        self.addCleanup(os.environ.pop, "ADAAD_SIGNING_KEY", None)
+        signature = cryovant.sign_hmac_digest(
+            key_id="key-1",
+            signed_digest=digest,
+            specific_env_prefix="ADAAD_SIGNING_KEY_",
+            generic_env_var="ADAAD_SIGNING_KEY",
+            fallback_namespace="adaad-signing-dev-secret",
+        )
+        self.assertTrue(cryovant.verify_payload_signature(payload, signature, "key-1"))
+
     def test_prod_valid_real_signature_accepts(self) -> None:
         os.environ["ADAAD_ENV"] = "prod"
         (cryovant.KEYS_DIR / "signing-key.pem").write_text("key", encoding="utf-8")
