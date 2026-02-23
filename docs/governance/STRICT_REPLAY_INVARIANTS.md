@@ -20,6 +20,7 @@ This document defines the invariants that must hold for strict replay validation
 
 6. **Hermetic runtime profile must validate before governance-critical boot.**
    - `governance_runtime_profile.lock.json` is the canonical runtime lock artifact.
+   - It is committed to source control and versioned with governance/release changes.
    - dependency fingerprint must match the pinned lock target (`requirements.server.txt`).
    - mutable filesystem and network surfaces must be disabled or explicitly allowlisted.
 7. **Fail-closed boot posture.**
