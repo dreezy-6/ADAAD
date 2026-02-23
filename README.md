@@ -4,13 +4,7 @@
 > ADAAD enforces constitutional mutation gates, deterministic replay checks, and fail-closed execution behavior.
 > It is built for governed staging and audit workflows.
 
-> **Doc metadata:** Audience: Operator / Contributor / Auditor · Last validated release: `v1.0.0`
-
-> ✅ **Do this:** Read `docs/FOUNDATIONS.md` first, then execute setup from `QUICKSTART.md`.
->
-> ⚠️ **Caveat:** Unattended production autonomy is disabled by scope and policy.
->
-> 🚫 **Out of scope:** ADAAD does not train models, replace CI/CD, or bypass governance gates.
+ADAAD is a governance layer for autonomous code mutation. It exists to ensure autonomy remains reproducible, auditable, and constrained by constitutional policy.
 
 <p align="center">
   <img src="docs/assets/adaad-banner.svg" width="850" alt="ADAAD governed autonomy banner">
@@ -24,169 +18,91 @@
   <img alt="Governance" src="https://img.shields.io/badge/Governance-Fail--Closed-critical">
 </p>
 
-## Table of Contents
-
-- [What ADAAD enforces](#what-adaad-enforces)
-- [Foundations (single source of truth)](#foundations-single-source-of-truth)
-- [Governance mode matrix](#governance-mode-matrix)
-- [Mutation stage contract](#mutation-stage-contract)
-- [Architecture at a glance](#architecture-at-a-glance)
-- [Determinism and replay boundaries](#determinism-and-replay-boundaries)
-- [Canonical import ownership](#canonical-import-ownership)
-- [Adapter policy](#adapter-policy)
-- [Aponi dashboard isolation](#aponi-dashboard-isolation)
-- [Versioning policy](#versioning-policy)
-- [What this system will never do](#what-this-system-will-never-do)
-- [Quick start](#quick-start)
-- [Security](#security)
-- [Documentation map](#documentation-map)
-- [License](#license)
-
-## What ADAAD enforces
-
-ADAAD enforces policy-first autonomous mutation control:
-
-- Governance gates evaluate mutation eligibility.
-- Replay checks enforce deterministic decision equivalence.
-- Divergence fails closed before mutation execution.
-- Ledger and lineage evidence are auditable and append-only.
-
-## Foundations (single source of truth)
-
-Governance posture, determinism contract, replay guarantees, and mutation philosophy are maintained in one authoritative document:
-
-- [`docs/FOUNDATIONS.md`](docs/FOUNDATIONS.md)
-
-Use this to prevent drift across README surfaces.
-
-## Governance mode matrix
-
-| Mode    | Mutation  | Replay   | Promotion  | Use Case           |
-| ------- | --------- | -------- | ---------- | ------------------ |
-| dry-run | Simulated | Optional | Disabled   | Local validation   |
-| audit   | Blocked   | Required | Disabled   | Governance check   |
-| strict  | Allowed   | Required | Controlled | Staged evolution   |
-| staging | Allowed   | Required | Enabled    | Pre-release gating |
-
-Exactly one mode must be active at runtime.
-
-## Mutation stage contract
-
-| Stage         | Enforced  | Failure Behavior | Evidence Emitted |
-| ------------- | --------- | ---------------- | ---------------- |
-| AST Parse     | Required  | Reject           | parse_validation_event |
-| Import Root   | Required  | Reject           | import_boundary_violation |
-| Sandbox       | Required  | Fail Closed      | sandbox_integrity_event |
-| Fitness       | Threshold | Reject           | fitness_rejection_event |
-| Certification | Required  | Block Promotion  | promotion_block_event |
-
-## Architecture at a glance
-
-```text
-app.main
- ├── Orchestrator
- │    ├── Invariants
- │    ├── Cryovant
- │    ├── Replay
- │    ├── MutationEngine
- │    └── GovernanceGate
- └── Aponi Dashboard
-```
-
 <p align="center">
-  <img src="docs/assets/architecture-simple.svg" width="760" alt="ADAAD simplified architecture diagram">
+  <a href="QUICKSTART.md"><strong>Get Started →</strong></a> ·
+  <a href="docs/README.md"><strong>Documentation</strong></a> ·
+  <a href="examples/single-agent-loop/README.md"><strong>Examples</strong></a> ·
+  <a href="https://github.com/InnovativeAI-adaad/ADAAD/issues"><strong>Issues</strong></a>
 </p>
 
-## Determinism and replay boundaries
+<p align="center">
+  <img src="docs/assets/governance-flow.svg" width="680" alt="ADAAD governance flow: Propose, Simulate, Replay Verify, Policy Gate, Execute, Evidence Attach, Archive">
+</p>
 
-Deterministic Inputs:
-- Time
-- Randomness
-- External providers
+## Why ADAAD Exists
 
-Replay Guarantees:
-- Stage replay
-- Evidence bundle replay
-- Attestation replay
+Unconstrained autonomous code mutation creates risk.
 
-Replay boundary:
+ADAAD exists to ensure that autonomy remains:
+- Deterministic
+- Governed
+- Auditable
+- Replay-verifiable
+- Fail-closed
 
-```text
-Mutation → Sandbox → Metrics → Evidence → Ledger → Replay
-```
+Autonomy without governance scales chaos.
+ADAAD scales controlled evolution.
 
-## Canonical import ownership
+## Fail-Closed by Design
 
-Use `runtime.*` as authoritative governance and replay implementation paths.
+If replay diverges, policy fails, or evidence cannot be attached, mutation execution halts.
 
-- Foundation primitives: `runtime.governance.foundation.*`
-- Evolution governance paths: `runtime.evolution.*`
-- Replay/governor integrations: `runtime.governance.*` + `runtime.evolution.*`
-- Determinism provider: `runtime.governance.foundation.determinism`
+No mutation executes without governance validation.
 
-> CI fails builds on non-canonical runtime imports.
+## What ADAAD Does
 
-`governance.*` exists as compatibility-only re-export surface. It is not a second implementation root.
+ADAAD orchestrates a governed mutation lifecycle:
 
-## Adapter policy
+1. Propose candidate mutation.
+2. Simulate in policy-bounded runtime.
+3. Replay-verify expected state transition.
+4. Enforce constitutional and governance gates.
+5. Execute only when all required controls pass.
+6. Attach evidence and lineage artifacts.
+7. Archive decisions for audit and reproducibility.
 
-Adapters MUST:
-- Contain no business logic
-- Contain no mutation logic
-- Forward only to `runtime.*`
+## Trust Guarantees
 
-Adapters are compatibility-only surfaces.
-They are not stable API and may change without notice.
+ADAAD enforces:
 
-## Aponi dashboard isolation ![Experimental](https://img.shields.io/badge/Aponi-Experimental-orange)
+- Deterministic replay validation
+- Fail-closed mutation execution
+- Policy-bound runtime enforcement
+- Lineage and mutation traceability
+- Constitution-level governance constraints
 
-Aponi consumes read-only governance surfaces.
-It does not mutate governance state.
+All governance decisions are reproducible across runs.
 
-Operator value:
-- Governance health visibility
-- Replay divergence forensics
-- Risk and policy simulation views
+## Non-Goals
 
-## Versioning policy
+ADAAD does not:
+- Generate model intelligence
+- Replace CI pipelines
+- Remove human oversight where required
+- Guarantee semantic correctness beyond governed constraints
 
-- **MAJOR** – Governance invariant changes
-- **MINOR** – New gates, non-breaking
-- **PATCH** – Documentation and internal fixes
+## Quick Start
 
-## What this system will never do
+- Follow [QUICKSTART.md](QUICKSTART.md) for environment setup and validation.
+- Run `./quickstart.sh` to execute baseline checks.
+- Run `python -m app.main --dry-run --replay audit --verbose` for a governed dry-run.
 
-- Run unattended in production
-- Bypass governance gates
-- Self-modify runtime governance layer outside policy controls
+## Strategic Documentation Path
 
-## Quick start
+- Canonical docs home: [docs/README.md](docs/README.md)
+- Determinism contract: [docs/DETERMINISM.md](docs/DETERMINISM.md)
+- Architecture contract: [docs/ARCHITECTURE_CONTRACT.md](docs/ARCHITECTURE_CONTRACT.md)
+- One-page architecture summary: [docs/ARCHITECTURE_SUMMARY.md](docs/ARCHITECTURE_SUMMARY.md)
+- Threat model: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)
+- Governance maturity model: [docs/GOVERNANCE_MATURITY_MODEL.md](docs/GOVERNANCE_MATURITY_MODEL.md)
+- Release evidence and checklist: [docs/RELEASE_EVIDENCE_MATRIX.md](docs/RELEASE_EVIDENCE_MATRIX.md), [docs/releases/RELEASE_AUDIT_CHECKLIST.md](docs/releases/RELEASE_AUDIT_CHECKLIST.md)
 
-Use [`QUICKSTART.md`](QUICKSTART.md) for setup, validation, and reset workflows.
+## Project Status
 
-Fast path:
-
-```bash
-./quickstart.sh
-python -m app.main --dry-run --replay audit --verbose
-```
-
-## Security
-
-Security disclosure and key-handling guidance:
-
-- [`docs/SECURITY.md`](docs/SECURITY.md)
-
-Do not open public issues for vulnerabilities.
-
-## Documentation map
-
-- Foundations: [`docs/FOUNDATIONS.md`](docs/FOUNDATIONS.md)
-- Constitution: [`docs/CONSTITUTION.md`](docs/CONSTITUTION.md)
-- Quick start: [`QUICKSTART.md`](QUICKSTART.md)
-- Architecture boundaries: [`docs/ARCHITECTURE_CONTRACT.md`](docs/ARCHITECTURE_CONTRACT.md)
-- Full index: [`docs/manifest.txt`](docs/manifest.txt)
-
-## License
-
-Apache 2.0. See [`LICENSE`](LICENSE).
+| Aspect | Status |
+|---|---|
+| Recommended for | Governed audit workflows, replay verification, staged mutation review |
+| Not ready for | Unattended production autonomy |
+| Maturity | Stable / v1.0 |
+| Replay mode | Audit and strict governance-ready |
+| Mutation execution | Fail-closed and policy-gated |
