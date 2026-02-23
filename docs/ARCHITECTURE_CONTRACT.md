@@ -79,6 +79,9 @@ Legitimate boundary exceptions require:
 For governance-critical replay modes (`audit`/`strict`), boot must enforce:
 
 - root lock artifact: `governance_runtime_profile.lock.json`;
+  - **Writer:** release/governance maintainers when runtime contract changes.
+  - **Readers:** `runtime.preflight.validate_boot_runtime_profile(...)` and deterministic replay boot tests.
+  - **VCS policy:** keep committed in-repo as a canonical governance lock (do not `.gitignore`).
 - dependency fingerprint parity for `requirements.server.txt`;
 - deterministic provider requirement (`ADAAD_FORCE_DETERMINISTIC_PROVIDER=1`);
 - mutable filesystem/network either disabled or explicitly allowlisted by environment contract.

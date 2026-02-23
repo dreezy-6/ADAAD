@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import types
+
+import pytest
 from pathlib import Path
 
 from adaad.core.cryovant_identity import build_identity
@@ -12,6 +14,16 @@ from adaad.core.root import get_root_dir
 from adaad.orchestrator import bootstrap as bootstrap_module
 from adaad.orchestrator.dispatcher import dispatch
 from adaad.orchestrator.registry import clear_registry, register_tool
+
+
+@pytest.fixture(autouse=True)
+def _reset_bootstrapped_flag() -> None:
+    """Reset bootstrap module state before/after each test for isolation."""
+    bootstrap_module._BOOTSTRAPPED = False
+    try:
+        yield
+    finally:
+        bootstrap_module._BOOTSTRAPPED = False
 
 
 def test_root_dir_uses_env_override(monkeypatch) -> None:

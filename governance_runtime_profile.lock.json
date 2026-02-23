@@ -2,7 +2,7 @@
   "version": 1,
   "dependency_lock": {
     "path": "requirements.server.txt",
-    "sha256": "a0287155b780872798be33b64f103b8080f1093cabdac573df8e548bd3a9bc04"
+    "sha256": "7b3d06cf33c0cae90708dce16e87d53738f34e1805e92b41c4c783651b1bf593"
   },
   "runtime_manifest": {
     "governance_modes": [

@@ -21,6 +21,7 @@ TARGET_DIRS: tuple[str, ...] = (
 REQUIRED_GOVERNANCE_FILES: tuple[str, ...] = (
     "runtime/evolution/fitness_orchestrator.py",
     "runtime/governance/federation/transport.py",
+    "runtime/governance/federation/coordination.py",
 )
 
 # Direct dynamic execution primitives.

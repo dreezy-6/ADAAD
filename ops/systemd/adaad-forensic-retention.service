@@ -4,6 +4,8 @@ After=network.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/workspace/ADAAD
+Environment=ADAAD_ROOT=/opt/adaad
+EnvironmentFile=-/etc/default/adaad
+WorkingDirectory=/
 Environment=PYTHONPATH=.
-ExecStart=/workspace/ADAAD/ops/systemd/run_forensic_retention.sh
+ExecStart=/usr/bin/env bash -lc '"${ADAAD_ROOT:-/opt/adaad}/ops/systemd/run_forensic_retention.sh"'
