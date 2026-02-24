@@ -58,8 +58,17 @@ def test_evaluation_state_merges_android_telemetry(monkeypatch) -> None:
 def test_probe_fallback_values_unchanged_and_diagnostics_emitted(monkeypatch) -> None:
     signals: list[dict[str, str]] = []
 
-    def _capture_signal(*, probe: str, reason_code: str, error: Exception | None = None) -> None:
-        payload = {"probe": probe, "reason_code": reason_code}
+    def _capture_signal(
+        *,
+        probe: str,
+        reason_code: str,
+        fallback_value: float,
+        source_path: str | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        payload = {"probe": probe, "reason_code": reason_code, "fallback_value": fallback_value}
+        if source_path is not None:
+            payload["source_path"] = source_path
         if error is not None:
             payload["error_type"] = type(error).__name__
         signals.append(payload)
@@ -78,6 +87,10 @@ def test_probe_fallback_values_unchanged_and_diagnostics_emitted(monkeypatch) ->
         "meminfo_unreadable",
         "cpu_probe_unavailable",
     ]
+    assert [signal["fallback_value"] for signal in signals] == [100.0, 8192.0, 0.0]
+    assert signals[0]["source_path"] == "/sys/class/power_supply/battery/capacity"
+    assert signals[1]["source_path"] == "/proc/meminfo"
+    assert "source_path" not in signals[2]
 
 
 def test_no_crash_on_partial_platform_unavailability(tmp_path: Path, monkeypatch) -> None:
@@ -91,3 +104,33 @@ def test_no_crash_on_partial_platform_unavailability(tmp_path: Path, monkeypatch
     snapshot = monitor.snapshot()
 
     assert snapshot == ResourceSnapshot(battery_percent=100.0, memory_mb=8192.0, storage_mb=1024.0, cpu_percent=0.0)
+
+
+def test_emit_probe_fallback_logs_structured_warning_and_metric(monkeypatch) -> None:
+    records: list[tuple[str, dict[str, object], str]] = []
+
+    monkeypatch.setattr(
+        android_monitor.metrics,
+        "log",
+        lambda event_type, payload, level="INFO": records.append((event_type, payload, level)),
+    )
+
+    android_monitor._emit_probe_fallback(
+        probe="memory",
+        reason_code="meminfo_parse_error",
+        fallback_value=8192.0,
+        source_path="/proc/meminfo",
+        error=ValueError("bad"),
+    )
+
+    assert len(records) == 1
+    event_type, payload, level = records[0]
+    assert event_type == android_monitor.METRIC_EVENT
+    assert level == "WARNING"
+    assert payload == {
+        "probe": "memory",
+        "reason_code": "meminfo_parse_error",
+        "fallback_value": 8192.0,
+        "source_path": "/proc/meminfo",
+        "error_type": "ValueError",
+    }
