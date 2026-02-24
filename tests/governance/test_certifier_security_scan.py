@@ -92,3 +92,50 @@ def test_generated_at_uses_injected_clock(tmp_path: Path, monkeypatch) -> None:
         target, {"cryovant_token": "fixed"}
     )
     assert cert["generated_at"] == "2030-01-01T00:00:00Z"
+
+
+def test_ast_rejects_alias_chain_to_subprocess_call(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "subprocess_alias_chain.py"
+    target.write_text(
+        "import subprocess as sp\n"
+        "runner = sp\n"
+        "invoke = runner.Popen\n"
+        "invoke(['echo', 'hi'])\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("security.cryovant.verify_session", lambda token: True)
+    cert = GateCertifier().certify(target, {"cryovant_token": "c" * 24})
+    assert cert["passed"] is False
+    assert cert["checks"]["ast_ok"] is False
+    assert "module_runtime_risk:subprocess.Popen" in cert["checks"]["ast_violations"]
+
+
+def test_ast_rejects_dynamic_exec_via_import_alias_chain(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "import_alias_chain.py"
+    target.write_text(
+        "loader = __import__\n"
+        "builtins_mod = loader('builtins')\n"
+        "compiler = getattr(builtins_mod, 'compile')\n"
+        "compiler('1 + 1', '<x>', 'eval')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("security.cryovant.verify_session", lambda token: True)
+    cert = GateCertifier().certify(target, {"cryovant_token": "d" * 24})
+    assert cert["passed"] is False
+    assert cert["checks"]["ast_ok"] is False
+    assert "dynamic_primitive_alias:loader" in cert["checks"]["ast_violations"]
+    assert "dynamic_primitive_alias:compiler" in cert["checks"]["ast_violations"]
+
+
+def test_ast_rejects_exec_via_getattr_call_path(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "exec_getattr_path.py"
+    target.write_text(
+        "import builtins\n"
+        "getattr(builtins, 'exec')('x = 42')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("security.cryovant.verify_session", lambda token: True)
+    cert = GateCertifier().certify(target, {"cryovant_token": "e" * 24})
+    assert cert["passed"] is False
+    assert cert["checks"]["ast_ok"] is False
+    assert "attribute_dynamic_primitive:builtins.exec" in cert["checks"]["ast_violations"]
