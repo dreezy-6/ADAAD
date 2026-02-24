@@ -239,6 +239,11 @@ def test_user_console_uses_external_script_for_csp_compatibility() -> None:
     assert "function renderInsights(items)" in script
     assert "id=\"uxSummary\"" in html
     assert "'/ux/events'" in script
+    assert "function renderUxMetricsCard(summary)" in script
+    assert "function markFirstSuccess(feature, metadata)" in script
+    assert "function markFeatureCompletion(feature, metadata)" in script
+    assert "abandoned_config" in script
+    assert "id=\"uxMetricsCard\"" in html
     assert "Expand insight details" in script
 
 def test_risk_instability_uses_weighted_deterministic_formula() -> None:
@@ -852,18 +857,27 @@ def test_validate_ux_event_requires_type_session_and_feature() -> None:
 
 def test_ux_summary_aggregates_recent_metrics_events() -> None:
     entries = [
-        {"event": "aponi_ux_event", "payload": {"event_type": "feature_entry", "session_id": "s1", "feature": "dashboard_loaded"}},
-        {"event": "aponi_ux_event", "payload": {"event_type": "interaction", "session_id": "s1", "feature": "queue_submit"}},
-        {"event": "aponi_ux_event", "payload": {"event_type": "interaction", "session_id": "s2", "feature": "history_filter"}},
+        {"event": "aponi_ux_event", "payload": {"event_type": "feature_entry", "session_id": "s1", "feature": "dashboard_loaded", "metadata": {"execution_id": "e1"}}},
+        {"event": "aponi_ux_event", "payload": {"event_type": "interaction", "session_id": "s1", "feature": "queue_submit", "metadata": {"execution_id": "e1"}}},
+        {"event": "aponi_ux_event", "payload": {"event_type": "interaction", "session_id": "s2", "feature": "history_filter", "metadata": {"execution_id": "e1"}}},
+        {"event": "aponi_ux_event", "payload": {"event_type": "feature_completion", "session_id": "s1", "feature": "dashboard_loaded", "metadata": {"execution_id": "e1"}}},
+        {"event": "aponi_ux_event", "payload": {"event_type": "first_success", "session_id": "s1", "feature": "queue_submit", "metadata": {"elapsed_ms": 250, "execution_id": "e1"}}},
+        {"event": "aponi_ux_event", "payload": {"event_type": "undo", "session_id": "s1", "feature": "queue_submit", "metadata": {"execution_id": "e1"}}},
+        {"event": "aponi_ux_event", "payload": {"event_type": "abandoned_config", "session_id": "s3", "feature": "queue_configure", "metadata": {"execution_id": "e2"}}},
         {"event": "other_event", "payload": {}},
     ]
     with patch("ui.aponi_dashboard.metrics.tail", return_value=entries):
         summary = aponi_dashboard._ux_summary(window=50)
 
     assert summary["window"] == 50
-    assert summary["event_count"] == 3
-    assert summary["unique_sessions"] == 2
+    assert summary["event_count"] == 7
+    assert summary["unique_sessions"] == 3
     assert summary["counts"]["interaction"] == 2
+    assert summary["abandoned_configure_flows"] == 1
+    assert summary["interactions_per_execution"] == 1.0
+    assert summary["undo_frequency"] == 0.5
+    assert summary["time_to_first_success_ms"]["average"] == 250.0
+    assert summary["feature_entry_vs_completion"]["dashboard_loaded"]["completion_rate"] == 1.0
 
 
 def test_execution_control_validation_requires_dedicated_contract() -> None:

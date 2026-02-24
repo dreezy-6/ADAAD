@@ -316,6 +316,11 @@ def _ux_summary(window: int = 200) -> Dict[str, object]:
     per_type = {event_type: 0 for event_type in sorted(UX_EVENT_TYPES)}
     sessions: set[str] = set()
     features: set[str] = set()
+    feature_entries: Dict[str, int] = {}
+    feature_completions: Dict[str, int] = {}
+    first_success_durations_ms: List[float] = []
+    interactions_per_execution: Dict[str, int] = {}
+    executed_ids: set[str] = set()
     for entry in ux_events:
         payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
         event_type = str(payload.get("event_type", "")).strip().lower()
@@ -323,16 +328,52 @@ def _ux_summary(window: int = 200) -> Dict[str, object]:
             per_type[event_type] += 1
         session_id = str(payload.get("session_id", "")).strip()
         feature = str(payload.get("feature", "")).strip().lower()
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        execution_id = str(metadata.get("execution_id", "")).strip()
         if session_id:
             sessions.add(session_id)
         if feature:
             features.add(feature)
+        if event_type == "feature_entry" and feature:
+            feature_entries[feature] = feature_entries.get(feature, 0) + 1
+        if event_type == "feature_completion" and feature:
+            feature_completions[feature] = feature_completions.get(feature, 0) + 1
+        if event_type == "first_success":
+            elapsed_ms = metadata.get("elapsed_ms")
+            if isinstance(elapsed_ms, (int, float)):
+                first_success_durations_ms.append(max(0.0, float(elapsed_ms)))
+        if execution_id and event_type in {"feature_entry", "feature_completion", "first_success", "abandoned_config"}:
+            executed_ids.add(execution_id)
+        if execution_id and event_type == "interaction":
+            interactions_per_execution[execution_id] = interactions_per_execution.get(execution_id, 0) + 1
+
+    total_interactions = per_type.get("interaction", 0)
+    execution_count = max(len(executed_ids), len(interactions_per_execution), 1)
+    completion_ratio: Dict[str, Dict[str, float | int]] = {}
+    for feature_name in sorted(set(feature_entries) | set(feature_completions)):
+        entries = feature_entries.get(feature_name, 0)
+        completions = feature_completions.get(feature_name, 0)
+        completion_ratio[feature_name] = {
+            "entry": entries,
+            "completion": completions,
+            "completion_rate": round((completions / entries), 3) if entries else 0.0,
+        }
+
     return {
         "window": window,
         "event_count": len(ux_events),
         "unique_sessions": len(sessions),
         "features_seen": sorted(features),
         "counts": per_type,
+        "time_to_first_success_ms": {
+            "samples": len(first_success_durations_ms),
+            "average": round(sum(first_success_durations_ms) / len(first_success_durations_ms), 2) if first_success_durations_ms else 0.0,
+            "p95": round(_review_percentile(sorted(first_success_durations_ms), 95), 2) if first_success_durations_ms else 0.0,
+        },
+        "interactions_per_execution": round(total_interactions / execution_count, 3),
+        "abandoned_configure_flows": per_type.get("abandoned_config", 0),
+        "undo_frequency": round(per_type.get("undo", 0) / max(total_interactions, 1), 3),
+        "feature_entry_vs_completion": completion_ratio,
     }
 
 
@@ -1697,6 +1738,7 @@ class AponiDashboard:
     <section><h2>Risk instability</h2><pre id="instability">Loading...</pre></section>
     <section><h2>Replay divergence</h2><pre id="replay">Loading...</pre></section>
     <section><h2>Evolution timeline (latest)</h2><pre id="timeline">Loading...</pre></section>
+    <section data-card-key="ux-metrics"><h2>Profile/Insights · UX metrics summary</h2><pre id="uxMetricsCard">Loading...</pre></section>
   </main>
   <aside id="controlPanel" class="floating-panel" aria-label="Aponi command initiator">
     <div id="controlPanelHeader" class="floating-header">
@@ -1800,6 +1842,24 @@ async function paint(id, endpoint) {
   } catch (err) {
     el.textContent = 'Failed to load ' + endpoint + ': ' + err;
   }
+}
+
+function renderUxMetricsCard(summary) {
+  const el = document.getElementById('uxMetricsCard');
+  if (!el || !summary || typeof summary !== 'object') return;
+  const firstSuccess = summary.time_to_first_success_ms || {};
+  const entryVsCompletion = summary.feature_entry_vs_completion || {};
+  const topFeature = Object.entries(entryVsCompletion)
+    .sort((a, b) => (Number((b[1] || {}).entry || 0) - Number((a[1] || {}).entry || 0)))[0];
+  const completionRate = topFeature ? Number((topFeature[1] || {}).completion_rate || 0) : 0;
+  el.textContent = [
+    `TTFS avg: ${Number(firstSuccess.average || 0).toFixed(1)} ms`,
+    `TTFS p95: ${Number(firstSuccess.p95 || 0).toFixed(1)} ms`,
+    `Interactions / execution: ${Number(summary.interactions_per_execution || 0).toFixed(2)}`,
+    `Abandoned configure flows: ${Number(summary.abandoned_configure_flows || 0)}`,
+    `Undo frequency: ${(Number(summary.undo_frequency || 0) * 100).toFixed(1)}%`,
+    topFeature ? `Top feature completion: ${topFeature[0]} ${(completionRate * 100).toFixed(1)}%` : 'Top feature completion: n/a',
+  ].join(' | ');
 }
 
 function reorderHomeCards(mode) {
@@ -1999,6 +2059,11 @@ async function queueIntent() {
   if (machine) machine.transition('configure');
   const validationError = validateConfiguration(commandPayload);
   if (validationError) {
+    emitUxEvent('abandoned_config', 'queue_configure', {
+      reason: 'validation_failed',
+      validation_error: validationError,
+      execution_id: uxSession.activeExecutionId || '',
+    });
     if (machine) machine.transition('failed');
     if (status) status.textContent = validationError;
     return;
@@ -2014,6 +2079,10 @@ async function queueIntent() {
     const statusLabel = response.ok ? '' : `[HTTP ${response.status}] `;
     if (status) status.textContent = statusLabel + JSON.stringify(payload, null, 2);
     if (machine) machine.transition(response.ok ? 'complete' : 'failed');
+    if (response.ok) {
+      markFirstSuccess('queue_submit', { command_type: commandPayload.type });
+      markFeatureCompletion('queue_submit', { command_type: commandPayload.type });
+    }
     await refreshControlQueue();
   } catch (err) {
     if (machine) machine.transition('failed');
@@ -2107,10 +2176,16 @@ function toCardModelFromHistoryRerun(entry) { return { source: 'history-rerun', 
 
 function wireExecutionActions() {
   document.getElementById('executionCancel')?.addEventListener('click', async () => {
+    markFeatureEntry('execution_cancel');
+    markInteraction('execution_cancel_click');
     await queueExecutionControl('cancel', executionState.activeEntry);
+    markFeatureCompletion('execution_cancel');
   });
   document.getElementById('executionFork')?.addEventListener('click', () => {
+    markFeatureEntry('execution_fork');
+    markInteraction('execution_fork_click');
     hydrateForkDraft(executionState.activeEntry);
+    markFeatureCompletion('execution_fork');
   });
 }
 
@@ -2145,11 +2220,128 @@ function reorderHomeCards(mode) {
 }
 function setupViews() {}
 function setupModeSwitcher() { reorderHomeCards('alpha'); }
-function setupModeTracking() {}
-function markFeatureEntry() {}
-function markInteraction() {}
-function registerUndoAction() {}
-function hydrateForkDraft() {}
+
+function loadUxSessionState() {
+  try {
+    const raw = localStorage.getItem(UX_SESSION_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        parsed.interactions = Number(parsed.interactions || 0);
+        parsed.undoCount = Number(parsed.undoCount || 0);
+        parsed.executionSeq = Number(parsed.executionSeq || 0);
+        return parsed;
+      }
+    }
+  } catch (_) {
+    // ignore malformed local state
+  }
+  return {
+    sessionId: `ux-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    startedAt: Date.now(),
+    interactions: 0,
+    undoCount: 0,
+    executionSeq: 0,
+    activeFeature: '',
+    activeExecutionId: '',
+    firstSuccessSent: false,
+  };
+}
+
+const uxSession = loadUxSessionState();
+
+function persistUxSessionState() {
+  localStorage.setItem(UX_SESSION_KEY, JSON.stringify(uxSession));
+}
+
+async function emitUxEvent(eventType, feature, metadata) {
+  const payload = {
+    event_type: eventType,
+    session_id: uxSession.sessionId,
+    feature: feature || uxSession.activeFeature || 'dashboard',
+    metadata: metadata || {},
+  };
+  try {
+    await fetch('/ux/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) {
+    // best effort telemetry
+  }
+}
+
+function setupModeTracking() {
+  window.addEventListener('beforeunload', () => {
+    if (window.aponiControlMachine && window.aponiControlMachine.getState() === 'configure') {
+      emitUxEvent('abandoned_config', 'queue_configure', {
+        reason: 'navigation_before_completion',
+        interactions: uxSession.interactions,
+        execution_id: uxSession.activeExecutionId || '',
+      });
+    }
+  });
+}
+
+function markFeatureEntry(feature) {
+  uxSession.activeFeature = feature || 'dashboard';
+  uxSession.executionSeq += 1;
+  uxSession.startedAt = Date.now();
+  uxSession.activeExecutionId = `${uxSession.sessionId}-exec-${uxSession.executionSeq}`;
+  uxSession.firstSuccessSent = false;
+  emitUxEvent('feature_entry', uxSession.activeFeature, {
+    execution_id: uxSession.activeExecutionId,
+  });
+  persistUxSessionState();
+}
+
+function markFeatureCompletion(feature, metadata) {
+  const resolvedFeature = feature || uxSession.activeFeature || 'dashboard';
+  emitUxEvent('feature_completion', resolvedFeature, {
+    execution_id: uxSession.activeExecutionId || '',
+    ...(metadata || {}),
+  });
+  persistUxSessionState();
+}
+
+function markInteraction(action, metadata) {
+  uxSession.interactions += 1;
+  emitUxEvent('interaction', uxSession.activeFeature || 'dashboard', {
+    action: action || 'interaction',
+    interactions: uxSession.interactions,
+    undo_count: uxSession.undoCount,
+    execution_id: uxSession.activeExecutionId || '',
+    ...(metadata || {}),
+  });
+  persistUxSessionState();
+}
+
+function markFirstSuccess(feature, metadata) {
+  if (uxSession.firstSuccessSent) return;
+  uxSession.firstSuccessSent = true;
+  emitUxEvent('first_success', feature || uxSession.activeFeature || 'dashboard', {
+    elapsed_ms: Math.max(0, Date.now() - Number(uxSession.startedAt || Date.now())),
+    interactions: uxSession.interactions,
+    execution_id: uxSession.activeExecutionId || '',
+    ...(metadata || {}),
+  });
+  persistUxSessionState();
+}
+
+function registerUndoAction(metadata) {
+  uxSession.undoCount += 1;
+  emitUxEvent('undo', uxSession.activeFeature || 'dashboard', {
+    undo_count: uxSession.undoCount,
+    execution_id: uxSession.activeExecutionId || '',
+    ...(metadata || {}),
+  });
+  persistUxSessionState();
+}
+
+function hydrateForkDraft(entry) {
+  registerUndoAction({ action: 'hydrate_fork_draft', target_command_id: entry && entry.command_id ? entry.command_id : '' });
+}
 
 async function queueExecutionControlForLatest(type) {
   const status = document.getElementById('controlStatus');
@@ -2170,13 +2362,28 @@ async function queueExecutionControlForLatest(type) {
 
 async function refresh() {
   const intelligence = await paint('intelligence', '/system/intelligence');
+  const uxSummaryPromise = (async () => {
+    try {
+      const response = await fetch('/ux/summary', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`endpoint returned HTTP ${response.status}`);
+      const payload = await response.json();
+      const uxSummaryEl = document.getElementById('uxSummary');
+      if (uxSummaryEl) uxSummaryEl.textContent = JSON.stringify(payload, null, 2);
+      renderUxMetricsCard(payload);
+    } catch (err) {
+      const uxSummaryEl = document.getElementById('uxSummary');
+      const uxCardEl = document.getElementById('uxMetricsCard');
+      if (uxSummaryEl) uxSummaryEl.textContent = 'Failed to load /ux/summary: ' + err;
+      if (uxCardEl) uxCardEl.textContent = 'Failed to load UX metrics card: ' + err;
+    }
+  })();
   await Promise.all([
     paint('state', '/state'),
     paint('risk', '/risk/summary'),
     paint('instability', '/risk/instability'),
     paint('replay', '/replay/divergence'),
     paint('timeline', '/evolution/timeline'),
-    paint('uxSummary', '/ux/summary'),
+    uxSummaryPromise,
     refreshHistory(),
     refreshControlQueue(),
     refreshActionCards(),
@@ -2192,8 +2399,8 @@ setupModeSwitcher();
 refreshSkillProfiles();
 wireExecutionActions();
 window.aponiControlMachine = createControlStateMachine();
-document.getElementById('queueSubmit')?.addEventListener('click', () => { markInteraction('queue_submit_click'); queueIntent(); });
-document.getElementById('queueRefresh')?.addEventListener('click', () => { markInteraction('queue_refresh_click'); refreshControlQueue(); });
+document.getElementById('queueSubmit')?.addEventListener('click', () => { markFeatureEntry('queue_submit'); markInteraction('queue_submit_click'); queueIntent(); });
+document.getElementById('queueRefresh')?.addEventListener('click', () => { markFeatureEntry('queue_refresh'); markInteraction('queue_refresh_click'); refreshControlQueue(); markFeatureCompletion('queue_refresh'); });
 document.getElementById('historyTypeFilter')?.addEventListener('change', refreshHistory);
 document.getElementById('historyDateFrom')?.addEventListener('change', refreshHistory);
 document.getElementById('historyDateTo')?.addEventListener('change', refreshHistory);
