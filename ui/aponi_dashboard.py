@@ -646,6 +646,8 @@ class AponiDashboard:
                 if parsed.path.startswith("/policy/simulate"):
                     self._send_json({"ok": False, "error": "method_not_allowed", "detail": "policy/simulate is GET only"}, status_code=405)
                     return
+                # Route priority: /ux/events and /control/telemetry are handled before generic
+                # /control/queue validation so observability stays available even when command surface is off.
                 if not (parsed.path.startswith("/control/queue") or parsed.path.startswith("/control/telemetry") or parsed.path.startswith("/ux/events")):
                     self.send_response(404)
                     self.end_headers()
