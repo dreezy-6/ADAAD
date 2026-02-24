@@ -130,5 +130,28 @@ class EvolutionRuntimeComponentsTest(unittest.TestCase):
         self.assertTrue(detail["cause_buckets"]["digest_mismatch"])
 
 
+    def test_after_mutation_cycle_emits_regression_signal_and_forces_rotation_on_severe_decline(self) -> None:
+        runtime = EvolutionRuntime()
+        runtime.boot()
+
+        for index, score in enumerate([0.95, 0.91, 0.86, 0.80, 0.73, 0.66, 0.59, 0.52], start=1):
+            runtime.ledger.append_event(
+                "GovernanceDecisionEvent",
+                {"epoch_id": runtime.current_epoch_id, "accepted": True, "impact_score": 0.1},
+            )
+            result = runtime.after_mutation_cycle(
+                {
+                    "cycle_id": f"cycle-{index:03d}",
+                    "mutation_id": f"m-{index:03d}",
+                    "fitness_score": score,
+                    "status": "ok",
+                }
+            )
+
+        assert result["fitness_regression"]["severity"] == "severe"
+        assert runtime.epoch_manager.should_rotate() is True
+        assert runtime.epoch_manager.rotation_reason() == "severe_fitness_regression"
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ from typing import Any, Dict
 from app.agents.mutation_request import MutationRequest
 from runtime.evolution.baseline import BaselineStore
 from runtime.evolution.epoch import EpochManager
+from runtime.evolution.fitness_regression import RegressionSeverity, emit_fitness_regression_signal
 from runtime.evolution.governor import EvolutionGovernor
 from runtime.evolution.entropy_forecast import EntropyBudgetForecaster
 from runtime.evolution.lineage_v2 import LineageIntegrityError, LineageLedgerV2
@@ -51,6 +52,7 @@ class EvolutionRuntime:
         self.baseline_hash = ""
         self.epoch_cumulative_entropy_bits = 0
         self._continuity_verified_epoch_id = ""
+        self.fitness_regression_signal = {}
 
     @property
     def fail_closed(self) -> bool:
@@ -180,6 +182,12 @@ class EvolutionRuntime:
         epoch_id = state.epoch_id
         cycle_id = str(result.get("cycle_id") or result.get("mutation_id") or f"cycle-{state.mutation_count:06d}")
         cycle_metrics = self.metrics_emitter.emit_cycle_metrics(epoch_id=epoch_id, cycle_id=cycle_id, result=result)
+        regression_signal = emit_fitness_regression_signal(self.metrics_emitter._read_history())
+        self.fitness_regression_signal = regression_signal.to_dict()
+        self.governor.apply_fitness_regression_signal(epoch_id=epoch_id, signal=regression_signal)
+        if regression_signal.severity == RegressionSeverity.SEVERE:
+            self.governor.escalate_governance_debt(epoch_id=epoch_id, signal=regression_signal)
+            self.epoch_manager.trigger_force_end("severe_fitness_regression")
 
         expected = self.ledger.get_epoch_digest(epoch_id) or "sha256:0"
         try:
@@ -192,6 +200,7 @@ class EvolutionRuntime:
             return {
                 "epoch": current,
                 "metrics": cycle_metrics,
+                "fitness_regression": self.fitness_regression_signal,
                 "replay": {
                     "epoch_id": epoch_id,
                     "replay_passed": False,
@@ -250,7 +259,7 @@ class EvolutionRuntime:
 
         current = self.epoch_manager.get_active().to_dict()
         self._sync_from_epoch(current)
-        return {"epoch": current, "replay": replay_result, "metrics": cycle_metrics}
+        return {"epoch": current, "replay": replay_result, "metrics": cycle_metrics, "fitness_regression": self.fitness_regression_signal}
 
     def before_epoch_rotation(self, reason: str) -> Dict[str, Any]:
         current = self.epoch_manager.get_active()
@@ -261,6 +270,7 @@ class EvolutionRuntime:
         payload = state.to_dict()
         self.epoch_digest = self.ledger.get_epoch_digest(payload["epoch_id"])
         self._continuity_verified_epoch_id = ""
+        self.fitness_regression_signal = {}
         self._sync_from_epoch(payload)
         return payload
 

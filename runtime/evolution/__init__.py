@@ -25,6 +25,7 @@ from runtime.evolution.scoring_validator import validate_scoring_payload
 from runtime.evolution.replay_verifier import ReplayVerifier
 from runtime.evolution.replay_attestation import ReplayProofBuilder, verify_replay_proof_bundle
 from runtime.evolution.runtime import EvolutionRuntime
+from runtime.evolution.fitness_regression import FitnessRegressionSignal, RegressionSeverity, emit_fitness_regression_signal
 from runtime.evolution.telemetry_audit import (
     detect_entropy_drift,
     get_epoch_entropy_breakdown,
@@ -74,6 +75,9 @@ __all__ = [
     "ReplayProofBuilder",
     "verify_replay_proof_bundle",
     "EvolutionRuntime",
+    "FitnessRegressionSignal",
+    "RegressionSeverity",
+    "emit_fitness_regression_signal",
     "get_epoch_entropy_breakdown",
     "get_epoch_entropy_envelope_summary",
     "detect_entropy_drift",
