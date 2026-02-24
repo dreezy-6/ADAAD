@@ -4,11 +4,12 @@ import json
 import os
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
 
 import logging
+
+from runtime.governance.foundation import RuntimeDeterminismProvider, default_provider, require_replay_safe_provider
 
 LOG = logging.getLogger(__name__)
 
@@ -16,8 +17,20 @@ DEFAULT_APONI_URL = os.environ.get("APONI_API_URL", "http://localhost:5000/api/v
 ERROR_LOG = Path("logs/aponi_sync_errors.log")
 
 
-def push_to_dashboard(event_type: str, data: Dict[str, object]) -> bool:
-    payload = {"ts": datetime.now(timezone.utc).isoformat(), "type": event_type, "payload": data}
+def push_to_dashboard(
+    event_type: str,
+    data: Dict[str, object],
+    *,
+    provider: RuntimeDeterminismProvider | None = None,
+) -> bool:
+    runtime_provider = provider or default_provider()
+    require_replay_safe_provider(
+        runtime_provider,
+        replay_mode=os.getenv("ADAAD_REPLAY_MODE", "off"),
+        recovery_tier=os.getenv("ADAAD_RECOVERY_TIER"),
+    )
+
+    payload = {"ts": runtime_provider.iso_now(), "type": event_type, "payload": data}
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
     req = urllib.request.Request(
