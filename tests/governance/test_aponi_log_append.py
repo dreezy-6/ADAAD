@@ -7,7 +7,19 @@ from unittest import mock
 import json
 import urllib.error
 
+from runtime.governance.foundation import SeededDeterminismProvider
 from runtime.integrations.aponi_sync import push_to_dashboard
+
+
+class _Response:
+    def __init__(self, status: int) -> None:
+        self.status = status
+
+    def __enter__(self) -> _Response:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
 
 
 def test_error_logs_append(tmp_path: Path) -> None:
@@ -34,3 +46,44 @@ def test_transport_failures_emit_reason_code_without_secret(tmp_path: Path) -> N
     assert entry["reason_code"] == "aponi_transport_failed"
     assert entry["error_type"] == "URLError"
     assert entry["payload"]["secret"] == "do-not-leak"
+
+
+def test_push_uses_injected_provider_timestamp_deterministically() -> None:
+    provider = SeededDeterminismProvider(seed="seed", fixed_now=None)
+    captured: dict[str, object] = {}
+
+    def _ok(req, *_args, **_kwargs):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return _Response(status=204)
+
+    with mock.patch("urllib.request.urlopen", side_effect=_ok):
+        assert push_to_dashboard("TEST_EVENT", {"a": 1}, provider=provider) is True
+
+    sent = captured["payload"]
+    assert isinstance(sent, dict)
+    assert sent["ts"] == provider.iso_now()
+    assert sent["type"] == "TEST_EVENT"
+    assert sent["payload"] == {"a": 1}
+
+
+def test_success_and_error_entries_share_timestamp_format(tmp_path: Path) -> None:
+    provider = SeededDeterminismProvider(seed="seed")
+    log_path = tmp_path / "aponi.log"
+    captured: dict[str, object] = {}
+
+    def _ok(req, *_args, **_kwargs):
+        captured["success"] = json.loads(req.data.decode("utf-8"))
+        return _Response(status=200)
+
+    with mock.patch("runtime.integrations.aponi_sync.ERROR_LOG", log_path):
+        with mock.patch("urllib.request.urlopen", side_effect=_ok):
+            assert push_to_dashboard("TEST_EVENT", {"ok": True}, provider=provider) is True
+
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("fail")):
+            assert push_to_dashboard("TEST_EVENT", {"ok": False}, provider=provider) is False
+
+    error_entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+    success_entry = captured["success"]
+    assert isinstance(success_entry, dict)
+    assert success_entry["ts"] == error_entry["ts"]
+    assert success_entry["ts"].endswith("Z")
