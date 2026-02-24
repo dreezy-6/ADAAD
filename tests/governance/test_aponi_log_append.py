@@ -44,7 +44,7 @@ def test_transport_failures_emit_reason_code_without_secret(tmp_path: Path) -> N
 
     entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
     assert entry["reason_code"] == "aponi_transport_failed"
-    assert entry["error_type"] == "URLError"
+    assert entry["error_class"] == "url_error"
     assert entry["payload"]["secret"] == "do-not-leak"
 
 
@@ -122,5 +122,35 @@ def test_transport_failure_handling_is_unchanged(tmp_path: Path) -> None:
 
     entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
     assert entry["reason_code"] == "aponi_transport_failed"
-    assert entry["error_type"] == "TimeoutError"
+    assert entry["error_class"] == "timeout_error"
     assert entry["payload"] == {"a": 1}
+
+
+def test_success_payload_matches_canonical_schema() -> None:
+    provider = SeededDeterminismProvider(seed="seed", fixed_now=None)
+    captured: dict[str, object] = {}
+
+    def _ok(req, *_args, **_kwargs):
+        captured["payload"] = json.loads(req.data.decode("utf-8"))
+        return _Response(status=204)
+
+    with mock.patch("urllib.request.urlopen", side_effect=_ok):
+        assert push_to_dashboard("TEST_EVENT", {"a": 1}, provider=provider) is True
+
+    sent = captured["payload"]
+    assert isinstance(sent, dict)
+    assert set(sent.keys()) == {"ts", "type", "payload"}
+    assert sent["type"] == "TEST_EVENT"
+    assert sent["payload"] == {"a": 1}
+
+
+def test_failure_log_entry_matches_canonical_error_schema(tmp_path: Path) -> None:
+    log_path = tmp_path / "aponi.log"
+    with mock.patch("runtime.integrations.aponi_sync.ERROR_LOG", log_path):
+        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError("http://x", 503, "fail", {}, None)):
+            assert push_to_dashboard("TEST_EVENT", {"a": 1}) is False
+
+    entry = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+    assert set(entry.keys()) == {"ts", "type", "reason_code", "error_class", "error", "payload"}
+    assert entry["reason_code"] == "aponi_transport_failed"
+    assert entry["error_class"] == "http_error"
