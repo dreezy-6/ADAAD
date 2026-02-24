@@ -5,19 +5,24 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping
 
 from runtime import ROOT_DIR, metrics
+from runtime.governance.foundation import canonical_json, sha256_prefixed_digest
 from runtime.timeutils import now_iso
+from runtime.tools.rollback_certificate import issue_rollback_certificate
+from security.promotion_manifests import write_promotion_evidence_bundle
 from security import cryovant
 from security.ledger import journal
 
 ELEMENT_ID = "Fire"
 TRUST_MODES = {"dev", "prod"}
 LIFECYCLE_STATE_DIR = ROOT_DIR / "runtime" / "lifecycle_states"
+KNOWN_AGENT_ID_PREFIXES = ("architect", "executor", "validator", "mutator", "claude-proposal-agent", "sample")
 
 
 class LifecycleTransitionError(RuntimeError):
@@ -64,7 +69,31 @@ class MutationLifecycleContext:
             "current_state": self.current_state,
             "ts": now_iso(),
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        encoded = json.dumps(payload, ensure_ascii=False, indent=2)
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+                tmp_path = Path(handle.name)
+            tmp_path.replace(path)
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except Exception:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink()
+            raise
 
     def cleanup_state(self) -> None:
         path = self.state_path()
@@ -93,12 +122,24 @@ class MutationLifecycleContext:
         )
 
 
-def _signature_valid(signature: str, trust_mode: str) -> tuple[bool, str]:
-    if cryovant.verify_signature(signature):
+def _signature_valid(signature: str, trust_mode: str, context: MutationLifecycleContext) -> tuple[bool, str]:
+    if cryovant.verify_payload_signature(
+        context.epoch_id.encode("utf-8"),
+        signature,
+        context.agent_id,
+        specific_env_prefix="ADAAD_MUTATION_LIFECYCLE_KEY_",
+        generic_env_var="ADAAD_MUTATION_LIFECYCLE_SIGNING_KEY",
+        fallback_namespace="adaad-mutation-lifecycle-dev-secret",
+    ):
         return True, "verified"
     if trust_mode == "dev" and cryovant.dev_signature_allowed(signature):
         return True, "dev_signature"
     return False, "invalid_signature"
+
+
+def _known_agent_prefix_ok(agent_id: str) -> bool:
+    normalized = str(agent_id or "").strip().lower()
+    return any(normalized.startswith(prefix) for prefix in KNOWN_AGENT_ID_PREFIXES)
 
 
 def _founders_law_ok(context: MutationLifecycleContext) -> tuple[bool, list[str]]:
@@ -129,10 +170,40 @@ def _transition_payload(*, from_state: str, to_state: str, context: MutationLife
     }
 
 
-def _record_success(payload: Dict[str, Any]) -> None:
+def _record_success(payload: Dict[str, Any]) -> str:
     journal.write_entry(agent_id=str(payload["agent_id"]), action="mutation_lifecycle_transition", payload=payload)
-    journal.append_tx(tx_type="mutation_lifecycle_transition", payload=payload)
+    tx_entry = journal.append_tx(tx_type="mutation_lifecycle_transition", payload=payload)
     metrics.log(event_type="mutation_lifecycle_transition", payload=payload, level="INFO", element_id=ELEMENT_ID)
+    return str(tx_entry.get("hash") or "")
+
+
+def _emit_promotion_evidence_bundle(
+    *,
+    context: MutationLifecycleContext,
+    from_state: str,
+    to_state: str,
+    guard_report: Dict[str, Any],
+    ledger_hash: str,
+) -> None:
+    output_dir = context.metadata.get("promotion_manifests_dir")
+    fitness_history = context.metadata.get("fitness_history")
+    if not isinstance(fitness_history, list):
+        fitness_history = [context.fitness_score] if context.fitness_score is not None else []
+    bundle = {
+        "mutation_id": context.mutation_id,
+        "epoch_id": context.epoch_id,
+        "from_state": from_state,
+        "to_state": to_state,
+        "guard_report": guard_report,
+        "cert_refs": dict(context.cert_refs),
+        "fitness_history": list(fitness_history),
+        "ledger_hash_at_promotion": ledger_hash,
+    }
+    write_promotion_evidence_bundle(
+        mutation_id=context.mutation_id,
+        bundle=bundle,
+        output_dir=Path(output_dir) if output_dir else None,
+    )
 
 
 def _record_rejection(payload: Dict[str, Any]) -> None:
@@ -168,15 +239,16 @@ def transition(current_state: str, next_state: str, context: MutationLifecycleCo
         raise LifecycleTransitionError(f"undeclared_transition:{current_state}->{next_state}")
 
     trust_mode = (context.trust_mode or os.getenv("ADAAD_TRUST_MODE", "dev")).strip().lower()
-    signature_ok, signature_method = _signature_valid(context.signature or "", trust_mode)
+    signature_ok, signature_method = _signature_valid(context.signature or "", trust_mode, context)
     founders_ok, founders_failures = _founders_law_ok(context)
     cert_ok = True if not rule["require_cert"] else bool(context.cert_refs)
     fitness_ok = True
     if rule["require_fitness"]:
         fitness_ok = context.fitness_score is not None and context.fitness_score >= context.fitness_threshold
 
+    agent_prefix_ok = _known_agent_prefix_ok(context.agent_id)
     guard_report = {
-        "ok": signature_ok and founders_ok and cert_ok and fitness_ok and trust_mode in rule["allowed_trust_modes"],
+        "ok": signature_ok and founders_ok and cert_ok and fitness_ok and trust_mode in rule["allowed_trust_modes"] and agent_prefix_ok,
         "cryovant_signature_validity": {"ok": signature_ok, "method": signature_method},
         "founders_law_invariant_gate": {"ok": founders_ok, "failures": founders_failures},
         "fitness_threshold_gate": {
@@ -191,6 +263,7 @@ def transition(current_state: str, next_state: str, context: MutationLifecycleCo
             "allowed": sorted(rule["allowed_trust_modes"]),
         },
         "cert_reference_gate": {"ok": cert_ok, "required": bool(rule["require_cert"])},
+        "known_agent_id_prefix_gate": {"ok": agent_prefix_ok, "allowed_prefixes": sorted(KNOWN_AGENT_ID_PREFIXES)},
     }
     context.trust_mode = trust_mode
 
@@ -203,7 +276,14 @@ def transition(current_state: str, next_state: str, context: MutationLifecycleCo
     context.stage_timestamps[next_state] = now_iso()
     context.current_state = next_state
     payload = _transition_payload(from_state=current_state, to_state=next_state, context=context, guard_report=guard_report)
-    _record_success(payload)
+    ledger_hash = _record_success(payload)
+    _emit_promotion_evidence_bundle(
+        context=context,
+        from_state=current_state,
+        to_state=next_state,
+        guard_report=guard_report,
+        ledger_hash=ledger_hash,
+    )
     if next_state in {"completed", "pruned"}:
         context.cleanup_state()
     else:
@@ -224,6 +304,12 @@ def rollback(context: MutationLifecycleContext, to_state: str, reason: str = "ma
         raise LifecycleTransitionError(f"invalid_rollback_target:{to_state}")
 
     from_state = context.current_state
+    prior_snapshot = {
+        "current_state": context.current_state,
+        "stage_timestamps": dict(context.stage_timestamps),
+        "cert_refs": dict(context.cert_refs),
+    }
+    prior_state_digest = sha256_prefixed_digest(canonical_json(prior_snapshot))
     context.current_state = to_state
     context.stage_timestamps[to_state] = now_iso()
     payload = _transition_payload(
@@ -233,6 +319,40 @@ def rollback(context: MutationLifecycleContext, to_state: str, reason: str = "ma
         guard_report={"ok": True, "rollback": True, "reason": reason},
     )
     _record_success(payload)
+    context.persist()
+
+    restored_snapshot = {
+        "current_state": context.current_state,
+        "stage_timestamps": dict(context.stage_timestamps),
+        "cert_refs": dict(context.cert_refs),
+    }
+    restored_state_digest = sha256_prefixed_digest(canonical_json(restored_snapshot))
+    forward_certificate_digest = str(
+        context.cert_refs.get("forward_certificate_digest")
+        or context.cert_refs.get("certificate_digest")
+        or context.cert_refs.get("bundle_id")
+        or ""
+    )
+    cert = issue_rollback_certificate(
+        mutation_id=context.mutation_id,
+        epoch_id=context.epoch_id,
+        prior_state_digest=prior_state_digest,
+        restored_state_digest=restored_state_digest,
+        trigger_reason=reason,
+        actor_class="MutationLifecycle",
+        completeness_checks={
+            "rollback_target_matches_expected": to_state == expected,
+            "state_persisted": context.state_path().exists(),
+            "state_changed": from_state != to_state,
+        },
+        agent_id=context.agent_id,
+        forward_certificate_digest=forward_certificate_digest,
+    )
+    context.metadata["last_rollback_certificate_digest"] = cert.digest
+    if isinstance(context.cert_refs, dict):
+        context.cert_refs["rollback_certificate_digest"] = cert.digest
+        if forward_certificate_digest:
+            context.cert_refs["forward_certificate_digest"] = forward_certificate_digest
     context.persist()
     return to_state
 

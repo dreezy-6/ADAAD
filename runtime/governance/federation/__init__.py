@@ -7,15 +7,35 @@ from runtime.governance.federation.coordination import (
     DECISION_CLASS_LOCAL_OVERRIDE,
     DECISION_CLASS_QUORUM,
     DECISION_CLASS_REJECTED,
+    DECISION_CLASS_SPLIT_BRAIN,
     POLICY_PRECEDENCE_BOTH,
     POLICY_PRECEDENCE_FEDERATED,
     POLICY_PRECEDENCE_LOCAL,
+    FederationCoordinationResult,
     FederationDecision,
     FederationPolicyExchange,
     FederationVote,
     evaluate_federation_decision,
     persist_federation_decision,
     resolve_governance_precedence,
+    run_coordination_cycle,
+)
+from runtime.governance.federation.protocol import (
+    FederationProtocolValidationError,
+    decode_handshake_request_envelope,
+    decode_handshake_response_envelope,
+    encode_handshake_request_envelope,
+    encode_handshake_response_envelope,
+)
+from runtime.governance.federation.transport import (
+    FederationTransport,
+    FederationTransportContractError,
+    LocalFederationTransport,
+    validate_federation_transport_envelope,
+)
+from runtime.governance.federation.coherence_validator import (
+    CoherenceReport,
+    FederationCoherenceValidator,
 )
 
 __all__ = [
@@ -24,13 +44,27 @@ __all__ = [
     "DECISION_CLASS_LOCAL_OVERRIDE",
     "DECISION_CLASS_QUORUM",
     "DECISION_CLASS_REJECTED",
+    "DECISION_CLASS_SPLIT_BRAIN",
     "POLICY_PRECEDENCE_BOTH",
     "POLICY_PRECEDENCE_FEDERATED",
     "POLICY_PRECEDENCE_LOCAL",
+    "FederationCoordinationResult",
     "FederationDecision",
     "FederationPolicyExchange",
     "FederationVote",
     "evaluate_federation_decision",
     "persist_federation_decision",
     "resolve_governance_precedence",
+    "run_coordination_cycle",
+    "FederationProtocolValidationError",
+    "decode_handshake_request_envelope",
+    "decode_handshake_response_envelope",
+    "encode_handshake_request_envelope",
+    "encode_handshake_response_envelope",
+    "FederationTransport",
+    "FederationTransportContractError",
+    "LocalFederationTransport",
+    "validate_federation_transport_envelope",
+    "CoherenceReport",
+    "FederationCoherenceValidator",
 ]

@@ -1,45 +1,38 @@
-# Federation Conflict Runbook
+# Federation Conflict Runbook (v0.70.0 file-exchange mode)
 
-This runbook covers deterministic response for replay divergence across federated peers.
+## Scope
 
-## Scenario: Peer digest conflict
+This runbook covers deterministic, file-based federation manifest exchange for air-gapped deployments.
+Network transport is explicitly out of scope for v0.70.0.
 
-Symptoms:
-- Local replay digest differs from one or more peers.
-- Replay verification event includes conflict classes such as `federated_split_brain` or `cross_node_attestation_mismatch`.
+## Split-brain detection
 
-## Response steps
+- Confirm `ADAAD_FEDERATION_ENABLED=true` only where federation coordination is intended.
+- Load manifests from `runtime/governance/federation/manifests/`.
+- Exclude stale manifests older than `ADAAD_FEDERATION_MANIFEST_TTL` seconds.
+- Verify canonical JSON + HMAC signature for each manifest before classification.
+- Classify peer compatibility as:
+  - `full`: matching governance trust mode and law version.
+  - `downlevel`: matching trust mode with compatible law-version family.
+  - `incompatible`: trust mode mismatch or incompatible law family.
 
-1. Confirm local divergence classification and precedence decision.
-   - Inspect `/replay/divergence`
-   - Inspect `/replay/diff?epoch_id=<epoch-id>`
-2. Export local forensic bundle and capture `bundle_id` and `export_metadata.digest`.
-3. Collect corresponding peer evidence bundle and replay proof bundle.
-4. Compare:
-   - replay digest (`replay_proofs`)
-   - checkpoint chain digest
-   - policy artifact metadata fingerprint
-5. If peer signatures verify but digests differ, treat as governance incident:
-   - hold promotion
-   - keep precedence policy explicit (`local`, `federated`, or `both`)
-   - open incident for root-cause triage (partition, config skew, genuine divergence)
+## Peer eviction procedure
 
-## Scenario: unreachable peer
+1. Mark a peer as non-participating when manifests are stale, invalidly signed, or classified `incompatible`.
+2. Record eviction rationale in governance operations evidence.
+3. Do not delete historical evidence; use append-only lineage events.
+4. Re-check peer eligibility only after a fresh, valid manifest is observed.
 
-1. Mark peer status degraded in federation operations log.
-2. Apply configured precedence mode deterministically.
-3. Continue read-only replay verification and capture mismatch context in lineage events.
-4. Reconcile once connectivity is restored; do not rewrite prior evidence.
+## Reconciliation workflow
 
-## Escalation trigger
+1. Acquire an intent lock with `mutation_lock_{intent_id}.lock`.
+2. If lock acquisition fails, treat as contention and retry after operator review.
+3. Re-run manifest compatibility checks using current manifests only.
+4. Apply governance precedence policy deterministically (`local`, `federated`, or `both`).
+5. Release lock and persist reconciliation outcome in lineage records.
 
-Escalate immediately when:
-- divergence persists across multiple epochs,
-- quorum cannot be reached,
-- or policy precedence flips repeatedly between runs.
+## Operational invariants
 
-
-## Implementation reference
-
-- Founders-law compatibility helpers used by federation tests are implemented at `runtime/governance/founders_law_v2.py`.
-- Verify local availability with: `PYTHONPATH=. pytest -q tests/test_founders_law_v2.py tests/governance/test_federation_coordination.py`.
+- Federation is opt-in; default behavior remains air-gapped (`ADAAD_FEDERATION_ENABLED=false`).
+- Lock and manifest TTLs are bounded and deterministic.
+- Signed manifest payloads are canonicalized for reproducible verification.

@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Epoch checkpoint registry for deterministic governance evidence."""
+"""Epoch checkpoint registry for deterministic governance evidence.
+
+Fail-close consumers should rely on :meth:`list_checkpoints` inventory output for
+deterministic checkpoint replay material and chain linkage status.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,31 @@ from runtime.governance.foundation import (
     safe_get,
     sha256_prefixed_digest,
 )
+
+
+def _normalize_hash_link(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ZERO_HASH
+    if raw.startswith("sha256:"):
+        return raw
+    return f"sha256:{raw}"
+
+
+def _checkpoint_material(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "epoch_id": payload.get("epoch_id"),
+        "epoch_digest": payload.get("epoch_digest"),
+        "baseline_digest": payload.get("baseline_digest"),
+        "mutation_count": payload.get("mutation_count"),
+        "promotion_event_count": payload.get("promotion_event_count"),
+        "scoring_event_count": payload.get("scoring_event_count"),
+        "promotion_policy_hash": payload.get("promotion_policy_hash"),
+        "entropy_policy_hash": payload.get("entropy_policy_hash"),
+        "evidence_hash": payload.get("evidence_hash"),
+        "sandbox_policy_hash": payload.get("sandbox_policy_hash"),
+        "prev_checkpoint_hash": payload.get("prev_checkpoint_hash"),
+    }
 
 
 class CheckpointRegistry:
@@ -45,6 +74,16 @@ class CheckpointRegistry:
             candidate = safe_get(entry, "payload", "checkpoint_hash")
             if isinstance(candidate, str) and candidate:
                 latest = candidate
+        return latest
+
+    def _latest_checkpoint_event_hash(self, epoch_id: str) -> str:
+        latest = ZERO_HASH
+        for entry in self.ledger.read_epoch(epoch_id):
+            if safe_get(entry, "type", default="") != "CheckpointGovernanceEvent":
+                continue
+            if safe_get(entry, "payload", "event_type", default="") != "checkpoint_created":
+                continue
+            latest = _normalize_hash_link(str(safe_get(entry, "hash", default="") or ""))
         return latest
 
     def create_checkpoint(self, epoch_id: str) -> Dict[str, Any]:
@@ -78,6 +117,7 @@ class CheckpointRegistry:
         }
         checkpoint_hash = sha256_prefixed_digest(checkpoint_material)
         checkpoint_id = f"chk_{checkpoint_hash.split(':', 1)[1][:16]}"
+        created_at = self.provider.iso_now()
         event = EpochCheckpointEvent(
             epoch_id=epoch_id,
             checkpoint_id=checkpoint_id,
@@ -92,11 +132,63 @@ class CheckpointRegistry:
             promotion_policy_hash=self.promotion_policy_hash,
             evidence_hash=evidence_hash,
             sandbox_policy_hash=self.sandbox_policy_hash,
-            created_at=self.provider.iso_now(),
+            created_at=created_at,
         )
         payload = event.to_payload()
+        prior_checkpoint_event_hash = self._latest_checkpoint_event_hash(epoch_id)
         self.ledger.append_event("EpochCheckpointEvent", payload)
+        checkpoint_event_payload = {
+            "schema_version": "1.0",
+            "event_type": "checkpoint_created",
+            "checkpoint_id": checkpoint_id,
+            "epoch_id": epoch_id,
+            "checkpoint_hash": checkpoint_hash,
+            "checkpoint_manifest_hash": sha256_prefixed_digest(_checkpoint_material(payload)),
+            "prior_checkpoint_event_hash": prior_checkpoint_event_hash,
+            "emitted_at": created_at,
+        }
+        self.ledger.append_event("CheckpointGovernanceEvent", checkpoint_event_payload)
         return payload
+
+    def list_checkpoints(self) -> Dict[str, Any]:
+        """Return deterministic checkpoint inventory grouped by epoch."""
+        epoch_ids = self.ledger.list_epoch_ids()
+        inventory: list[Dict[str, Any]] = []
+        checkpoint_count = 0
+
+        for epoch_id in epoch_ids:
+            previous_hash = ZERO_HASH
+            checkpoints: list[Dict[str, Any]] = []
+            checkpoint_index = 0
+            for entry in self.ledger.read_epoch(epoch_id):
+                if safe_get(entry, "type", default="") != "EpochCheckpointEvent":
+                    continue
+                payload = dict(safe_get(entry, "payload", default={}) or {})
+                checkpoint_hash = str(payload.get("checkpoint_hash") or "")
+                prev_checkpoint_hash = str(payload.get("prev_checkpoint_hash") or "")
+                material = _checkpoint_material(payload)
+                checkpoints.append(
+                    {
+                        "index": checkpoint_index,
+                        "checkpoint_id": str(payload.get("checkpoint_id") or ""),
+                        "checkpoint_hash": checkpoint_hash,
+                        "prev_checkpoint_hash": prev_checkpoint_hash,
+                        "expected_prev_checkpoint_hash": previous_hash,
+                        "chain_linked": prev_checkpoint_hash == previous_hash,
+                        "verification_material": material,
+                        "expected_checkpoint_hash": sha256_prefixed_digest(material),
+                    }
+                )
+                previous_hash = checkpoint_hash or previous_hash
+                checkpoint_count += 1
+                checkpoint_index += 1
+            inventory.append({"epoch_id": epoch_id, "checkpoints": checkpoints})
+
+        return {
+            "epoch_count": len(epoch_ids),
+            "checkpoint_count": checkpoint_count,
+            "epochs": inventory,
+        }
 
 
 __all__ = ["CheckpointRegistry"]

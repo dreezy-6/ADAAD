@@ -8,7 +8,7 @@ from runtime.test_sandbox import TestSandboxResult, TestSandboxStatus
 
 
 class _FakeSandbox:
-    def run_tests_with_retry(self, args=None, retries=1):
+    def run_tests_with_retry(self, args=None, retries=1, preexec_fn=None):
         return TestSandboxResult(
             ok=True,
             output="ok",
@@ -33,7 +33,7 @@ class _ViolationSandbox:
         self.write_paths = tuple(write_paths)
         self.hosts = tuple(hosts)
 
-    def run_tests_with_retry(self, args=None, retries=1):
+    def run_tests_with_retry(self, args=None, retries=1, preexec_fn=None):
         return TestSandboxResult(
             ok=True,
             output="ok",
@@ -60,6 +60,9 @@ def test_hardened_executor_records_evidence():
     assert executor.last_evidence_payload["resource_usage_hash"].startswith("sha256:")
     assert executor.last_evidence_payload["isolation_mode"] == "process"
     assert executor.last_evidence_payload["enforced_controls"]
+    resource_controls = [c for c in executor.last_evidence_payload["enforced_controls"] if c["control"] == "resource_quotas"]
+    assert resource_controls
+    assert resource_controls[0]["mechanism"] == "process_rlimit"
 
 
 def test_hardened_executor_rejects_observed_syscall_violation():

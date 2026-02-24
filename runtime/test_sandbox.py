@@ -131,7 +131,12 @@ class TestSandbox:
             )
             return None
 
-    def run_tests(self, args: Sequence[str] | None = None, keep_sandbox: bool = False) -> TestSandboxResult:
+    def run_tests(
+        self,
+        args: Sequence[str] | None = None,
+        keep_sandbox: bool = False,
+        preexec_fn: Callable[[], None] | None = None,
+    ) -> TestSandboxResult:
         """Execute pytest with timeout and tempdir isolation for each invocation."""
         self._run_pre_hook()
 
@@ -154,6 +159,12 @@ class TestSandbox:
         env["TMP"] = str(sandbox_path)
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
+        preexec_disabled = os.environ.get("ADAAD_TEST_SANDBOX_PREEXEC_DISABLED")
+        if preexec_disabled is not None:
+            preexec = None
+        else:
+            preexec = preexec_fn
+
         try:
             completed = subprocess.run(
                 [sys.executable, "-m", "pytest", *test_args, f"--basetemp={sandbox_path / 'pytest-temp'}"],
@@ -162,6 +173,7 @@ class TestSandbox:
                 timeout=self.timeout_s,
                 cwd=str(self.root_dir),
                 env=env,
+                preexec_fn=preexec,
                 check=False,
             )
             duration_s = time.monotonic() - started
@@ -282,10 +294,11 @@ class TestSandbox:
         args: Sequence[str] | None = None,
         retries: int = 2,
         keep_sandbox: bool = False,
+        preexec_fn: Callable[[], None] | None = None,
     ) -> TestSandboxResult:
         """Retry sandbox test execution on failure."""
         attempts = 0
-        final = self.run_tests(args=args, keep_sandbox=keep_sandbox)
+        final = self.run_tests(args=args, keep_sandbox=keep_sandbox, preexec_fn=preexec_fn)
         while attempts < retries and not final.ok:
             attempts += 1
             metrics.log(
@@ -300,7 +313,7 @@ class TestSandbox:
                 level="WARNING",
                 element_id=ELEMENT_ID,
             )
-            final = self.run_tests(args=args, keep_sandbox=keep_sandbox)
+            final = self.run_tests(args=args, keep_sandbox=keep_sandbox, preexec_fn=preexec_fn)
         return self._with_updates(final, retries=attempts)
 
     def run_tests_parallel(self, test_args_list: list[Sequence[str]]) -> list[TestSandboxResult]:

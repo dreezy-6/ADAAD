@@ -12,19 +12,20 @@
 # limitations under the License.
 
 """
-Runtime package providing core utilities for the ADAAD orchestrator.
+Runtime package stable adapter surface.
+
+Canonical orchestration entrypoint is app.main.
+This module is adapter-only and must not depend on app/ or adaad/orchestrator/.
 """
 
-from pathlib import Path
-
+from adaad.core.root import ROOT_DIR, get_root_dir
 from runtime.import_guard import install_runtime_import_guard
 
 ELEMENT_ID = "Earth"
 
 # Canonical repository root for governance tooling.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-ROOT_DIR = REPO_ROOT
+REPO_ROOT = ROOT_DIR
 
 install_runtime_import_guard()
 
-__all__ = ["ROOT_DIR", "REPO_ROOT", "ELEMENT_ID"]
+__all__ = ["ROOT_DIR", "REPO_ROOT", "ELEMENT_ID", "get_root_dir"]

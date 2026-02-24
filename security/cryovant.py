@@ -16,9 +16,11 @@ Cryovant gatekeeper enforcing environment and lineage validation.
 """
 
 import hashlib
+import hmac
 import json
 import os
 import time
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -33,6 +35,25 @@ KEYS_DIR = SECURITY_ROOT / "keys"
 LEDGER_DIR = SECURITY_ROOT / "ledger"
 ROTATION_METADATA_PATH = KEYS_DIR / "rotation.json"
 DEFAULT_ROTATION_INTERVAL_SECONDS = 60 * 60 * 24 * 30
+
+_HMAC_SIGNATURE_PREFIX = "sha256:"
+_ARTIFACT_HMAC_CONFIG: Dict[str, Dict[str, str]] = {
+    "replay_proof": {
+        "specific_env_prefix": "ADAAD_REPLAY_PROOF_KEY_",
+        "generic_env_var": "ADAAD_REPLAY_PROOF_SIGNING_KEY",
+        "fallback_namespace": "adaad-replay-proof-dev-secret",
+    },
+    "policy_artifact": {
+        "specific_env_prefix": "ADAAD_POLICY_ARTIFACT_KEY_",
+        "generic_env_var": "ADAAD_POLICY_ARTIFACT_SIGNING_KEY",
+        "fallback_namespace": "adaad-policy-artifact-dev-secret",
+    },
+    "rollback_certificate": {
+        "specific_env_prefix": "CRYOVANT_ROLLBACK_SIGNING_KEY_",
+        "generic_env_var": "CRYOVANT_ROLLBACK_SIGNING_KEY",
+        "fallback_namespace": "cryovant-rollback-certificate",
+    },
+}
 
 
 def dev_mode() -> bool:
@@ -51,15 +72,11 @@ def env_mode() -> str:
 def _keys_configured() -> bool:
     try:
         return KEYS_DIR.exists() and any(KEYS_DIR.iterdir())
-    except Exception:
+    except OSError:
         return False
 
-def verify_signature(signature: str) -> bool:
-    """
-    Deterministic offline verifier used until key-backed verification is configured.
 
-    Accepts explicit static signatures for sealed governance artifacts.
-    """
+def _legacy_static_signature_allowed(signature: str) -> bool:
     return signature.startswith("cryovant-static-")
 
 
@@ -81,16 +98,57 @@ def sign_hmac_digest(
     specific_env_prefix: str,
     generic_env_var: str,
     fallback_namespace: str,
+    hmac_secret: str | None = None,
 ) -> str:
     """Build deterministic HMAC-style digest signature for sealed artifacts."""
 
-    secret = _resolve_hmac_secret(
+    secret = hmac_secret or _resolve_hmac_secret(
         key_id=key_id,
         specific_env_prefix=specific_env_prefix,
         generic_env_var=generic_env_var,
         fallback_namespace=fallback_namespace,
     )
-    return "sha256:" + hashlib.sha256(f"{secret}:{signed_digest}".encode("utf-8")).hexdigest()
+    return _HMAC_SIGNATURE_PREFIX + hashlib.sha256(f"{secret}:{signed_digest}".encode("utf-8")).hexdigest()
+
+
+def _canonical_signature(signature: str) -> str:
+    if not isinstance(signature, str):
+        return ""
+    candidate = signature.strip()
+    if not candidate:
+        return ""
+    if candidate.startswith(_HMAC_SIGNATURE_PREFIX):
+        return _HMAC_SIGNATURE_PREFIX + candidate[len(_HMAC_SIGNATURE_PREFIX) :].lower()
+    return _HMAC_SIGNATURE_PREFIX + candidate.lower()
+
+
+def _parse_sha256_signature(signature: str) -> str:
+    """Normalize ``sha256:<hex>`` signatures and validate strict format."""
+
+    if not isinstance(signature, str):
+        return ""
+    normalized = signature.strip().lower()
+    if not normalized.startswith(_HMAC_SIGNATURE_PREFIX):
+        return ""
+    digest = normalized[len(_HMAC_SIGNATURE_PREFIX) :]
+    if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+        return ""
+    return normalized
+
+
+def _active_key_paths() -> List[Path]:
+    """Return active key files in deterministic order for verification."""
+
+    if not KEYS_DIR.exists() or not KEYS_DIR.is_dir():
+        return []
+    key_paths: List[Path] = []
+    for path in sorted(KEYS_DIR.iterdir(), key=lambda candidate: candidate.name):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".key", ".pem", ".txt"}:
+            continue
+        key_paths.append(path)
+    return key_paths
 
 
 def verify_hmac_digest_signature(
@@ -101,6 +159,7 @@ def verify_hmac_digest_signature(
     specific_env_prefix: str,
     generic_env_var: str,
     fallback_namespace: str,
+    hmac_secret: str | None = None,
 ) -> bool:
     expected = sign_hmac_digest(
         key_id=key_id,
@@ -108,16 +167,92 @@ def verify_hmac_digest_signature(
         specific_env_prefix=specific_env_prefix,
         generic_env_var=generic_env_var,
         fallback_namespace=fallback_namespace,
+        hmac_secret=hmac_secret,
     )
-    return signature == expected
+    return hmac.compare_digest(_canonical_signature(signature), expected)
+
+
+def sign_artifact_hmac_digest(*, artifact_type: str, key_id: str, signed_digest: str, hmac_secret: str | None = None) -> str:
+    config = _ARTIFACT_HMAC_CONFIG.get(artifact_type)
+    if not config:
+        raise ValueError(f"unknown_artifact_type:{artifact_type}")
+    return sign_hmac_digest(
+        key_id=key_id,
+        signed_digest=signed_digest,
+        specific_env_prefix=config["specific_env_prefix"],
+        generic_env_var=config["generic_env_var"],
+        fallback_namespace=config["fallback_namespace"],
+        hmac_secret=hmac_secret,
+    )
+
+
+def verify_artifact_hmac_digest_signature(
+    *, artifact_type: str, key_id: str, signed_digest: str, signature: str, hmac_secret: str | None = None
+) -> bool:
+    config = _ARTIFACT_HMAC_CONFIG.get(artifact_type)
+    if not config:
+        return False
+    return verify_hmac_digest_signature(
+        key_id=key_id,
+        signed_digest=signed_digest,
+        signature=signature,
+        specific_env_prefix=config["specific_env_prefix"],
+        generic_env_var=config["generic_env_var"],
+        fallback_namespace=config["fallback_namespace"],
+        hmac_secret=hmac_secret,
+    )
+
+
+def verify_payload_signature(
+    payload: bytes,
+    signature: str,
+    key_id: str,
+    *,
+    specific_env_prefix: str = "ADAAD_SIGNING_KEY_",
+    generic_env_var: str = "ADAAD_SIGNING_KEY",
+    fallback_namespace: str = "adaad-signing-dev-secret",
+) -> bool:
+    """Verify payload-coupled signatures using deterministic static or HMAC formats."""
+
+    if not signature:
+        return False
+    payload_text = payload.decode("utf-8", errors="ignore")
+    if payload_text.startswith("sha256:") and len(payload_text) == len("sha256:") + 64:
+        signed_digest = payload_text
+    else:
+        signed_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    if signature in {f"cryovant-static-{signed_digest}", f"cryovant-static-{signed_digest.split(':', 1)[1]}"}:
+        return True
+    if verify_hmac_digest_signature(
+        key_id=key_id,
+        signed_digest=signed_digest,
+        signature=signature,
+        specific_env_prefix=specific_env_prefix,
+        generic_env_var=generic_env_var,
+        fallback_namespace=fallback_namespace,
+    ):
+        return True
+    try:
+        return verify_signature(signature)
+    except (FileNotFoundError, ValueError, OSError):
+        return False
 
 
 def verify_session(token: str) -> bool:
+    """Validate a Cryovant session token.
+
+    Deprecated: production session verification is not yet implemented. This
+    helper only supports explicit development token override via
+    ``CRYOVANT_DEV_TOKEN`` and returns ``False`` otherwise.
     """
-    Validate a Cryovant session token. Phase 2 fails closed unless a real token
-    is available. A dev token can be provided via CRYOVANT_DEV_TOKEN for local
-    workflows.
-    """
+    import warnings
+
+    warnings.warn(
+        "verify_session is not production-ready and always returns False "
+        "unless CRYOVANT_DEV_TOKEN is set. Do not use for access control.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     dev_token = os.environ.get("CRYOVANT_DEV_TOKEN", "").strip()
     if dev_token and token == dev_token:
         return True
@@ -131,12 +266,67 @@ def _dev_signature_allowed(signature: str) -> bool:
     return env_mode() == "dev" and dev_mode()
 
 
-def _valid_signature(signature: str) -> bool:
+def verify_signature(signature: str) -> bool:
+    """Verify HMAC-SHA-256 signature against key material in ``KEYS_DIR``.
+
+    Signature format: ``sha256:<hex>`` where digest is calculated as
+    ``HMAC_SHA256(key_bytes, b"cryovant")`` for active key material in
+    ``KEYS_DIR``.
+    """
+
+    normalized_signature = _parse_sha256_signature(signature)
+    if not normalized_signature:
+        return False
+
+    key_paths = _active_key_paths()
+    if not key_paths:
+        return False
+
+    for key_path in key_paths:
+        key_material = key_path.read_bytes().strip()
+        if not key_material:
+            continue
+        expected = _HMAC_SIGNATURE_PREFIX + hmac.new(key_material, b"cryovant", hashlib.sha256).hexdigest()
+        if hmac.compare_digest(normalized_signature, expected):
+            return True
+    return False
+
+
+def _valid_signature(
+    signature: str,
+    *,
+    agent_dir: Path | None = None,
+    lineage_hash: str | None = None,
+) -> bool:
+    """Validate certificate signatures with HMAC-first + legacy fallback.
+
+    When ``lineage_hash`` is provided, it is treated as authoritative and
+    ``agent_dir`` is not re-hashed. Callers passing both must ensure the hash
+    matches the referenced agent state.
+    """
     if not signature:
         return False
-    if verify_signature(signature):
+
+    if agent_dir is not None or lineage_hash:
+        resolved_lineage_hash = lineage_hash or (compute_lineage_hash(agent_dir) if agent_dir is not None else "")
+        signed_digest = f"sha256:{resolved_lineage_hash}"
+        if verify_payload_signature(
+            payload=signed_digest.encode("utf-8"),
+            signature=signature,
+            key_id="agent-certificate",
+        ):
+            return True
+
+    if _legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature):
+        metrics.log(
+            event_type="cryovant_legacy_signature_accepted",
+            payload={"signature_prefix": signature[:24], "env_mode": env_mode()},
+            level="WARNING",
+            element_id=ELEMENT_ID,
+        )
         return True
-    return _dev_signature_allowed(signature)
+
+    return False
 
 
 def signature_valid(signature: str) -> bool:
@@ -155,8 +345,14 @@ def signature_valid(signature: str) -> bool:
         if env_mode() != "dev":
             return False
 
-    if verify_signature(signature):
+    try:
+        verified = verify_signature(signature)
+    except (FileNotFoundError, ValueError, OSError):
+        verified = False
+
+    if verified:
         return True
+
     if _dev_signature_allowed(signature):
         metrics.log(
             event_type="cryovant_dev_signature_accepted",
@@ -165,6 +361,7 @@ def signature_valid(signature: str) -> bool:
             element_id=ELEMENT_ID,
         )
         return True
+
     return False
 
 
@@ -179,7 +376,7 @@ def dev_signature_allowed(signature: str) -> bool:
 def _read_json(path: Path) -> Dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (FileNotFoundError, OSError, JSONDecodeError, TypeError):
         return {}
 
 
@@ -254,20 +451,30 @@ def _maybe_rotate_keys(app_agents_dir: Path, agent_count: int) -> bool:
             element_id=ELEMENT_ID,
         )
         return True
-    except Exception as exc:
+    except (OSError, TypeError, ValueError) as exc:
         journal.record_rotation_failure(
             action="key_rotation_failed",
             payload={
+                "reason_code": "rotation_metadata_persist_failed",
+                "operation_class": "governance-critical",
                 "interval_seconds": interval_seconds,
                 "last_rotation_ts": metadata.get("last_rotation_ts"),
                 "error": str(exc),
+                "error_type": type(exc).__name__,
                 "keys_dir": str(KEYS_DIR),
                 "agents_dir": str(app_agents_dir),
             },
         )
         metrics.log(
             event_type="key_rotation_failed",
-            payload={"error": str(exc), "keys_dir": str(KEYS_DIR), "agents_dir": str(app_agents_dir)},
+            payload={
+                "reason_code": "rotation_metadata_persist_failed",
+                "operation_class": "governance-critical",
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+                "keys_dir": str(KEYS_DIR),
+                "agents_dir": str(app_agents_dir),
+            },
             level="ERROR",
             element_id=ELEMENT_ID,
         )
@@ -306,7 +513,7 @@ def evolve_certificate(agent_id: str, agent_dir: Path, mutation_dir: Path, capab
     bundle = {"certificate.json": base_certificate, "dna.json": dna, "meta.json": meta}
     lineage_hash = hashlib.sha256(json.dumps(bundle, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
     signature = existing_cert.get("signature")
-    if not _valid_signature(signature or ""):
+    if not _valid_signature(signature or "", agent_dir=agent_dir, lineage_hash=lineage_hash):
         signature = f"cryovant-dev-{lineage_hash[:12]}"
 
     certificate = {**base_certificate, "lineage_hash": lineage_hash, "signature": signature}
@@ -332,7 +539,7 @@ def validate_environment() -> bool:
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
     try:
         os.chmod(str(KEYS_DIR), 0o700)
-    except Exception:
+    except OSError:
         pass
 
     LEDGER_DIR.mkdir(parents=True, exist_ok=True)
@@ -340,10 +547,16 @@ def validate_environment() -> bool:
     try:
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
-    except Exception as exc:
+    except OSError as exc:
         metrics.log(
             event_type="cryovant_environment_invalid",
-            payload={"ledger_dir": str(LEDGER_DIR), "error": str(exc)},
+            payload={
+                "reason_code": "ledger_probe_write_failed",
+                "operation_class": "boot-critical",
+                "ledger_dir": str(LEDGER_DIR),
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
             level="ERROR",
             element_id=ELEMENT_ID,
         )
@@ -352,14 +565,20 @@ def validate_environment() -> bool:
     try:
         ledger_file = journal.ensure_ledger()
         journal.write_entry(agent_id="system", action="env_check", payload={"check": "environment_ok"})
-    except Exception as exc:  # pragma: no cover - defensive logging
+    except (OSError, TypeError, ValueError) as exc:  # pragma: no cover - defensive logging
         metrics.log(
             event_type="cryovant_environment_error",
-            payload={"ledger_dir": str(LEDGER_DIR), "error": str(exc)},
+            payload={
+                "reason_code": "ledger_bootstrap_failed",
+                "operation_class": "boot-critical",
+                "ledger_dir": str(LEDGER_DIR),
+                "error": str(exc),
+                "error_type": type(exc).__name__,
+            },
             level="ERROR",
             element_id=ELEMENT_ID,
         )
-        return False
+        raise RuntimeError("cryovant_bootstrap_failed:ledger_bootstrap_failed") from exc
 
     metrics.log(
         event_type="cryovant_environment_valid",
@@ -387,6 +606,8 @@ def certify_agents(app_agents_dir: Path) -> Tuple[bool, List[str]]:
         metrics.log(event_type="cryovant_certified", payload={"agents_dir": str(app_agents_dir), "agents": 0}, level="INFO", element_id=ELEMENT_ID)
         return True, []
 
+    lineage_hash_cache: Dict[Path, str] = {}
+
     for candidate in agent_dirs:
         agent_id = resolve_agent_id(candidate, agents_root)
         meta = candidate / "meta.json"
@@ -398,13 +619,18 @@ def certify_agents(app_agents_dir: Path) -> Tuple[bool, List[str]]:
         if cert.exists():
             certificate = _read_json(cert)
             signature = certificate.get("signature", "")
+
+            if candidate not in lineage_hash_cache:
+                lineage_hash_cache[candidate] = compute_lineage_hash(candidate)
+            computed_lineage_hash = lineage_hash_cache[candidate]
+
             lineage_hash = certificate.get("lineage_hash")
-            if not lineage_hash and _valid_signature(signature):
-                lineage_hash = compute_lineage_hash(candidate)
+            if not lineage_hash and _valid_signature(signature, agent_dir=candidate, lineage_hash=computed_lineage_hash):
+                lineage_hash = computed_lineage_hash
                 certificate["lineage_hash"] = lineage_hash
                 cert.write_text(json.dumps(certificate, indent=2), encoding="utf-8")
                 journal.write_entry(agent_id=agent_id, action="certificate_evolved", payload={"lineage_hash": lineage_hash})
-            if not _valid_signature(signature):
+            if not _valid_signature(signature, agent_dir=candidate, lineage_hash=computed_lineage_hash):
                 signature_failures.append(agent_id)
     if missing or signature_failures:
         errors = missing + [f"{name}:invalid_signature" for name in signature_failures]
@@ -448,14 +674,46 @@ def validate_ancestry(agent_id: Optional[str]) -> bool:
         journal.write_entry(agent_id="unknown", action="ancestry_failed", payload={"reason": "missing_id"})
         return False
 
-    if known_ids and agent_id not in known_ids:
+    if not known_ids:
+        if os.environ.get("ADAAD_ALLOW_GENESIS", "0") == "1":
+            journal.write_entry(
+                agent_id=agent_id,
+                action="ancestry_validated",
+                payload={"reason": "genesis_override_allowed"},
+            )
+            metrics.log(
+                event_type="cryovant_genesis_override_allowed",
+                payload={"agent_id": agent_id, "reason": "genesis_override_allowed"},
+                level="WARNING",
+                element_id=ELEMENT_ID,
+            )
+            return True
+
+        journal.write_entry(
+            agent_id=agent_id,
+            action="ancestry_failed",
+            payload={"reason": "empty_journal_denied"},
+        )
         metrics.log(
-            event_type="cryovant_unknown_ancestry",
-            payload={"agent_id": agent_id, "known": list(known_ids)},
+            event_type="cryovant_empty_journal_denied",
+            payload={"agent_id": agent_id, "reason": "empty_journal_denied"},
             level="ERROR",
             element_id=ELEMENT_ID,
         )
-        journal.write_entry(agent_id=agent_id, action="ancestry_failed", payload={"known": list(known_ids)})
+        return False
+
+    if known_ids and agent_id not in known_ids:
+        metrics.log(
+            event_type="cryovant_unknown_ancestry",
+            payload={"agent_id": agent_id, "known": list(known_ids), "reason": "unknown_ancestry"},
+            level="ERROR",
+            element_id=ELEMENT_ID,
+        )
+        journal.write_entry(
+            agent_id=agent_id,
+            action="ancestry_failed",
+            payload={"known": list(known_ids), "reason": "unknown_ancestry"},
+        )
         return False
 
     journal.write_entry(agent_id=agent_id, action="ancestry_validated", payload={})

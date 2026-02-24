@@ -3,14 +3,53 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Mapping
 
 from runtime import ROOT_DIR
 from runtime.governance.foundation import ZERO_HASH, canonical_json, sha256_prefixed_digest
+from runtime.governance.resource_accounting import coalesce_resource_usage_snapshot
+from runtime.sandbox.syscall_filter import syscall_trace_fingerprint
 
 SANDBOX_EVIDENCE_PATH = ROOT_DIR / "security" / "ledger" / "sandbox_evidence.jsonl"
+_DEFAULT_DEV_SIGNING_KEY = "adaad-dev-evidence-signing-key"
+
+
+def _signing_key_bytes() -> bytes:
+    return str(os.getenv("ADAAD_EVIDENCE_BUNDLE_SIGNING_KEY") or _DEFAULT_DEV_SIGNING_KEY).encode("utf-8")
+
+
+def _canonical_bytes(payload: Mapping[str, Any]) -> bytes:
+    return canonical_json(dict(payload)).encode("utf-8")
+
+
+def sign_bundle(payload: Mapping[str, Any], *, metadata: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    """Return a deterministically signed evidence payload.
+
+    Invariants:
+    - signature excludes the `signed_digest` field itself.
+    - canonical JSON ordering is preserved by `canonical_json`.
+    """
+
+    bundle = dict(payload)
+    bundle.pop("signed_digest", None)
+    if metadata is not None:
+        bundle["signature_metadata"] = dict(metadata)
+    digest = hmac.new(_signing_key_bytes(), _canonical_bytes(bundle), hashlib.sha256).hexdigest()
+    bundle["signed_digest"] = f"sha256:{digest}"
+    return bundle
+
+
+def verify_bundle_signature(payload: Mapping[str, Any]) -> bool:
+    observed = str(payload.get("signed_digest") or "")
+    if not observed.startswith("sha256:"):
+        return False
+    expected = sign_bundle(payload).get("signed_digest")
+    return hmac.compare_digest(observed, str(expected))
 
 
 def build_sandbox_evidence(
@@ -18,11 +57,14 @@ def build_sandbox_evidence(
     manifest: Dict[str, Any],
     result: Dict[str, Any],
     policy_hash: str,
+    sandbox_policy_hash: str | None = None,
     syscall_trace: tuple[str, ...] = (),
+    syscall_fingerprint: str | None = None,
     provider_ts: str,
     isolation_mode: str = "process",
     enforced_controls: tuple[Dict[str, Any], ...] = (),
     preflight: Dict[str, Any] | None = None,
+    events: tuple[Dict[str, Any], ...] = (),
 ) -> Dict[str, Any]:
     """Build a canonical sandbox evidence payload for ledger persistence.
 
@@ -32,26 +74,22 @@ def build_sandbox_evidence(
     - `stderr_hash == sha256(stderr)`
     - `syscall_trace_hash == sha256(syscall_trace)`
     - `resource_usage_hash == sha256(resource_usage)`
-
-    These fields define the canonical replay check contract consumed by
-    `runtime.sandbox.replay.replay_sandbox_execution`.
     """
     stdout = str(result.get("stdout", ""))
     stderr = str(result.get("stderr", ""))
-    resource_usage = {
-        "duration_s": float(result.get("duration_s", 0.0) or 0.0),
-        "memory_mb": float(result.get("memory_mb", 0.0) or 0.0),
-        "disk_mb": float(result.get("disk_mb", 0.0) or 0.0),
-    }
+    trace = tuple(str(item) for item in syscall_trace)
+    resource_usage = coalesce_resource_usage_snapshot(observed=result, telemetry=result)
     payload = {
         "manifest_hash": sha256_prefixed_digest(manifest),
         "policy_hash": policy_hash,
+        "sandbox_policy_hash": sandbox_policy_hash or policy_hash,
         "stdout": stdout,
         "stdout_hash": sha256_prefixed_digest(stdout),
         "stderr": stderr,
         "stderr_hash": sha256_prefixed_digest(stderr),
-        "syscall_trace": list(syscall_trace),
-        "syscall_trace_hash": sha256_prefixed_digest(list(syscall_trace)),
+        "syscall_trace": list(trace),
+        "syscall_trace_hash": sha256_prefixed_digest(list(trace)),
+        "syscall_fingerprint": syscall_fingerprint or syscall_trace_fingerprint(trace),
         "resource_usage": resource_usage,
         "resource_usage_hash": sha256_prefixed_digest(resource_usage),
         "exit_code": result.get("returncode"),
@@ -61,6 +99,7 @@ def build_sandbox_evidence(
         "isolation_mode": isolation_mode,
         "enforced_controls": [dict(item) for item in enforced_controls],
         "preflight": dict(preflight or {"ok": True, "reason": "not_provided"}),
+        "events": [dict(item) for item in events],
     }
     payload["evidence_hash"] = sha256_prefixed_digest(payload)
     return payload
@@ -89,4 +128,10 @@ class SandboxEvidenceLedger:
         return entry
 
 
-__all__ = ["SANDBOX_EVIDENCE_PATH", "SandboxEvidenceLedger", "build_sandbox_evidence"]
+__all__ = [
+    "SANDBOX_EVIDENCE_PATH",
+    "SandboxEvidenceLedger",
+    "build_sandbox_evidence",
+    "sign_bundle",
+    "verify_bundle_signature",
+]

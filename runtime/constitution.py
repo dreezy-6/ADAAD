@@ -11,9 +11,11 @@ from __future__ import annotations
 import ast
 import calendar
 import functools
+import fnmatch
 import inspect
 import hashlib
 import json
+import re
 import os
 import time
 from contextlib import contextmanager
@@ -23,8 +25,18 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping
 
+import yaml
+
 from app.agents.mutation_request import MutationRequest
 from runtime import metrics
+from runtime.governance.debt_ledger import GovernanceDebtLedger
+from runtime.governance.resource_accounting import (
+    coalesce_resource_usage_snapshot,
+    merge_platform_telemetry,
+    normalize_platform_telemetry_snapshot,
+    normalize_resource_usage_snapshot,
+)
+from runtime.platform.android_monitor import AndroidMonitor
 from security.ledger import journal
 
 CONSTITUTION_VERSION = "0.2.0"
@@ -43,14 +55,30 @@ VALIDATOR_VERSIONS: Dict[str, str] = {
     "_validate_imports": "1.0.0",
     "_validate_signature": "1.0.0",
     "_validate_no_banned_tokens": "1.0.0",
-    "_validate_lineage": "2.1.0",
+    "_validate_lineage": "2.2.0",
     "_validate_complexity": "1.1.0",
     "_validate_coverage": "1.1.0",
     "_validate_mutation_rate": "2.1.0",
-    "_validate_resources": "1.1.0",
+    "_validate_resources": "1.3.0",
     "_validate_entropy_budget_limit": "1.0.0",
 }
 _LINEAGE_VALIDATION_CACHE: Dict[str, Any] = {}
+_POLICY_DOCUMENT: Dict[str, Any] = {}
+
+
+def boot_sanity_check() -> dict[str, bool]:
+    """Run deterministic boot checks required before higher-risk governance rules."""
+    version = globals().get("CONSTITUTION_VERSION")
+    if not isinstance(version, str) or not version.strip():
+        raise RuntimeError("boot_sanity_failed:invalid_constitution_version")
+
+    policy_path = globals().get("POLICY_PATH")
+    if isinstance(policy_path, Path) and policy_path.exists():
+        # Read access check is deterministic and side-effect free.
+        if not os.access(policy_path, os.R_OK):
+            raise RuntimeError("boot_sanity_failed:policy_path_not_readable")
+
+    return {"ok": True}
 
 
 def _canonical_json(value: Any) -> str:
@@ -243,8 +271,55 @@ def _validate_no_banned_tokens(request: MutationRequest) -> Dict[str, Any]:
     return {"ok": True}
 
 
+def validate_lineage_continuity(mutation: Any) -> bool:
+    """Blocking lineage continuity gate for constitutional mutation evaluation."""
+    from runtime.evolution.lineage_v2 import resolve_chain
+
+    agent_id = str(getattr(mutation, "agent_id", "")).strip()
+    if not agent_id:
+        raise RuntimeError("lineage_missing_agent_id")
+
+    chain = resolve_chain(agent_id)
+    if not chain:
+        raise RuntimeError("lineage_missing_parent")
+    if str(chain[0]) in {"", "0" * 64}:
+        raise RuntimeError("lineage_missing_genesis")
+
+    for link in chain:
+        if not re.fullmatch(r"[0-9a-f]{64}", str(link)):
+            raise RuntimeError("lineage_tampered_hash")
+    return True
+
+
 def _validate_lineage(_: MutationRequest) -> Dict[str, Any]:
     """Resolve and verify append-only lineage chain up to certified genesis."""
+    from runtime.evolution.lineage_v2 import resolve_certified_ancestor_path
+    from security import cryovant
+
+    # Rationale: enforce explicit mutation lineage chain continuity when lineage_v2 exists
+    # while preserving existing genesis/journal invariants below.
+    # Invariants: agent_id must be present; chain hashes are canonical lowercase sha256;
+    # parent linkage remains append-only and rooted in genesis.
+    from runtime.evolution.lineage_v2 import LINEAGE_V2_PATH, LineageResolutionError, resolve_chain
+
+    if LINEAGE_V2_PATH.exists():
+        agent_id = str(getattr(_, "agent_id", "")).strip()
+        try:
+            # Only enforce the helper gate when lineage_v2 can resolve a chain for this agent.
+            # This preserves existing journal/genesis invariants as source-of-truth while
+            # adding continuity enforcement for requests represented in lineage_v2.
+            if resolve_chain(agent_id):
+                validate_lineage_continuity(_)
+        except LineageResolutionError as exc:
+            metrics.log(
+                event_type="lineage_v2_resolution_fallback",
+                payload={"reason": str(exc), "agent_id": agent_id, "lineage_v2_path": str(LINEAGE_V2_PATH)},
+                level="WARNING",
+                element_id=ELEMENT_ID,
+            )
+        except RuntimeError as exc:
+            return {"ok": False, "reason": str(exc), "details": {"validator": "validate_lineage_continuity"}}
+
     genesis_path = journal.GENESIS_PATH
     journal_path = journal.JOURNAL_PATH
 
@@ -258,6 +333,8 @@ def _validate_lineage(_: MutationRequest) -> Dict[str, Any]:
         "journal_path": str(journal_path),
         "genesis_mtime_ns": genesis_path.stat().st_mtime_ns,
         "journal_mtime_ns": journal_path.stat().st_mtime_ns,
+        "genesis_size": genesis_path.stat().st_size,
+        "journal_size": journal_path.stat().st_size,
     }
     prior_key = _LINEAGE_VALIDATION_CACHE.get("key")
     prior_result = _LINEAGE_VALIDATION_CACHE.get("result")
@@ -273,6 +350,32 @@ def _validate_lineage(_: MutationRequest) -> Dict[str, Any]:
 
     chain: List[Dict[str, Any]] = []
     prev_hash = "0" * 64
+
+    seen_mutations: Dict[str, Dict[str, Any]] = {}
+
+    def _lineage_violation(
+        *,
+        epoch_id: str,
+        mutation_or_bundle_id: str,
+        missing_or_invalid_link: str,
+        expected_ancestor: str,
+        observed_reference: str,
+        details: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        event_payload = {
+            "epoch_id": epoch_id,
+            "mutation_or_bundle_id": mutation_or_bundle_id,
+            "missing_or_invalid_link": missing_or_invalid_link,
+            "expected_ancestor": expected_ancestor,
+            "observed_reference": observed_reference,
+        }
+        metrics.log(event_type="lineage_violation_detected", payload=event_payload, level="CRITICAL", element_id=ELEMENT_ID)
+        return {
+            "ok": False,
+            "reason": "lineage_violation_detected",
+            "event": "lineage_violation_detected",
+            "details": {**details, **event_payload},
+        }
 
     for source_name, path in (("genesis", genesis_path), ("journal", journal_path)):
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -326,12 +429,73 @@ def _validate_lineage(_: MutationRequest) -> Dict[str, Any]:
                 }
 
             prev_hash = entry_hash
+            resolved = resolve_certified_ancestor_path(entry)
+            mutation_or_bundle_id = resolved["mutation_id"]
+            parent_mutation_id = resolved["parent_mutation_id"]
+            ancestor_chain = resolved["ancestor_chain"]
+            certified_signature = resolved["certified_signature"]
+            payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+            epoch_id = str(payload.get("epoch_id") or payload.get("epoch") or "")
+
+            if parent_mutation_id:
+                expected_parent = seen_mutations.get(parent_mutation_id)
+                if expected_parent is None:
+                    return _lineage_violation(
+                        epoch_id=epoch_id,
+                        mutation_or_bundle_id=mutation_or_bundle_id,
+                        missing_or_invalid_link="parent_mutation_id",
+                        expected_ancestor="known_mutation_id",
+                        observed_reference=parent_mutation_id,
+                        details={"source": source_name, "path": str(path), "line": line_no},
+                    )
+                if ancestor_chain and ancestor_chain[-1] != parent_mutation_id:
+                    return _lineage_violation(
+                        epoch_id=epoch_id,
+                        mutation_or_bundle_id=mutation_or_bundle_id,
+                        missing_or_invalid_link="ancestor_chain_tail",
+                        expected_ancestor=parent_mutation_id,
+                        observed_reference=ancestor_chain[-1],
+                        details={"source": source_name, "path": str(path), "line": line_no},
+                    )
+
+            if ancestor_chain:
+                missing = next((ancestor for ancestor in ancestor_chain if ancestor not in seen_mutations), "")
+                if missing:
+                    return _lineage_violation(
+                        epoch_id=epoch_id,
+                        mutation_or_bundle_id=mutation_or_bundle_id,
+                        missing_or_invalid_link="ancestor_chain",
+                        expected_ancestor="known_mutation_id",
+                        observed_reference=missing,
+                        details={"source": source_name, "path": str(path), "line": line_no},
+                    )
+
+            if certified_signature and bool(payload.get("lineage_signature_required")) and not cryovant.signature_valid(certified_signature):
+                return _lineage_violation(
+                    epoch_id=epoch_id,
+                    mutation_or_bundle_id=mutation_or_bundle_id,
+                    missing_or_invalid_link="cryovant_signature",
+                    expected_ancestor="valid_cryovant_signature",
+                    observed_reference=certified_signature,
+                    details={"source": source_name, "path": str(path), "line": line_no},
+                )
+
+            if mutation_or_bundle_id:
+                seen_mutations[mutation_or_bundle_id] = {
+                    "hash": entry_hash,
+                    "epoch_id": epoch_id,
+                    "line": line_no,
+                    "source": source_name,
+                }
+
             chain.append(
                 {
                     "source": source_name,
                     "path": str(path),
                     "line": line_no,
                     "tx": str(entry.get("tx") or ""),
+                    "epoch_id": epoch_id,
+                    "mutation_or_bundle_id": mutation_or_bundle_id,
                     "type": str(entry.get("type") or ""),
                     "hash": entry_hash,
                     "prev_hash": entry_prev,
@@ -611,9 +775,13 @@ def _deterministic_mutation_count(window_sec: int, epoch_id: str) -> Dict[str, A
 def _validate_mutation_rate(request: MutationRequest) -> Dict[str, Any]:
     """Check mutation rate limits against deterministic ledger counters."""
     resolved_name, max_rate_env, default_max_rate = _resolve_mutation_rate_limit()
+    envelope_state = get_deterministic_envelope_state()
+    domain_context = envelope_state.get("domain_classification") if isinstance(envelope_state.get("domain_classification"), Mapping) else {}
+    tier_name = str(envelope_state.get("tier", "")).strip().upper() or Tier.SANDBOX.name
+    tier = Tier[tier_name] if tier_name in Tier.__members__ else Tier.SANDBOX
     window_env = os.getenv("ADAAD_MUTATION_RATE_WINDOW_SEC", "3600").strip()
     try:
-        max_rate = float(max_rate_env)
+        tier_limit = float(max_rate_env)
     except ValueError:
         return {
             "ok": False,
@@ -626,16 +794,27 @@ def _validate_mutation_rate(request: MutationRequest) -> Dict[str, Any]:
                 "legacy_env_supported": ["ADAAD_MAX_MUTATIONS_PER_HOUR"],
             },
         }
+    limit_resolution = _resolve_effective_limit(
+        rule_name="max_mutation_rate",
+        tier=tier,
+        domain_context=domain_context,
+        tier_limit=tier_limit,
+    )
     try:
         window_sec = int(window_env)
     except ValueError:
         return {"ok": False, "reason": "invalid_window_sec", "details": {"value": window_env}}
-    if max_rate <= 0:
+    if limit_resolution["effective_limit"] <= 0:
         return {
             "ok": True,
             "reason": "rate_limit_disabled",
             "details": {
-                "max_mutations_per_hour": max_rate,
+                "max_mutations_per_hour": limit_resolution["effective_limit"],
+                "tier_limit": limit_resolution["tier_limit"],
+                "domain_limit": limit_resolution["domain_limit"],
+                "resolved_domain": limit_resolution["resolved_domain"],
+                "applied_ceiling": limit_resolution["effective_limit"],
+                "matched_domain_limits": limit_resolution["matched_domain_limits"],
                 "window_sec": window_sec,
                 "validator": "max_mutation_rate",
                 "resolved_from_env": resolved_name,
@@ -644,12 +823,17 @@ def _validate_mutation_rate(request: MutationRequest) -> Dict[str, Any]:
             },
         }
     snapshot = _deterministic_mutation_count(window_sec=window_sec, epoch_id=str(request.epoch_id or "").strip())
-    exceeded = snapshot["rate_per_hour"] > max_rate
+    exceeded = snapshot["rate_per_hour"] > limit_resolution["effective_limit"]
     return {
         "ok": not exceeded,
         "reason": "rate_limit_exceeded" if exceeded else "rate_limit_ok",
         "details": {
-            "max_mutations_per_hour": max_rate,
+            "max_mutations_per_hour": limit_resolution["effective_limit"],
+            "tier_limit": limit_resolution["tier_limit"],
+            "domain_limit": limit_resolution["domain_limit"],
+            "resolved_domain": limit_resolution["resolved_domain"],
+            "applied_ceiling": limit_resolution["effective_limit"],
+            "matched_domain_limits": limit_resolution["matched_domain_limits"],
             "resolved_from_env": resolved_name,
             "default_max_mutation_rate": default_max_rate,
             "legacy_env_supported": ["ADAAD_MAX_MUTATIONS_PER_HOUR"],
@@ -678,24 +862,47 @@ def _validate_resources(_: MutationRequest) -> Dict[str, Any]:
         except ValueError:
             return 0.0, raw
 
-    def _safe_float(value: Any) -> float | None:
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            return None
-        if parsed < 0:
-            return 0.0
-        return parsed
-
     envelope_state = get_deterministic_envelope_state()
+    tier_name = str(envelope_state.get("tier", "")).strip().upper() or Tier.SANDBOX.name
+    tier = Tier[tier_name] if tier_name in Tier.__members__ else Tier.SANDBOX
     telemetry = envelope_state.get("platform_telemetry")
     observed = envelope_state.get("resource_measurements")
     observed_map = observed if isinstance(observed, Mapping) else {}
     telemetry_map = telemetry if isinstance(telemetry, Mapping) else {}
 
-    memory_limit_mb, bad_memory_bound = _bound_from_env("ADAAD_RESOURCE_MEMORY_MB", 2048.0)
-    cpu_limit_s, bad_cpu_bound = _bound_from_env("ADAAD_RESOURCE_CPU_SECONDS", 30.0)
-    wall_limit_s, bad_wall_bound = _bound_from_env("ADAAD_RESOURCE_WALL_SECONDS", 60.0)
+    policy_document_loaded = isinstance(_POLICY_DOCUMENT, dict) and bool(_POLICY_DOCUMENT)
+    resource_policy = _POLICY_DOCUMENT.get("resource_bounds_policy") if isinstance(_POLICY_DOCUMENT, dict) else {}
+    resource_policy = resource_policy if isinstance(resource_policy, dict) else {}
+    if not policy_document_loaded:
+        metrics.log(
+            event_type="resource_bounds_policy_unavailable",
+            payload={"reason": "policy_document_empty", "fallback_defaults_applied": True},
+            level="WARNING",
+            element_id=ELEMENT_ID,
+        )
+    bounds_policy_version = str(resource_policy.get("policy_version") or "0")
+    strict_telemetry_tiers = {
+        str(item).strip().upper()
+        for item in (resource_policy.get("strict_telemetry_tiers") or [Tier.PRODUCTION.name])
+        if str(item).strip()
+    }
+    limits = resource_policy.get("limits") if isinstance(resource_policy.get("limits"), dict) else {}
+    allow_overrides = {
+        str(item).strip()
+        for item in (resource_policy.get("allow_env_overrides") or [])
+        if str(item).strip()
+    }
+
+    memory_limit_mb = float(limits.get("memory_mb", 2048.0) or 2048.0)
+    cpu_limit_s = float(limits.get("cpu_seconds", 30.0) or 30.0)
+    wall_limit_s = float(limits.get("wall_seconds", 60.0) or 60.0)
+    bad_memory_bound = bad_cpu_bound = bad_wall_bound = None
+    if "memory_mb" in allow_overrides:
+        memory_limit_mb, bad_memory_bound = _bound_from_env("ADAAD_RESOURCE_MEMORY_MB", memory_limit_mb)
+    if "cpu_seconds" in allow_overrides:
+        cpu_limit_s, bad_cpu_bound = _bound_from_env("ADAAD_RESOURCE_CPU_SECONDS", cpu_limit_s)
+    if "wall_seconds" in allow_overrides:
+        wall_limit_s, bad_wall_bound = _bound_from_env("ADAAD_RESOURCE_WALL_SECONDS", wall_limit_s)
     if bad_memory_bound is not None:
         return {"ok": False, "reason": "invalid_resource_memory_bound", "details": {"value": bad_memory_bound}}
     if bad_cpu_bound is not None:
@@ -703,49 +910,63 @@ def _validate_resources(_: MutationRequest) -> Dict[str, Any]:
     if bad_wall_bound is not None:
         return {"ok": False, "reason": "invalid_resource_wall_bound", "details": {"value": bad_wall_bound}}
 
-    rss_candidates = [
-        _safe_float(observed_map.get("peak_rss_mb")),
-        _safe_float(observed_map.get("memory_mb")),
-        _safe_float(telemetry_map.get("memory_mb")),
-    ]
-    cpu_candidates = [_safe_float(observed_map.get("cpu_seconds")), _safe_float(observed_map.get("cpu_time_seconds"))]
-    wall_candidates = [
-        _safe_float(observed_map.get("wall_seconds")),
-        _safe_float(observed_map.get("wall_time_seconds")),
-    ]
+    observed_expected_keys = ["peak_rss_mb", "cpu_seconds", "cpu_time_seconds", "wall_seconds", "wall_time_seconds", "duration_s"]
+    telemetry_expected_keys = ["memory_mb"]
+    has_observed = isinstance(observed, Mapping) and any(observed_map.get(key) is not None for key in observed_expected_keys)
+    has_telemetry = isinstance(telemetry, Mapping) and any(telemetry_map.get(key) is not None for key in telemetry_expected_keys)
+    if not has_observed and not has_telemetry:
+        missing_details = {
+            "tier": tier.name,
+            "has_observed": has_observed,
+            "has_telemetry": has_telemetry,
+            "expected": {
+                "resource_measurements": observed_expected_keys,
+                "platform_telemetry": telemetry_expected_keys,
+            },
+            "strict_telemetry_tiers": sorted(strict_telemetry_tiers),
+        }
+        strict_tier = tier.name in strict_telemetry_tiers
+        metrics.log(
+            event_type="resource_measurements_missing",
+            payload={
+                "reason": "resource_measurements_missing",
+                "mode": "fail_closed" if strict_tier else "fail_open",
+                "rationale": "tier_requires_resource_evidence" if strict_tier else "tier_not_configured_for_strict_telemetry_enforcement",
+                "details": missing_details,
+            },
+            level="ERROR" if strict_tier else "WARNING",
+            element_id=ELEMENT_ID,
+        )
+        if strict_tier:
+            return {"ok": False, "reason": "resource_measurements_missing", "details": missing_details}
+        return {"ok": True, "reason": "resource_measurements_missing_fail_open", "details": missing_details}
 
-    if not any(value is not None for value in rss_candidates):
-        rss_candidates.append(0.0)
-    if not any(value is not None for value in cpu_candidates):
-        cpu_candidates.append(0.0)
-    if not any(value is not None for value in wall_candidates):
-        wall_candidates.append(0.0)
-
-    peak_rss_mb = max((value for value in rss_candidates if value is not None), default=0.0)
-    cpu_seconds = max((value for value in cpu_candidates if value is not None), default=0.0)
-    wall_seconds = max((value for value in wall_candidates if value is not None), default=0.0)
+    resource_usage_snapshot = coalesce_resource_usage_snapshot(observed=observed_map, telemetry=telemetry_map)
+    peak_rss_mb = resource_usage_snapshot["memory_mb"]
+    cpu_seconds = resource_usage_snapshot["cpu_seconds"]
+    wall_seconds = resource_usage_snapshot["wall_seconds"]
 
     memory_exceeded = memory_limit_mb > 0 and peak_rss_mb > memory_limit_mb
     cpu_exceeded = cpu_limit_s > 0 and cpu_seconds > cpu_limit_s
     wall_exceeded = wall_limit_s > 0 and wall_seconds > wall_limit_s
     exceeded = memory_exceeded or cpu_exceeded or wall_exceeded
 
+    limits_snapshot = normalize_resource_usage_snapshot(
+        memory_mb=memory_limit_mb,
+        cpu_seconds=cpu_limit_s,
+        wall_seconds=wall_limit_s,
+        disk_mb=0.0,
+    )
     details = {
-        "limits": {
-            "memory_mb": round(memory_limit_mb, 4),
-            "cpu_seconds": round(cpu_limit_s, 4),
-            "wall_seconds": round(wall_limit_s, 4),
-        },
-        "observed": {
-            "peak_rss_mb": round(peak_rss_mb, 4),
-            "cpu_seconds": round(cpu_seconds, 4),
-            "wall_seconds": round(wall_seconds, 4),
-        },
+        "bounds_policy_version": bounds_policy_version,
+        "limits": {"memory_mb": limits_snapshot["memory_mb"], "cpu_seconds": limits_snapshot["cpu_seconds"], "wall_seconds": limits_snapshot["wall_seconds"]},
+        "observed": {"peak_rss_mb": peak_rss_mb, "cpu_seconds": cpu_seconds, "wall_seconds": wall_seconds},
+        "resource_usage_snapshot": resource_usage_snapshot,
         "telemetry": {
-            "memory_mb": _safe_float(telemetry_map.get("memory_mb")),
-            "cpu_percent": _safe_float(telemetry_map.get("cpu_percent")),
-            "battery_percent": _safe_float(telemetry_map.get("battery_percent")),
-            "storage_mb": _safe_float(telemetry_map.get("storage_mb")),
+            "memory_mb": resource_usage_snapshot["memory_mb"],
+            "cpu_percent": float(telemetry_map.get("cpu_percent", 0.0) or 0.0),
+            "battery_percent": float(telemetry_map.get("battery_percent", 0.0) or 0.0),
+            "storage_mb": float(telemetry_map.get("storage_mb", 0.0) or 0.0),
         },
         "violations": [
             name
@@ -763,6 +984,8 @@ def _validate_resources(_: MutationRequest) -> Dict[str, Any]:
             "reason": "resource_bounds_exceeded",
             "agent_id": str(envelope_state.get("agent_id", "")),
             "epoch_id": str(envelope_state.get("epoch_id", "")),
+            "bounds_policy_version": bounds_policy_version,
+            "resource_usage_snapshot": resource_usage_snapshot,
             "details": details,
         }
         metrics.log(event_type="resource_bounds_exceeded", payload=failure_payload, level="ERROR", element_id=ELEMENT_ID)
@@ -795,6 +1018,109 @@ def _load_rule_applicability(path: Path = RULE_APPLICABILITY_PATH) -> Dict[str, 
             raise ValueError(f"rule_applicability_invalid_schema:missing_name:{idx}")
         indexed[name] = entry
     return indexed
+
+
+def _extract_domain_classification_config() -> Dict[str, Any]:
+    policy_doc = _load_policy_document(RULE_APPLICABILITY_PATH)[0]
+    raw = policy_doc.get("domain_classification") if isinstance(policy_doc, dict) else {}
+    if not isinstance(raw, dict):
+        return {"default_domain": "general", "rules": []}
+    default_domain = str(raw.get("default_domain") or "general").strip() or "general"
+    rules: List[Dict[str, Any]] = []
+    for item in raw.get("rules") or []:
+        if not isinstance(item, dict):
+            continue
+        domain = str(item.get("domain") or "").strip()
+        patterns = [str(pattern).strip() for pattern in (item.get("patterns") or []) if str(pattern).strip()]
+        if not domain or not patterns:
+            continue
+        rules.append({"domain": domain, "patterns": patterns})
+    return {"default_domain": default_domain, "rules": rules}
+
+
+def _classify_request_domains(request: MutationRequest) -> Dict[str, Any]:
+    config = _extract_domain_classification_config()
+    default_domain = str(config.get("default_domain") or "general")
+    rules = config.get("rules") if isinstance(config.get("rules"), list) else []
+    request_paths = sorted(_extract_request_paths(request))
+    if not request_paths:
+        return {
+            "default_domain": default_domain,
+            "path_domains": [],
+            "resolved_domain": default_domain,
+            "domains": [default_domain],
+            "strategy": "default_no_targets",
+        }
+
+    path_domains: List[Dict[str, str]] = []
+    resolved_domains: List[str] = []
+    for path in request_paths:
+        normalized = path.strip()
+        matched_domain = default_domain
+        matched_pattern = "default"
+        for rule in rules:
+            domain = str(rule.get("domain") or "").strip()
+            patterns = [str(pattern).strip() for pattern in (rule.get("patterns") or []) if str(pattern).strip()]
+            if not domain or not patterns:
+                continue
+            matched = next((pattern for pattern in patterns if fnmatch.fnmatch(normalized, pattern)), None)
+            if matched:
+                matched_domain = domain
+                matched_pattern = matched
+                break
+        resolved_domains.append(matched_domain)
+        path_domains.append({"path": normalized, "domain": matched_domain, "pattern": matched_pattern})
+
+    domains = sorted(set(resolved_domains))
+    return {
+        "default_domain": default_domain,
+        "path_domains": path_domains,
+        "domains": domains,
+        "resolved_domain": domains[0] if domains else default_domain,
+        "strategy": "first_matching_rule_then_lexical",
+    }
+
+
+def _resolve_effective_limit(
+    *,
+    rule_name: str,
+    tier: Tier,
+    domain_context: Mapping[str, Any],
+    tier_limit: float,
+) -> Dict[str, Any]:
+    rule = next((candidate for candidate in RULES if candidate.name == rule_name), None)
+    applicability = rule.applicability if rule else {}
+    limits = applicability.get("limits") if isinstance(applicability.get("limits"), dict) else {}
+    domain_limits = limits.get("domain_limits") if isinstance(limits.get("domain_limits"), dict) else {}
+
+    matched_domains: List[Dict[str, Any]] = []
+    for domain in list(domain_context.get("domains") or []):
+        if domain not in domain_limits:
+            continue
+        raw_limit = domain_limits.get(domain)
+        try:
+            parsed_limit = float(raw_limit)
+        except (TypeError, ValueError):
+            continue
+        if parsed_limit > 0:
+            matched_domains.append({"domain": domain, "domain_limit": parsed_limit})
+
+    resolved_domain = str(domain_context.get("resolved_domain") or "general")
+    domain_limit = float(tier_limit)
+    if matched_domains:
+        strictest = min(matched_domains, key=lambda item: (item["domain_limit"], item["domain"]))
+        resolved_domain = strictest["domain"]
+        domain_limit = float(strictest["domain_limit"])
+
+    effective_limit = min(float(tier_limit), float(domain_limit))
+    return {
+        "tier": tier.name,
+        "tier_limit": float(tier_limit),
+        "domain_limit": float(domain_limit),
+        "effective_limit": float(effective_limit),
+        "resolved_domain": resolved_domain,
+        "matched_domain_limits": matched_domains,
+    }
 
 
 def _extract_request_paths(request: MutationRequest) -> List[str]:
@@ -907,6 +1233,7 @@ def _parse_entropy_limit(value: str, *, field: str) -> tuple[bool, int, str | No
 def _validate_entropy_budget_limit(request: MutationRequest) -> Dict[str, Any]:
     """Reject requests whose mutation/epoch entropy exceeds configured constitutional budgets."""
     from runtime.evolution.entropy_metadata import estimate_entropy_bits
+    from runtime.evolution.entropy_policy import EntropyPolicy, EntropyPolicyViolation
 
     envelope_state = get_deterministic_envelope_state()
     tier_name = str(envelope_state.get("tier", "")).strip().upper()
@@ -919,6 +1246,16 @@ def _validate_entropy_budget_limit(request: MutationRequest) -> Dict[str, Any]:
     )
     if not mutation_limit_ok:
         return {"ok": False, "reason": mutation_error, "details": {"value": mutation_limit_env}}
+
+    domain_context = envelope_state.get("domain_classification") if isinstance(envelope_state.get("domain_classification"), Mapping) else {}
+    tier = Tier[tier_name] if tier_name in Tier.__members__ else Tier.SANDBOX
+    mutation_limit_resolution = _resolve_effective_limit(
+        rule_name="entropy_budget_limit",
+        tier=tier,
+        domain_context=domain_context,
+        tier_limit=float(max_mutation_bits),
+    )
+    max_mutation_bits = int(mutation_limit_resolution["effective_limit"])
 
     epoch_limit_env = os.getenv("ADAAD_MAX_EPOCH_ENTROPY_BITS", "4096").strip()
     epoch_limit_ok, max_epoch_bits, epoch_error = _parse_entropy_limit(
@@ -933,12 +1270,28 @@ def _validate_entropy_budget_limit(request: MutationRequest) -> Dict[str, Any]:
             return {
                 "ok": False,
                 "reason": "entropy_budget_disabled_in_production",
-                "details": {"max_mutation_entropy_bits": max_mutation_bits, "tier": tier_name or "UNKNOWN"},
+                "details": {
+                    "max_mutation_entropy_bits": max_mutation_bits,
+                    "tier": tier_name or "UNKNOWN",
+                    "tier_limit": mutation_limit_resolution["tier_limit"],
+                    "domain_limit": mutation_limit_resolution["domain_limit"],
+                    "resolved_domain": mutation_limit_resolution["resolved_domain"],
+                    "applied_ceiling": mutation_limit_resolution["effective_limit"],
+                    "matched_domain_limits": mutation_limit_resolution["matched_domain_limits"],
+                },
             }
         return {
             "ok": True,
             "reason": "entropy_budget_disabled",
-            "details": {"max_mutation_entropy_bits": max_mutation_bits, "tier": tier_name or "UNKNOWN"},
+            "details": {
+                "max_mutation_entropy_bits": max_mutation_bits,
+                "tier": tier_name or "UNKNOWN",
+                "tier_limit": mutation_limit_resolution["tier_limit"],
+                "domain_limit": mutation_limit_resolution["domain_limit"],
+                "resolved_domain": mutation_limit_resolution["resolved_domain"],
+                "applied_ceiling": mutation_limit_resolution["effective_limit"],
+                "matched_domain_limits": mutation_limit_resolution["matched_domain_limits"],
+            },
         }
 
     if max_epoch_bits <= 0:
@@ -981,16 +1334,26 @@ def _validate_entropy_budget_limit(request: MutationRequest) -> Dict[str, Any]:
             "details": {"value": epoch_bits_raw},
         }
 
-    mutation_exceeded = mutation_bits > max_mutation_bits
-    epoch_exceeded = epoch_bits > max_epoch_bits
-    if mutation_exceeded and epoch_exceeded:
-        reason = "mutation_and_epoch_entropy_budget_exceeded"
-    elif mutation_exceeded:
-        reason = "entropy_budget_exceeded"
-    elif epoch_exceeded:
-        reason = "epoch_entropy_budget_exceeded"
-    else:
+    policy = EntropyPolicy(
+        policy_id="constitution_entropy_budget_limit",
+        per_mutation_ceiling_bits=max_mutation_bits,
+        per_epoch_ceiling_bits=max_epoch_bits,
+    )
+    try:
+        enforcement = policy.enforce(
+            mutation_bits=mutation_bits,
+            declared_bits=declared_bits,
+            observed_bits=observed_bits,
+            epoch_bits=epoch_bits,
+        )
         reason = "entropy_budget_ok"
+        mutation_exceeded = False
+        epoch_exceeded = False
+    except EntropyPolicyViolation as exc:
+        enforcement = exc.detail
+        reason = exc.reason
+        mutation_exceeded = int(enforcement["mutation_bits"]) > max_mutation_bits
+        epoch_exceeded = int(enforcement["epoch_bits"]) > max_epoch_bits
 
     return {
         "ok": not (mutation_exceeded or epoch_exceeded),
@@ -999,10 +1362,17 @@ def _validate_entropy_budget_limit(request: MutationRequest) -> Dict[str, Any]:
             "tier": tier_name or "UNKNOWN",
             "max_mutation_entropy_bits": max_mutation_bits,
             "max_epoch_entropy_bits": max_epoch_bits,
-            "declared_bits": declared_bits,
-            "observed_bits": observed_bits,
-            "mutation_bits": mutation_bits,
-            "epoch_entropy_bits": epoch_bits,
+            "tier_limit": mutation_limit_resolution["tier_limit"],
+            "domain_limit": mutation_limit_resolution["domain_limit"],
+            "resolved_domain": mutation_limit_resolution["resolved_domain"],
+            "applied_ceiling": mutation_limit_resolution["effective_limit"],
+            "matched_domain_limits": mutation_limit_resolution["matched_domain_limits"],
+            "declared_bits": int(enforcement["declared_bits"]),
+            "observed_bits": int(enforcement["observed_bits"]),
+            "mutation_bits": int(enforcement["mutation_bits"]),
+            "epoch_entropy_bits": int(enforcement["epoch_bits"]),
+            "policy_id": str(enforcement["policy_id"]),
+            "policy_hash": str(enforcement["policy_hash"]),
             "mutation_exceeded": mutation_exceeded,
             "epoch_exceeded": epoch_exceeded,
         },
@@ -1033,8 +1403,11 @@ def _load_policy_document(path: Path) -> tuple[Mapping[str, Any], str]:
         raise ValueError(f"constitution_policy_missing:{path}")
     raw = path.read_text(encoding="utf-8")
     try:
-        policy = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        if path.suffix.lower() in {".yaml", ".yml"}:
+            policy = yaml.safe_load(raw)
+        else:
+            policy = json.loads(raw)
+    except (json.JSONDecodeError, yaml.YAMLError) as exc:
         raise ValueError(f"constitution_policy_invalid_json:{exc}") from exc
     if not isinstance(policy, dict):
         raise ValueError("constitution_policy_invalid_schema:root_not_object")
@@ -1092,6 +1465,36 @@ def _validate_policy_schema(policy: Mapping[str, Any], expected_version: str) ->
                     f"constitution_policy_invalid_schema:override_severity:{raw_rule.get('name', index)}:{severity_name}"
                 )
 
+    resource_bounds_policy = policy.get("resource_bounds_policy")
+    if not isinstance(resource_bounds_policy, dict):
+        raise ValueError("constitution_policy_invalid_schema:resource_bounds_policy")
+    if not str(resource_bounds_policy.get("policy_version", "")).strip():
+        raise ValueError("constitution_policy_invalid_schema:resource_bounds_policy_version")
+    limits = resource_bounds_policy.get("limits")
+    if not isinstance(limits, dict):
+        raise ValueError("constitution_policy_invalid_schema:resource_bounds_limits")
+    for key in ("memory_mb", "cpu_seconds", "wall_seconds"):
+        try:
+            if float(limits.get(key, 0.0)) < 0:
+                raise ValueError(f"constitution_policy_invalid_schema:resource_bounds_limit_negative:{key}")
+        except (TypeError, ValueError) as exc:
+            if isinstance(exc, ValueError) and str(exc).startswith("constitution_policy_invalid_schema"):
+                raise
+            raise ValueError(f"constitution_policy_invalid_schema:resource_bounds_limit_invalid:{key}") from exc
+    allow_env_overrides = resource_bounds_policy.get("allow_env_overrides")
+    if not isinstance(allow_env_overrides, list):
+        raise ValueError("constitution_policy_invalid_schema:resource_bounds_allow_env_overrides")
+    allowed_override_keys = {"memory_mb", "cpu_seconds", "wall_seconds"}
+    for entry in allow_env_overrides:
+        if str(entry) not in allowed_override_keys:
+            raise ValueError(f"constitution_policy_invalid_schema:resource_bounds_allow_env_override:{entry}")
+    strict_telemetry_tiers = resource_bounds_policy.get("strict_telemetry_tiers", [Tier.PRODUCTION.name])
+    if not isinstance(strict_telemetry_tiers, list):
+        raise ValueError("constitution_policy_invalid_schema:resource_bounds_strict_telemetry_tiers")
+    for tier_name in strict_telemetry_tiers:
+        if str(tier_name).strip().upper() not in Tier.__members__:
+            raise ValueError(f"constitution_policy_invalid_schema:resource_bounds_strict_telemetry_tier:{tier_name}")
+
 
 def _record_amendment(old_hash: str | None, new_hash: str, version: str) -> None:
     if old_hash is None or old_hash == new_hash:
@@ -1102,8 +1505,10 @@ def _record_amendment(old_hash: str | None, new_hash: str, version: str) -> None
 
 
 def load_constitution_policy(path: Path = POLICY_PATH, expected_version: str = CONSTITUTION_VERSION) -> tuple[List[Rule], str]:
+    global _POLICY_DOCUMENT
     policy, policy_hash = _load_policy_document(path)
     _validate_policy_schema(policy, expected_version)
+    _POLICY_DOCUMENT = dict(policy)
     applicability = _load_rule_applicability()
 
     rule_objects: List[Rule] = []
@@ -1133,6 +1538,7 @@ except ValueError as exc:
 
 _record_amendment(old_hash=None, new_hash=POLICY_HASH, version=CONSTITUTION_VERSION)
 _BASE_GOVERNANCE_FINGERPRINT = _current_governance_fingerprint()
+_GOVERNANCE_DEBT_LEDGER = GovernanceDebtLedger()
 
 
 def reload_constitution_policy(path: Path = POLICY_PATH) -> str:
@@ -1171,11 +1577,28 @@ def evaluate_mutation(request: MutationRequest, tier: Tier) -> Dict[str, Any]:
     warnings: List[str] = []
 
     prior_state = get_deterministic_envelope_state()
+    domain_classification = _classify_request_domains(request)
+    monitor_snapshot = AndroidMonitor(Path.cwd()).snapshot()
+    android_telemetry = normalize_platform_telemetry_snapshot(
+        memory_mb=monitor_snapshot.memory_mb,
+        cpu_percent=monitor_snapshot.cpu_percent,
+        battery_percent=monitor_snapshot.battery_percent,
+        storage_mb=monitor_snapshot.storage_mb,
+    )
+    existing_platform_telemetry = prior_state.get("platform_telemetry") if isinstance(prior_state.get("platform_telemetry"), Mapping) else {}
+    # Rationale: merge Android and runtime telemetry conservatively for constitutional
+    # resource bounds enforcement.
+    # Invariants: memory/cpu preserve highest pressure; battery/storage preserve
+    # most constrained context values.
+    merged_platform_telemetry = merge_platform_telemetry(observed=existing_platform_telemetry, android=android_telemetry)
     evaluation_state = {
         **prior_state,
         "tier": tier.name,
         "tier_value": tier.value,
         "agent_id": request.agent_id,
+        "epoch_id": str(request.epoch_id or ""),
+        "domain_classification": domain_classification,
+        "platform_telemetry": merged_platform_telemetry,
     }
 
     with deterministic_envelope_scope(evaluation_state):
@@ -1266,6 +1689,8 @@ def evaluate_mutation(request: MutationRequest, tier: Tier) -> Dict[str, Any]:
         "applicability_matrix": applicability_matrix,
         "agent_id": request.agent_id,
         "intent": request.intent,
+        "resolved_domain": domain_classification.get("resolved_domain"),
+        "domain_classification": domain_classification,
         "rule_dependency_graph": RULE_DEPENDENCY_GRAPH,
         "governance_envelope": governance_envelope,
         "governance_fingerprint": drift_fingerprint,
@@ -1273,6 +1698,73 @@ def evaluate_mutation(request: MutationRequest, tier: Tier) -> Dict[str, Any]:
         "governance_fingerprint_components": fingerprint_components,
         "governance_drift_detected": drift_detected,
     }
+
+    epoch_id = str(evaluation_state.get("epoch_id", "")).strip()
+    epoch_match = re.search(r"(\d+)$", epoch_id)
+    epoch_index = int(epoch_match.group(1)) if epoch_match else 0
+    warning_verdicts = [
+        item
+        for item in verdicts
+        if isinstance(item, dict) and str(item.get("severity", "")).strip().lower() == Severity.WARNING.value and not bool(item.get("passed", False))
+    ]
+    if drift_detected and tier != Tier.PRODUCTION:
+        warning_verdicts.append({"rule": "governance_drift_detected", "severity": Severity.WARNING.value, "passed": False})
+    debt_snapshot = _GOVERNANCE_DEBT_LEDGER.accumulate_epoch_verdicts(
+        epoch_id=epoch_id,
+        epoch_index=epoch_index,
+        warning_verdicts=warning_verdicts,
+        agent_id=request.agent_id,
+    )
+    evaluation["governance_debt_snapshot"] = {
+        "snapshot_hash": debt_snapshot.snapshot_hash,
+        "prev_snapshot_hash": debt_snapshot.prev_snapshot_hash,
+        "compound_debt_score": debt_snapshot.compound_debt_score,
+        "threshold_breached": debt_snapshot.threshold_breached,
+    }
+
+
+
+    ceiling_events = []
+    for item in verdicts:
+        details = item.get("details") if isinstance(item.get("details"), dict) else {}
+        detail_payload = details.get("details") if isinstance(details.get("details"), dict) else {}
+        if not detail_payload or "applied_ceiling" not in detail_payload:
+            continue
+        ceiling_events.append(
+            {
+                "rule": item.get("rule"),
+                "resolved_domain": detail_payload.get("resolved_domain", domain_classification.get("resolved_domain")),
+                "applied_ceiling": detail_payload.get("applied_ceiling"),
+                "tier_limit": detail_payload.get("tier_limit"),
+                "domain_limit": detail_payload.get("domain_limit"),
+            }
+        )
+
+    if epoch_id:
+        journal.write_entry(
+            agent_id=request.agent_id or "system",
+            action="constitutional_evaluation_domain_ceiling",
+            payload={
+                "agent_id": request.agent_id,
+                "epoch_id": epoch_id,
+                "tier": tier.name,
+                "resolved_domain": domain_classification.get("resolved_domain"),
+                "domain_classification": domain_classification,
+                "applied_ceilings": ceiling_events,
+                "passed": passed,
+            },
+        )
+        journal.append_tx(
+            tx_type="constitutional_evaluation_domain_ceiling",
+            payload={
+                "agent_id": request.agent_id,
+                "epoch_id": epoch_id,
+                "tier": tier.name,
+                "resolved_domain": domain_classification.get("resolved_domain"),
+                "applied_ceilings": ceiling_events,
+                "passed": passed,
+            },
+        )
 
     metrics.log(
         event_type="constitutional_evaluation",
@@ -1312,6 +1804,26 @@ def evaluate_mutation(request: MutationRequest, tier: Tier) -> Dict[str, Any]:
         level="INFO",
         element_id=ELEMENT_ID,
     )
+
+    if not passed:
+        resource_verdict = next((item for item in verdicts if item.get("rule") == "resource_bounds"), {})
+        resource_details = resource_verdict.get("details") if isinstance(resource_verdict, dict) else {}
+        detail_map = resource_details.get("details") if isinstance(resource_details, dict) else {}
+        detail_map = detail_map if isinstance(detail_map, dict) else {}
+        rejection_payload = {
+            "event_schema": "governance.rejection.v1",
+            "agent_id": request.agent_id,
+            "epoch_id": str(evaluation_state.get("epoch_id", "")),
+            "tier": tier.name,
+            "blocking_failures": list(blocking_failures),
+            "warnings": list(warnings),
+            "policy_hash": POLICY_HASH,
+            "bounds_policy_version": detail_map.get("bounds_policy_version", "unknown"),
+            "resource_usage_snapshot": detail_map.get("resource_usage_snapshot", {}),
+        }
+        metrics.log(event_type="governance_rejection", payload=rejection_payload, level="ERROR", element_id=ELEMENT_ID)
+        journal.write_entry(agent_id=request.agent_id or "system", action="governance_rejection", payload=rejection_payload)
+        journal.append_tx(tx_type="governance_rejection", payload=rejection_payload)
 
     return evaluation
 
@@ -1360,6 +1872,7 @@ __all__ = [
     "evaluate_mutation",
     "determine_tier",
     "get_forced_tier",
+    "boot_sanity_check",
     "load_constitution_policy",
     "reload_constitution_policy",
     "Tier",

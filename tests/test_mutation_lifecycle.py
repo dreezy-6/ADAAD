@@ -87,11 +87,50 @@ def test_lifecycle_state_persist_and_restore(_dev_sig, _write_entry, _append_tx,
     assert restored.current_state == "executing"
 
 
+
+
 @mock.patch("runtime.mutation_lifecycle.journal.append_tx")
 @mock.patch("runtime.mutation_lifecycle.journal.write_entry")
-def test_rollback_supports_allowed_paths(_write_entry, _append_tx) -> None:
-    context = _context(current_state="executing")
+@mock.patch("runtime.mutation_lifecycle.cryovant.dev_signature_allowed", return_value=True)
+def test_persist_restore_roundtrip_preserves_json_contract(_dev_sig, _write_entry, _append_tx, tmp_path: Path) -> None:
+    context = _context(cert_refs={"bundle_id": "b-1"}, fitness_score=0.9, state_dir=tmp_path)
+    assert transition("certified", "executing", context) == "executing"
+
+    state_path = context.state_path()
+    persisted = state_path.read_text(encoding="utf-8")
+    restored = MutationLifecycleContext.restore("m-1", state_dir=tmp_path)
+
+    assert restored is not None
+    assert restored.current_state == "executing"
+    assert persisted.startswith("{\n  ")
+
+
+@mock.patch("runtime.mutation_lifecycle.journal.append_tx")
+@mock.patch("runtime.mutation_lifecycle.journal.write_entry")
+def test_persist_write_failure_keeps_existing_state_well_formed(_write_entry, _append_tx, tmp_path: Path) -> None:
+    context = _context(state_dir=tmp_path)
+    context.persist()
+    state_path = context.state_path()
+    baseline = state_path.read_text(encoding="utf-8")
+
+    with mock.patch("pathlib.Path.replace", side_effect=OSError("replace failed")):
+        with pytest.raises(OSError, match="replace failed"):
+            context.persist()
+
+    assert state_path.read_text(encoding="utf-8") == baseline
+    assert MutationLifecycleContext.restore("m-1", state_dir=tmp_path) is not None
+    assert list(tmp_path.glob("*.tmp")) == []
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+@mock.patch("runtime.mutation_lifecycle.issue_rollback_certificate")
+@mock.patch("runtime.mutation_lifecycle.journal.append_tx")
+@mock.patch("runtime.mutation_lifecycle.journal.write_entry")
+def test_rollback_supports_allowed_paths(_write_entry, _append_tx, issue_cert) -> None:
+    context = _context(current_state="executing", cert_refs={"forward_certificate_digest": "sha256:fwd"})
+    issue_cert.return_value = mock.Mock(digest="sha256:rollback")
     assert rollback(context, "certified") == "certified"
+    assert issue_cert.called
 
 
 @mock.patch("runtime.mutation_lifecycle.journal.append_tx")
@@ -109,3 +148,21 @@ def test_retry_transition_retries_until_success(_write_entry, _append_tx) -> Non
     with mock.patch("runtime.mutation_lifecycle.transition", side_effect=_side_effect):
         out = retry_transition(context, "staged", max_attempts=2, sleep_fn=lambda _x: None)
     assert out == "staged"
+
+
+@mock.patch("runtime.mutation_lifecycle.journal.append_tx")
+@mock.patch("runtime.mutation_lifecycle.journal.write_entry")
+@mock.patch("runtime.mutation_lifecycle.cryovant.verify_payload_signature", return_value=True)
+def test_mutation_lifecycle_fail_closes_on_founders_key_rotation_failure(_verify_payload_sig, write_entry, append_tx) -> None:
+    context = _context(
+        cert_refs={"bundle_id": "b-1"},
+        fitness_score=0.9,
+        trust_mode="prod",
+        founders_law_result=(False, ["FL-KEY-ROTATION-V1:stale"]),
+    )
+
+    with pytest.raises(LifecycleTransitionError, match="guard_failed:certified->executing"):
+        transition("certified", "executing", context)
+
+    assert write_entry.called
+    assert append_tx.called

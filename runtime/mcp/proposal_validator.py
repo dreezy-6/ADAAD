@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Validation for incoming MCP mutation proposals."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
+from app.agents.mutation_request import MutationRequest
+from runtime.constitution import Tier, evaluate_mutation
+
+SCHEMA_PATH = Path("schemas/llm_mutation_proposal.v1.json")
+TIER0_PATH_PREFIXES = ("runtime/", "security/")
+TIER0_EXACT_PATHS = {"app/main.py", "app/mutation_executor.py", "runtime/constitution.py"}
+
+
+class ProposalValidationError(ValueError):
+    def __init__(self, status_code: int, code: str, detail: str = "") -> None:
+        super().__init__(code)
+        self.status_code = status_code
+        self.code = code
+        self.detail = detail
+
+
+def _load_schema() -> Dict[str, Any]:
+    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _matches_schema_type(value: Any, expected: str) -> bool:
+    if expected == "object":
+        return isinstance(value, dict)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    return True
+
+
+def _validate_schema_subset(payload: Any, schema: Dict[str, Any], path: str = "$") -> list[str]:
+    errors: list[str] = []
+    expected_type = schema.get("type")
+    if isinstance(expected_type, str) and not _matches_schema_type(payload, expected_type):
+        return [f"{path}:expected_{expected_type}"]
+
+    if isinstance(payload, dict):
+        required = schema.get("required") if isinstance(schema.get("required"), list) else []
+        for field in required:
+            if isinstance(field, str) and field not in payload:
+                errors.append(f"{path}.{field}:missing_required")
+
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        for key, value in payload.items():
+            if key in properties and isinstance(properties[key], dict):
+                errors.extend(_validate_schema_subset(value, properties[key], f"{path}.{key}"))
+            elif schema.get("additionalProperties") is False:
+                errors.append(f"{path}.{key}:additional_property")
+
+    if isinstance(payload, list) and isinstance(schema.get("items"), dict):
+        for idx, item in enumerate(payload):
+            errors.extend(_validate_schema_subset(item, schema["items"], f"{path}[{idx}]"))
+
+    min_length = schema.get("minLength")
+    if isinstance(min_length, int) and isinstance(payload, str) and len(payload) < min_length:
+        errors.append(f"{path}:min_length")
+
+    return errors
+
+
+def _validate_schema(payload: Dict[str, Any], schema: Dict[str, Any]) -> None:
+    errors = _validate_schema_subset(payload, schema)
+    if errors:
+        raise ProposalValidationError(400, "schema_validation_failed", ";".join(errors))
+
+
+def _is_tier0_path(path: str) -> bool:
+    normalized = str(path or "").strip()
+    if normalized in TIER0_EXACT_PATHS:
+        return True
+    return any(normalized.startswith(prefix) for prefix in TIER0_PATH_PREFIXES)
+
+
+def validate_proposal(raw_payload: Dict[str, Any]) -> Tuple[MutationRequest, Dict[str, Any]]:
+    schema = _load_schema()
+
+    # 1. schema validation
+    _validate_schema(raw_payload, schema)
+
+    payload = dict(raw_payload)
+    # 2. unconditional authority override
+    payload["authority_level"] = "governor-review"
+
+    # 3. Tier-0 path check
+    elevation_token = str(payload.get("elevation_token") or "").strip()
+    for target in payload.get("targets") or []:
+        if _is_tier0_path(str((target or {}).get("path") or "")) and not elevation_token:
+            raise ProposalValidationError(403, "tier0_escalation_required", "human elevation_token required")
+
+    request = MutationRequest.from_dict(payload)
+
+    # 4. constitutional pre-check
+    verdict = evaluate_mutation(request, Tier.STABLE)
+    if not verdict.get("passed", False):
+        blocking = [v for v in verdict.get("verdicts", []) if str(v.get("severity", "")).lower() == "blocking" and not v.get("ok", False)]
+        if blocking:
+            raise ProposalValidationError(422, "pre_check_failed", json.dumps(verdict.get("verdicts", []), sort_keys=True))
+
+    # 5. return tuple
+    return request, verdict
+
+
+__all__ = ["ProposalValidationError", "validate_proposal"]

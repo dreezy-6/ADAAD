@@ -2,7 +2,43 @@
 
 ## [Unreleased]
 
+### Added
+- MCP schemas for proposal request/response and mutation analysis response under `schemas/mcp/`.
+- MCP test coverage for tools parity, proposal validation, mutation analysis, rejection explanation, candidate ranking, and server route/auth contracts.
+
+### Fixed
+- Autonomy role registry tests now include the `ClaudeProposalAgent` role mapping.
+
 ### Changed
+- Documented MCP architecture, route map, and server→tool mapping in `docs/mcp/IMPLEMENTATION.md`.
+
+### Added
+- Claude-governed MCP co-pilot integration (feat/claude-mcp-copilot).
+  New mcp-proposal-writer server (runtime/mcp/server.py): governed write
+  surface for LLM mutation proposals. ClaudeProposalAgent implements
+  MutatorAgent role. proposal_queue.py: append-only hash-linked staging.
+  mutation_analyzer.py: deterministic fitness + constitutional pre-check.
+  rejection_explainer.py: guard_report → plain-English explanation.
+  candidate_ranker.py: fitness-weighted proposal ranking.
+  tools_registry.py: MCP tools/list handler for all 4 servers.
+  --serve-mcp flag added to ui/aponi_dashboard.py.
+  .github/mcp_config.json: GitHub Copilot-compatible server configuration.
+
+### Fixed
+- CRITICAL: verify_signature() in security/cryovant.py now performs real
+  HMAC-SHA-256 verification. Stub that always returned False removed.
+- BLOCKING: --serve-mcp CLI flag now exists in ui/aponi_dashboard.py.
+
+### Changed
+- docs/CONSTITUTION.md: added LLM Proposal Agent governance clause.
+- runtime/autonomy/roles.py: registered ClaudeProposalAgent.
+
+### Changed
+- Cryovant agent certificate checks now prefer payload-bound HMAC verification with legacy static/dev fallback telemetry during migration.
+- Fixed constitution document version parsing regex so governance version-gate checks evaluate real markdown versions.
+- Test sandbox pre-exec hooks are now invocation-scoped (thread-safe) instead of shared mutable instance state.
+- `verify_session()` now emits a deprecation warning clarifying non-production behavior.
+- Consolidated lineage chain resolution on `runtime.evolution.lineage_v2` and removed the duplicate `security.ledger.lineage_v2` implementation.
 - Hardened replay-mode provider synchronization so `EvolutionRuntime.set_replay_mode()` aligns the epoch manager provider with the governor provider before strict replay checks.
 - Improved deterministic shared-epoch concurrency behavior in governor validation ordering for strict replay lanes.
 - Mutation executor now preserves backwards compatibility with legacy `_run_tests` monkeypatches that do not accept keyword args.
@@ -37,11 +73,11 @@
 - Evolution kernel `run_cycle()` now supports a kernel-native execution path for explicit `agent_id` runs while preserving compatibility-adapter routing for default/no-agent flows.
 - Hardened `EvolutionKernel` agent lookup by resolving discovered and requested paths before membership checks, eliminating alias/symlink/`..` false `agent_not_found` failures.
 - Added regression coverage for mixed lexical-vs-resolved agent path forms in `tests/test_evolution_kernel.py`.
+- Aponi execution-control now validates queue targets by command id, returning explicit `target_not_found` or `target_not_executable` errors before orchestration.
 
 ### Added
-- Constitution framework advanced to `0.2.0`; PR-2 rule set is now active for `max_complexity_delta`, `test_coverage_maintained`, `max_mutation_rate`, `lineage_continuity`, and `resource_bounds` with tier-aware severities from policy.
 - Constitutional enforcement semantics now consistently apply enabled-rule gating with applicability pass-through (`rule_not_applicable`) and tier override resolution, improving deterministic verdict replay behavior.
-- Replay/determinism posture updated for constitutional evaluation: active PR-2 rules increase deterministic evidence surface while preserving reproducible policy-hash/version coupling across audits.
+- Replay/determinism posture updated for constitutional evaluation, increasing deterministic evidence surface while preserving reproducible policy-hash/version coupling across audits.
 - Added read-only Aponi replay forensics endpoints (`/replay/divergence`, `/replay/diff?epoch_id=...`) and versioned governance health model metadata (`v1.0.0`).
 - Added Aponi V2 governance docs: replay forensics + health model, red-team pressure scenario, and 0.70.0 draft release notes.
 - Added epoch entropy observability helper (`runtime/evolution/telemetry_audit.py`) for declared vs observed entropy breakdown by epoch.
@@ -62,18 +98,19 @@
 - Enabled blocking constitutional checks for `lineage_continuity` and `resource_bounds`, strengthening mutation safety controls while retaining policy-defined tier behavior.
 - Enabled warning-path governance checks for `max_complexity_delta` and `test_coverage_maintained`, and enforced `max_mutation_rate` tier escalation/demotion semantics for production/sandbox replay consistency.
 
-### Milestone reconciliation (PR-1 .. PR-6)
+### Milestone reconciliation (PR-1 .. PR-6 + PR-3H)
 
 Authoritative current version/maturity for these notes: **0.65.x, Experimental / pre-1.0**.
 
 | Milestone | Status | Reconciled claim |
 |---|---|---|
 | PR-1 | Implemented | Scoring foundation + deterministic governance/scoring ledger/test coverage landed in this branch |
-| PR-2 | Implemented | Constitutional rule set v0.2.0 enabled with deterministic validators, governance envelope digest, drift detection, and coverage artifact pipeline contracts |
-| PR-3 | Partial | Checkpoint registry/verifier and entropy policy primitives landed; full scope still open |
-| PR-4 | Partial | Promotion policy/state-machine hardening landed; remaining milestone scope still open |
+| PR-2 | Implemented | Constitutional rule set v0.2.0 enabled with deterministic validators, governance envelope digest, drift detection, and coverage artifact pipeline contracts (not open) |
+| PR-3 | Implemented | Checkpoint registry/verifier and entropy policy enforcement paths landed with deterministic coverage in this branch |
+| PR-3H (hardening extension) | Planned | New post-PR-3 hardening scope: (1) deterministic checkpoint tamper-escalation evidence path, (2) entropy anomaly triage policy thresholds + replay fixtures, and (3) audit-ready hardening acceptance tests for strict replay governance reviews |
+| PR-4 | Implemented | Lifecycle/promotion policy state-machine and ledger/event contract wiring landed with deterministic coverage in this branch |
 | PR-5 | Implemented (baseline) | Deterministic sandbox policy checks and evidence hashing landed |
-| PR-6 | Planned | Federation-level sovereignty orchestration remains roadmap |
+| PR-6 | Implemented (baseline) | Deterministic federation coordination/protocol baseline landed; distributed transport hardening remains roadmap |
 
 ### Validated guarantees (this branch)
 
@@ -90,7 +127,8 @@ Authoritative current version/maturity for these notes: **0.65.x, Experimental /
 
 - Sandbox hardening depth beyond current baseline checks.
 - Portable cryptographic replay proof bundles suitable for external verifier exchange.
-- Federation and cross-instance sovereignty coordination (PR-6 scope).
+- Federation and cross-instance sovereignty hardening beyond current in-tree coordination/protocol baseline.
+- Key-rotation enforcement escalation and audit closure before 1.0 freeze.
 
 ## 0.65.0 - Initial import of ADAAD He65 tree
 

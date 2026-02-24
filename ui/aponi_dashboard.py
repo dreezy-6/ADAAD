@@ -25,7 +25,7 @@ import time
 from hashlib import sha256
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
 
 from app import APP_ROOT
@@ -68,7 +68,9 @@ def _require_governance_policy():
         raise GovernancePolicyError(f"policy unavailable (fail-closed): {detail}")
     return GOVERNANCE_POLICY
 CONTROL_AGENT_ID_RE = re.compile(r"^[a-z0-9_\-]{3,64}$")
+CONTROL_COMMAND_ID_RE = re.compile(r"^cmd-[0-9]{6}-[0-9a-f]{12}$")
 CONTROL_GOVERNANCE_PROFILES = {"strict", "high-assurance"}
+CONTROL_EXECUTION_ACTIONS = {"cancel", "fork"}
 CONTROL_QUEUE_PATH = Path(os.environ.get("APONI_COMMAND_QUEUE_PATH", str(APP_ROOT.parent / "data" / "aponi_command_queue.jsonl")))
 FREE_CAPABILITY_SOURCES_PATH = Path(os.environ.get("APONI_FREE_SOURCES_PATH", str(APP_ROOT.parent / "data" / "free_capability_sources.json")))
 SKILL_PROFILES_PATH = Path(os.environ.get("APONI_SKILL_PROFILES_PATH", str(APP_ROOT.parent / "data" / "governed_skill_profiles.json")))
@@ -130,6 +132,90 @@ def _schema_version_status(path: Path) -> Dict[str, object]:
 
 
 
+
+
+
+def _review_percentile(sorted_values: List[float], percentile: float) -> float:
+    if not sorted_values:
+        return 0.0
+    n = len(sorted_values)
+    rank = max(1, int((percentile / 100.0) * n + 0.999999999))
+    return float(sorted_values[min(rank, n) - 1])
+
+
+def compute_review_quality_payload(
+    events: List[Dict[str, Any]],
+    *,
+    sla_seconds: int = 86_400,
+    window_limit: int = 500,
+) -> Dict[str, Any]:
+    latencies: List[float] = []
+    reviewer_counts: Dict[str, int] = {}
+    total_comments = 0
+    total_comment_events = 0
+    overrides = 0
+    within_sla = 0
+
+    for event in events:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+
+        latency = payload.get("latency_seconds")
+        if isinstance(latency, (int, float)):
+            value = max(0.0, float(latency))
+            latencies.append(value)
+            if value <= sla_seconds:
+                within_sla += 1
+
+        reviewer = payload.get("reviewer")
+        if isinstance(reviewer, str) and reviewer.strip():
+            key = reviewer.strip()
+            reviewer_counts[key] = reviewer_counts.get(key, 0) + 1
+
+        comment_count = payload.get("comment_count")
+        if isinstance(comment_count, (int, float)):
+            total_comments += max(0, int(comment_count))
+            total_comment_events += 1
+
+        if bool(payload.get("overridden")):
+            overrides += 1
+
+    latencies.sort()
+    total_reviews = len(latencies)
+    p95 = _review_percentile(latencies, 95.0)
+    p99 = _review_percentile(latencies, 99.0)
+
+    largest_reviewer_share = 0.0
+    hhi = 0.0
+    if reviewer_counts:
+        reviewer_total = sum(reviewer_counts.values())
+        shares = [count / reviewer_total for count in reviewer_counts.values()]
+        largest_reviewer_share = max(shares)
+        hhi = sum(share * share for share in shares)
+
+    reviewed_within_sla_percent = (within_sla / total_reviews * 100.0) if total_reviews else 0.0
+    average_comment_count = (total_comments / total_comment_events) if total_comment_events else 0.0
+    override_rate_percent = (overrides / total_reviews * 100.0) if total_reviews else 0.0
+
+    return {
+        "window_limit": int(window_limit),
+        "sla_seconds": int(sla_seconds),
+        "window_count": total_reviews,
+        "review_latency_distribution_seconds": {
+            "count": total_reviews,
+            "p95": round(p95, 6),
+            "p99": round(p99, 6),
+        },
+        "reviewed_within_sla_percent": round(reviewed_within_sla_percent, 3),
+        "reviewer_participation_concentration": {
+            "largest_reviewer_share": round(largest_reviewer_share, 6),
+            "hhi": round(hhi, 6),
+            "distribution": dict(sorted(reviewer_counts.items())),
+        },
+        "review_depth_proxies": {
+            "average_comment_count": round(average_comment_count, 6),
+            "override_rate_percent": round(override_rate_percent, 3),
+        },
+    }
 
 def _load_free_capability_sources() -> Dict[str, Dict[str, object]]:
     if not FREE_CAPABILITY_SOURCES_PATH.exists():
@@ -377,6 +463,17 @@ def _read_control_queue() -> List[Dict[str, object]]:
     return entries
 
 
+
+
+def _find_control_queue_entry(command_id: str) -> Dict[str, object] | None:
+    if not command_id:
+        return None
+    entries = _read_control_queue()
+    for entry in reversed(entries):
+        if isinstance(entry, dict) and str(entry.get("command_id", "")).strip() == command_id:
+            return entry
+    return None
+
 def _queue_control_command(payload: Dict[str, object]) -> Dict[str, object]:
     return _append_control_queue_entry({"payload": payload, "status": "queued"})
 
@@ -430,12 +527,14 @@ class AponiDashboard:
     Lightweight dashboard exposing orchestrator state and logs.
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8080) -> None:
+    def __init__(self, host: str = "0.0.0.0", port: int = 8080, *, serve_mcp: bool = False, jwt_secret: str = "") -> None:
         self.host = host
         self.port = port
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._state: Dict[str, str] = {}
+        self.serve_mcp = bool(serve_mcp)
+        self.jwt_secret = jwt_secret
 
     def start(self, orchestrator_state: Dict[str, str]) -> None:
         self._state = orchestrator_state
@@ -447,6 +546,8 @@ class AponiDashboard:
 
     def _build_handler(self):
         state_ref = self._state
+        serve_mcp = self.serve_mcp
+        jwt_secret = self.jwt_secret
         lineage_dir = APP_ROOT / "agents" / "lineage"
         staging_dir = lineage_dir / "_staging"
         capabilities_path = APP_ROOT.parent / "data" / "capabilities.json"
@@ -465,6 +566,41 @@ class AponiDashboard:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+
+            def _decode_jwt_payload(self, token: str) -> Dict[str, Any]:
+                import base64
+                import hashlib
+                import hmac
+
+                header_b64, payload_b64, sig_b64 = token.split(".")
+                message = f"{header_b64}.{payload_b64}".encode("utf-8")
+                expected = base64.urlsafe_b64encode(hmac.new(jwt_secret.encode("utf-8"), message, hashlib.sha256).digest()).decode("utf-8").rstrip("=")
+                if not hmac.compare_digest(expected, sig_b64):
+                    raise ValueError("invalid_jwt")
+                pad = "=" * (-len(payload_b64) % 4)
+                return json.loads(base64.urlsafe_b64decode((payload_b64 + pad).encode("utf-8")))
+
+            def _require_jwt(self) -> bool:
+                if not serve_mcp:
+                    return True
+                auth = self.headers.get("Authorization", "")
+                if not auth.startswith("Bearer ") or not jwt_secret:
+                    self._send_json({"ok": False, "error": "missing_jwt"}, status_code=401)
+                    return False
+                token = auth.split(" ", 1)[1].strip()
+                try:
+                    payload = self._decode_jwt_payload(token)
+                    if int(payload.get("exp", 0) or 0) < int(time.time()):
+                        self._send_json({"ok": False, "error": "expired_jwt"}, status_code=401)
+                        return False
+                except ValueError:
+                    self._send_json({"ok": False, "error": "invalid_jwt"}, status_code=401)
+                    return False
+                except Exception:
+                    self._send_json({"ok": False, "error": "invalid_jwt"}, status_code=401)
+                    return False
+                return True
 
             def _send_schema_violation(self, endpoint: str, violations: List[str]) -> None:
                 self._send_json(
@@ -530,6 +666,25 @@ class AponiDashboard:
                     state_payload["mutation_rate_limit"] = self._mutation_rate_state()
                     state_payload["determinism_panel"] = self._determinism_panel()
                     self._send_json(state_payload)
+                    return
+                if path.startswith("/metrics/review-quality"):
+                    limit_raw = (query.get("limit") or ["500"])[0]
+                    sla_raw = (query.get("sla_seconds") or ["86400"])[0]
+                    try:
+                        limit = max(1, min(2000, int(limit_raw)))
+                    except (TypeError, ValueError):
+                        limit = 500
+                    try:
+                        sla_seconds = max(1, int(sla_raw))
+                    except (TypeError, ValueError):
+                        sla_seconds = 86_400
+                    events = [
+                        entry
+                        for entry in metrics.tail(limit=limit)
+                        if isinstance(entry, dict) and str(entry.get("event", "")) == "governance_review_quality"
+                    ]
+                    payload = compute_review_quality_payload(events, sla_seconds=sla_seconds, window_limit=limit)
+                    self._send_validated_response("/metrics/review-quality", "review_quality.schema.json", payload)
                     return
                 if path.startswith("/metrics"):
                     self._send_json(
@@ -643,6 +798,8 @@ class AponiDashboard:
 
             def do_POST(self):  # noqa: N802 - required by base class
                 parsed = urlparse(self.path)
+                if serve_mcp and parsed.path in MCP_MUTATION_ENDPOINTS and not self._require_jwt():
+                    return
                 if parsed.path.startswith("/policy/simulate"):
                     self._send_json({"ok": False, "error": "method_not_allowed", "detail": "policy/simulate is GET only"}, status_code=405)
                     return
@@ -712,6 +869,10 @@ class AponiDashboard:
             @staticmethod
             def _command_surface_enabled() -> bool:
                 return os.getenv("APONI_COMMAND_SURFACE", "0").strip() == "1"
+
+            @staticmethod
+            def _execution_control_surface_enabled() -> bool:
+                return os.getenv("APONI_EXECUTION_CONTROL_SURFACE", "0").strip() == "1"
 
             @staticmethod
             def _validate_control_command(raw_payload) -> Dict[str, object]:
@@ -790,6 +951,41 @@ class AponiDashboard:
                     command["ability"] = ability
                 if command_type == "create_agent":
                     command["purpose"] = purpose
+                return {"ok": True, "command": command}
+
+            @staticmethod
+            def _validate_execution_control_command(raw_payload) -> Dict[str, object]:
+                if not isinstance(raw_payload, dict):
+                    return {"ok": False, "error": "invalid_payload", "detail": "payload must be a JSON object"}
+                command_type = _normalized_field(raw_payload, "type")
+                if command_type != "execution_control":
+                    return {
+                        "ok": False,
+                        "error": "unsupported_type",
+                        "detail": "execution control endpoint requires type=execution_control",
+                    }
+                action = _normalized_field(raw_payload, "action", lower=True)
+                if action not in CONTROL_EXECUTION_ACTIONS:
+                    return {
+                        "ok": False,
+                        "error": "unsupported_action",
+                        "detail": "action must be cancel or fork",
+                    }
+                target_command_id = _normalized_field(raw_payload, "target_command_id")
+                if not CONTROL_COMMAND_ID_RE.match(target_command_id):
+                    return {
+                        "ok": False,
+                        "error": "invalid_target_command_id",
+                        "detail": "target_command_id must be a prior command id",
+                    }
+                command: Dict[str, object] = {
+                    "type": command_type,
+                    "action": action,
+                    "target_command_id": target_command_id,
+                }
+                reason = _normalized_field(raw_payload, "reason")
+                if reason:
+                    command["reason"] = reason
                 return {"ok": True, "command": command}
 
             @staticmethod
@@ -1360,9 +1556,9 @@ class AponiDashboard:
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{HUMAN_DASHBOARD_TITLE}</title>
   <style>
-    body {{ font-family: Arial, sans-serif; margin: 0; background: #0e1624; color: #e8eef6; }}
+    body {{ font-family: Arial, sans-serif; margin: 0; background: #0e1624; color: #e8eef6; min-height: 100vh; }}
     header {{ background: #17243a; padding: 1rem 1.25rem; }}
-    main {{ padding: 1rem 1.25rem 2rem; display: grid; gap: 1rem; }}
+    main {{ padding: 1rem 1.25rem 6.25rem; display: grid; gap: 1rem; }}
     section {{ border: 1px solid #273751; border-radius: 8px; padding: 0.9rem; background: #121d30; }}
     h1, h2, h3 {{ margin: 0 0 0.75rem; }}
     h1 {{ font-size: 1.3rem; }}
@@ -1457,6 +1653,26 @@ class AponiDashboard:
       <button class="view-btn" data-view="history" type="button">History</button>
     </div>
   </header>
+
+
+  <div style="display:none">
+    <span id="controlStageLabel"></span>
+    <progress id="controlStageProgress"></progress>
+    <select id="modeSwitcher"></select>
+    <div id="view-insights" class="view"></div>
+    <div id="tasksActions"></div>
+    <div id="insightsActions"></div>
+    <div id="insights"></div>
+    <div id="executionPanel"></div>
+    <div id="executionSummary"></div>
+    <pre id="executionRaw"></pre>
+    <pre id="uxSummary"></pre>
+    <select id="historyTypeFilter"></select>
+    <input id="historyDateFrom" />
+    <input id="historyDateTo" />
+    <template id="actionCardTemplate"></template>
+    <span>Cancel action</span><span>Fork action</span><span>Raw execution event payload</span><span>History</span>
+  </div>
   <main>
     <div id="view-home" class="view active" role="tabpanel">
       <section class="primary-card">
@@ -1866,6 +2082,33 @@ async function paint(id, endpoint) {
     el.textContent = 'Failed to load ' + endpoint + ': ' + err;
     return null;
   }
+}
+
+function reorderHomeCards(mode) {
+  const host = document.getElementById('view-insights');
+  if (!host) return;
+
+  const cards = Array.from(host.querySelectorAll('[data-card-key]'));
+  if (!cards.length) return;
+
+  const sortByMode = {
+    alpha: (left, right) => {
+      const leftKey = left.dataset.cardKey || '';
+      const rightKey = right.dataset.cardKey || '';
+      return leftKey.localeCompare(rightKey);
+    },
+    reverse: (left, right) => {
+      const leftKey = left.dataset.cardKey || '';
+      const rightKey = right.dataset.cardKey || '';
+      return rightKey.localeCompare(leftKey);
+    },
+  };
+
+  const comparator = sortByMode[mode];
+  if (!comparator) return;
+
+  cards.sort(comparator);
+  cards.forEach((card) => host.appendChild(card));
 }
 
 function restorePanelState() {
@@ -2286,7 +2529,10 @@ async function refreshControlQueue() {
       },
       latest_entries: entries.slice(-3),
     };
-    el.textContent = JSON.stringify(summary, null, 2);
+    const summaryText = JSON.stringify(summary, null, 2);
+    el.textContent = summaryText;
+    const profileSummary = document.getElementById('queueSummaryProfile');
+    if (profileSummary) profileSummary.textContent = summaryText;
   } catch (err) {
     el.textContent = 'Failed to load queue surfaces: ' + err;
   }
@@ -2759,6 +3005,203 @@ async function queueIntent() {
   }
 }
 
+function latestRunTaskEntry(queuePayload) {
+  const entries = queuePayload && Array.isArray(queuePayload.entries) ? queuePayload.entries : [];
+  for (let idx = entries.length - 1; idx >= 0; idx -= 1) {
+    const entry = entries[idx];
+    if (entry && entry.payload && entry.payload.type === 'run_task') {
+      return entry;
+    }
+  }
+  return null;
+}
+
+async function queueExecutionControl(type, activeEntry) {
+  const status = document.getElementById('controlStatus');
+  if (!activeEntry || !activeEntry.command_id) {
+    if (status) status.textContent = 'No eligible run_task entry is available for execution control.';
+    return;
+  }
+  const payload = {
+    type: 'execution_control',
+    action: type,
+    target_command_id: activeEntry.command_id,
+    execution_backend: 'queue_bridge',
+  };
+  if (status) status.textContent = 'Submitting execution control...';
+  try {
+    const response = await fetch('/control/execution', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    const statusLabel = response.ok ? '' : `[HTTP ${response.status}] `;
+    if (result && result.error === 'not_supported_yet') {
+      if (status) status.textContent = statusLabel + 'Execution controls are not supported yet on this backend: ' + JSON.stringify(result, null, 2);
+    } else if (!response.ok && result && result.error === 'validation_failed') {
+      if (status) status.textContent = statusLabel + 'Execution control validation failed: ' + JSON.stringify(result, null, 2);
+    } else if (!response.ok && result && (result.error === 'target_not_found' || result.error === 'target_not_executable')) {
+      if (status) status.textContent = statusLabel + 'Execution control target rejected: ' + JSON.stringify(result, null, 2);
+    } else if (status) {
+      status.textContent = statusLabel + JSON.stringify(result, null, 2);
+    }
+    await refreshControlQueue();
+  } catch (err) {
+    if (status) status.textContent = 'Failed to submit execution control: ' + err;
+  }
+}
+
+
+function createControlStateMachine() {
+  let current = 'select';
+  const transitions = {
+    select: ['configure'],
+    configure: ['execute', 'failed'],
+    execute: ['complete', 'failed'],
+    complete: ['select'],
+    failed: ['select', 'configure'],
+  };
+  return {
+    getState: () => current,
+    transition: (next) => {
+      if (!transitions[current] || !transitions[current].includes(next)) return false;
+      current = next;
+      const label = document.getElementById('controlStageLabel');
+      const progress = document.getElementById('controlStageProgress');
+      if (label) label.textContent = `Stage: ${current}`;
+      if (progress) progress.value = CONTROL_STATES[current] || 0;
+      return true;
+    },
+    reset: () => { current = 'select'; },
+  };
+}
+
+function validateConfiguration(payload) {
+  if (!payload.agent_id) return 'Agent ID is required before queue submission.';
+  if (!payload.skill_profile) return 'Skill profile is required before queue submission.';
+  if (!payload.knowledge_domain) return 'Knowledge domain is required before queue submission.';
+  if (!Array.isArray(payload.capabilities) || !payload.capabilities.length) return 'At least one capability is required before queue submission.';
+  return '';
+}
+
+function toCardModelFromTemplate(profileName, kind, templatePayload) { return { source: 'task-template', kind, payload: templatePayload || {}, title: `${profileName} · ${kind}` }; }
+function toCardModelFromInsightRecommendation(index, recommendation) { return { source: 'insight-recommendation', kind: 'run_task', payload: {}, title: `Insight recommendation #${index + 1}`, summary: recommendation }; }
+function toCardModelFromHistoryRerun(entry) { return { source: 'history-rerun', kind: 'run_task', payload: (entry && entry.payload) || {}, title: 'Rerun' }; }
+
+function wireExecutionActions() {
+  document.getElementById('execCancel')?.addEventListener('click', async () => {
+    await queueExecutionControl('cancel', executionState.activeEntry);
+  });
+  document.getElementById('execFork')?.addEventListener('click', () => {
+    hydrateForkDraft(executionState.activeEntry);
+  });
+}
+
+function normalizeInsights(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload.insights)) return payload.insights;
+  if (Array.isArray(payload.recommendations)) return payload.recommendations.map((r) => ({ title: 'Recommendation', summary: String(r) }));
+  return [];
+}
+
+function renderInsights(items) {
+  const container = document.getElementById('insights');
+  if (!container) return;
+  container.innerHTML = '';
+  (items || []).forEach((item) => {
+    const node = document.createElement('div');
+    node.className = 'insight-card';
+    node.textContent = item.title || 'Insight';
+    container.appendChild(node);
+  });
+}
+
+function refreshActionCards() { return Promise.resolve(); }
+function refreshHistory() { return Promise.resolve(); }
+function routeFromHash() {
+  const raw = (window.location.hash || '').replace(/^#/, '').trim().toLowerCase();
+  return APP_ROUTES.includes(raw) ? raw : 'home';
+}
+
+function applyRoute(route, opts = {}) {
+  const destination = APP_ROUTES.includes(route) ? route : 'home';
+  const views = document.querySelectorAll('.app-view[data-route]');
+  views.forEach((view) => {
+    const active = view.dataset.route === destination;
+    view.classList.toggle('is-active', active);
+    if (active) {
+      view.removeAttribute('hidden');
+    } else {
+      view.setAttribute('hidden', 'hidden');
+    }
+  });
+
+  document.querySelectorAll('.command-btn[data-route-target]').forEach((button) => {
+    const active = button.dataset.routeTarget === destination;
+    if (active) {
+      button.setAttribute('aria-current', 'page');
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
+
+  if (!opts.skipHashSync) {
+    const targetHash = '#' + destination;
+    if (window.location.hash !== targetHash) {
+      window.location.hash = targetHash;
+    }
+  }
+
+  if (opts.focusMain !== false) {
+    const activeView = document.querySelector('.app-view.is-active');
+    if (activeView) activeView.focus();
+  }
+}
+
+function setupViews() {
+  document.querySelectorAll('.command-btn[data-route-target]').forEach((button) => {
+    button.addEventListener('click', () => applyRoute(button.dataset.routeTarget || 'home'));
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const buttons = Array.from(document.querySelectorAll('.command-btn[data-route-target]'));
+      const index = buttons.indexOf(button);
+      if (index < 0) return;
+      const direction = event.key === 'ArrowRight' ? 1 : -1;
+      const next = buttons[(index + direction + buttons.length) % buttons.length];
+      if (next) next.focus();
+      event.preventDefault();
+    });
+  });
+
+  window.addEventListener('hashchange', () => applyRoute(routeFromHash(), { skipHashSync: true }));
+  applyRoute(routeFromHash(), { skipHashSync: true, focusMain: false });
+}
+
+function setupModeSwitcher() { reorderHomeCards('alpha'); }
+function setupModeTracking() {}
+function markFeatureEntry() {}
+function markInteraction() {}
+function registerUndoAction() {}
+function hydrateForkDraft() {}
+
+async function queueExecutionControlForLatest(type) {
+  const status = document.getElementById('controlStatus');
+  try {
+    const response = await fetch('/control/queue', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`[HTTP ${response.status}] queue endpoint unavailable`);
+    const queuePayload = await response.json();
+    const activeEntry = latestRunTaskEntry(queuePayload);
+    if (!activeEntry) {
+      if (status) status.textContent = 'No run_task entry exists in the queue yet.';
+      return;
+    }
+    await queueExecutionControl(type, activeEntry);
+  } catch (err) {
+    if (status) status.textContent = 'Failed to resolve active queue entry: ' + err;
+  }
+}
+
 async function refresh() {
   const endpoints = {
     state: '/state',
@@ -2926,9 +3369,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Aponi dashboard in standalone mode.")
     parser.add_argument("--host", default=os.environ.get("APONI_HOST", "0.0.0.0"), help="Host interface to bind (env: APONI_HOST)")
     parser.add_argument("--port", type=int, default=int(os.environ.get("APONI_PORT", "8080")), help="Port to bind (env: APONI_PORT)")
+    parser.add_argument("--serve-mcp", action="store_true", help="Enable MCP mutation utility endpoints with JWT enforcement.")
     args = parser.parse_args(argv)
 
-    dashboard = AponiDashboard(host=args.host, port=args.port)
+    dashboard = AponiDashboard(host=args.host, port=args.port, serve_mcp=args.serve_mcp, jwt_secret=os.environ.get("ADAAD_MCP_JWT_SECRET", ""))
     dashboard.start({"status": "dashboard_only"})
     print(f"[APONI] dashboard running on http://{dashboard.host}:{dashboard.port}")
     print(

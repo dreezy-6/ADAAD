@@ -43,7 +43,16 @@ Every mutation passes through constitutional evaluation. Every rule is versioned
 | `test_coverage_maintained` | ✅ | WARNING | Quality preservation |
 | `max_mutation_rate` | ✅ | WARNING (SANDBOX: ADVISORY, PRODUCTION: BLOCKING) | Prevents runaway loops |
 | `lineage_continuity` | ✅ | BLOCKING | Traceability |
-| `resource_bounds` | ✅ | BLOCKING | Android/mobile safety |
+| `resource_bounds` | ✅ | BLOCKING | Android/mobile safety; strict tiers require resource telemetry evidence |
+
+
+
+### Resource Telemetry Prerequisites (`resource_bounds`)
+
+- `resource_measurements` should include deterministic usage keys such as `peak_rss_mb`, `cpu_seconds`/`cpu_time_seconds`, and `wall_seconds`/`wall_time_seconds`/`duration_s`.
+- `platform_telemetry` may provide fallback evidence via `memory_mb` when direct measurements are incomplete.
+- Governance policy can configure `resource_bounds_policy.strict_telemetry_tiers` (default: `PRODUCTION`) to enforce fail-closed behavior when both sources are missing.
+- Non-strict tiers remain configurable fail-open, but emit a `resource_measurements_missing` warning event that explicitly records the fail-open rationale.
 
 ---
 
@@ -71,6 +80,14 @@ Constitutional rules can themselves evolve through governance:
 
 ---
 
+## Resource Telemetry Data Flow
+
+`resource_bounds` is enforced using deterministic envelope state populated at mutation-evaluation time:
+
+1. Sandbox/runtime observations and Android `AndroidMonitor.snapshot()` signals are normalized with `runtime/governance/resource_accounting.py` helpers.
+2. `platform_telemetry` feeds `_validate_resources` for memory pressure and CPU context, with battery/storage retained as mobile safety metadata.
+3. Precedence is conservative: memory/CPU use max-merge across sources, battery/storage use min-merge, and policy limits remain fail-closed.
+
 ## Metrics & Observability
 
 Every constitutional evaluation generates:
@@ -93,6 +110,20 @@ Query rejection patterns:
 from runtime.metrics_analysis import summarize_preflight_rejections
 summary = summarize_preflight_rejections(limit=1000)
 ```
+
+
+
+## Governance Review KPI SLOs
+
+Governance review quality is tracked as deterministic telemetry (`governance_review_quality`) mirrored to metrics and Cryovant journal projections.
+
+**SLO targets (rolling window):**
+- **Review latency distribution**: p95 <= 86,400s (24h), p99 <= 172,800s (48h).
+- **Reviewed within SLA**: >= 95% within `sla_seconds` (default 24h).
+- **Reviewer participation concentration**: largest reviewer share <= 0.60 and HHI <= 0.40.
+- **Review depth proxies**: average comment count >= 1.0 and override rate <= 20%.
+
+Operations dashboards should consume `/metrics/review-quality` for aggregate computation + threshold monitoring.
 
 ---
 
@@ -122,3 +153,8 @@ ADAAD boot is fail-closed for constitutional policy inputs. The following artifa
 If either artifact is missing or invalid, constitutional initialization fails and runtime start is blocked (`constitution_boot_failed`).
 
 `governance/rule_applicability.yaml` is therefore treated as constitution-adjacent policy, not optional metadata.
+
+
+## LLM Proposal Agents
+
+LLM agents (e.g. claude-proposal-agent) are governed identically to ArchitectAgent. authority_level is always governor-review. Tier-0 paths require explicit policy elevation by a human reviewer.

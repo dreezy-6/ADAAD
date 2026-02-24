@@ -18,6 +18,21 @@ TARGET_DIRS: tuple[str, ...] = (
     "security",
 )
 
+# Replay-sensitive app modules that must be linted even though the full app tree is
+# intentionally out of scope for this tool.
+TARGET_FILES: tuple[str, ...] = (
+    "app/dream_mode.py",
+    "app/beast_mode_loop.py",
+)
+
+REQUIRED_GOVERNANCE_FILES: tuple[str, ...] = (
+    "runtime/evolution/fitness_orchestrator.py",
+    "runtime/governance/federation/transport.py",
+    "runtime/governance/federation/coordination.py",
+    "runtime/governance/federation/protocol.py",
+    "runtime/governance/federation/manifest.py",
+)
+
 # Direct dynamic execution primitives.
 FORBIDDEN_CALLS: tuple[tuple[str, ...], ...] = (
     ("eval",),
@@ -35,10 +50,20 @@ ENTROPY_ENFORCED_PREFIXES: tuple[str, ...] = (
     "runtime/governance/",
     "runtime/evolution/",
 )
+ENTROPY_ENFORCED_FILES: frozenset[str] = frozenset(
+    {
+        "app/dream_mode.py",
+        "app/beast_mode_loop.py",
+    }
+)
 ENTROPY_ALLOWLIST: frozenset[str] = frozenset(
     {
         "runtime/governance/foundation/determinism.py",
         "runtime/governance/foundation/clock.py",
+        # Beast mode uses injected wall/monotonic clocks for operational
+        # throttling windows; banning all time sources here would block the
+        # module's deterministic-by-injection design.
+        "app/beast_mode_loop.py",
     }
 )
 FORBIDDEN_ENTROPY_IMPORTS: frozenset[str] = frozenset({"random", "secrets"})
@@ -69,6 +94,43 @@ FORBIDDEN_FILESYSTEM_CALLS: tuple[tuple[str, ...], ...] = (
     ("glob", "glob"),
 )
 FORBIDDEN_PATH_METHODS: frozenset[str] = frozenset({"read_text", "read_bytes", "open", "glob", "rglob"})
+
+GOVERNANCE_CRITICAL_PREFIXES: tuple[str, ...] = (
+    "runtime/governance/",
+    "runtime/evolution/",
+    "security/",
+)
+APPROVED_NONDETERMINISM_WRAPPERS: frozenset[str] = frozenset(
+    {
+        "now_utc",
+        "iso_now",
+        "format_utc",
+        "next_id",
+        "next_token",
+        "next_int",
+        "read_file_deterministic",
+        "listdir_deterministic",
+        "walk_deterministic",
+        "glob_deterministic",
+        "find_files_deterministic",
+    }
+)
+FORBIDDEN_NONDETERMINISTIC_CALLS: tuple[tuple[str, ...], ...] = (
+    ("random", "random"),
+    ("random", "randint"),
+    ("random", "choice"),
+    ("secrets", "token_hex"),
+    ("secrets", "token_urlsafe"),
+    ("uuid", "uuid4"),
+    ("time", "time"),
+    ("os", "urandom"),
+)
+
+PRINT_POLICY_ENFORCED_PREFIXES: tuple[str, ...] = (
+    "app/",
+    "runtime/",
+    "security/",
+)
 
 
 @dataclass(frozen=True)
@@ -156,8 +218,10 @@ def _path_as_posix(path: Path) -> str:
 
 def _is_entropy_enforced(path: Path) -> bool:
     normalized = _path_as_posix(path)
-    if normalized in ENTROPY_ALLOWLIST:
+    if any(normalized.endswith(allowed) or f"/{allowed}" in normalized for allowed in ENTROPY_ALLOWLIST):
         return False
+    if any(normalized.endswith(enforced) or f"/{enforced}" in normalized for enforced in ENTROPY_ENFORCED_FILES):
+        return True
     return any(normalized.endswith(prefix.removesuffix("/")) or f"/{prefix}" in normalized for prefix in ENTROPY_ENFORCED_PREFIXES)
 
 
@@ -248,6 +312,49 @@ def _iter_filesystem_issues(path: Path, tree: ast.AST, module_aliases: dict[str,
         yield LintIssue(path, line, getattr(node, "col_offset", 0), "forbidden_nondeterministic_filesystem_api")
 
 
+def _is_print_policy_enforced(path: Path) -> bool:
+    normalized = _path_as_posix(path)
+    return any(normalized.endswith(prefix.removesuffix("/")) or f"/{prefix}" in normalized for prefix in PRINT_POLICY_ENFORCED_PREFIXES)
+
+
+def _is_governance_critical(path: Path) -> bool:
+    normalized = _path_as_posix(path)
+    return any(normalized.endswith(prefix.removesuffix("/")) or f"/{prefix}" in normalized for prefix in GOVERNANCE_CRITICAL_PREFIXES)
+
+
+def _iter_governance_nondeterminism_issues(path: Path, tree: ast.AST, module_aliases: dict[str, str]) -> Iterable[LintIssue]:
+    if not _is_governance_critical(path):
+        return
+
+    function_scope_by_line = _function_scope_by_line(tree)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        path_parts = _call_path(node.func)
+        if not path_parts:
+            continue
+        normalized = path_parts
+        if len(path_parts) >= 2:
+            head, tail = path_parts[0], path_parts[1:]
+            normalized = (module_aliases.get(head, head),) + tail
+
+        if any(normalized == forbidden for forbidden in FORBIDDEN_NONDETERMINISTIC_CALLS):
+            line = getattr(node, "lineno", 1)
+            scope_name = function_scope_by_line.get(line)
+            if scope_name in APPROVED_NONDETERMINISM_WRAPPERS:
+                continue
+            yield LintIssue(path, line, getattr(node, "col_offset", 0), "forbidden_governance_nondeterminism_api")
+
+
+def _iter_print_policy_issues(path: Path, tree: ast.AST) -> Iterable[LintIssue]:
+    if not _is_print_policy_enforced(path):
+        return
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _call_path(node.func) == ("print",):
+            yield LintIssue(path, getattr(node, "lineno", 1), getattr(node, "col_offset", 0), "forbidden_direct_print")
+
+
 def _lint_file(path: Path) -> list[LintIssue]:
     try:
         content = path.read_text(encoding="utf-8")
@@ -274,6 +381,8 @@ def _lint_file(path: Path) -> list[LintIssue]:
 
     issues.extend(_iter_entropy_issues(path, tree, module_aliases) or [])
     issues.extend(_iter_filesystem_issues(path, tree, module_aliases) or [])
+    issues.extend(_iter_governance_nondeterminism_issues(path, tree, module_aliases) or [])
+    issues.extend(_iter_print_policy_issues(path, tree) or [])
     return issues
 
 
@@ -283,8 +392,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         roots = [Path(arg).resolve() for arg in args]
     else:
         roots = [REPO_ROOT / relative for relative in TARGET_DIRS]
+        roots.extend((REPO_ROOT / relative).resolve() for relative in TARGET_FILES)
 
     issues: list[LintIssue] = []
+    for required_relative in REQUIRED_GOVERNANCE_FILES:
+        required_path = (REPO_ROOT / required_relative).resolve()
+        if not required_path.exists():
+            issues.append(LintIssue(REPO_ROOT / required_relative, 1, 0, "required_scope_file_missing"))
+
     for file_path in _iter_python_files(roots):
         issues.extend(_lint_file(file_path))
 

@@ -68,3 +68,50 @@ To reproduce CI strict replay behavior locally, run replay verification with the
 ADAAD_ENV=dev CRYOVANT_DEV_MODE=1 ADAAD_FORCE_DETERMINISTIC_PROVIDER=1 ADAAD_DETERMINISTIC_SEED=ci-strict-replay \
   python -m app.main --verify-replay --replay strict
 ```
+
+
+
+## Constitutional acceptance gate
+
+`tests/governance/inviolability/` is the constitutional acceptance gate for non-bypass governance invariants.
+
+Required invariant coverage (positive + adversarial cases):
+
+- mutation execution cannot proceed without constitutional/lifecycle guard pass
+- strict replay divergence fail-closes, while audit mode remains observable/non-fail-closed
+- nondeterministic providers are rejected on strict replay and audit-tier governance paths
+- policy authority cannot expand via undeclared lifecycle jumps; only explicit classified transitions are allowed
+- governance self-mutation requires explicit high-risk authority approval
+
+The suite asserts auditable artifacts (ledger/journal event types and required payload keys) for rejection and transition paths to preserve deterministic forensic evidence in CI.
+
+## Governance review telemetry SLO checks
+
+For governance-impact PRs, operators should verify review-quality KPIs in addition to CI jobs:
+
+- Query `/metrics/review-quality?limit=500&sla_seconds=86400`.
+- Alert when:
+  - `reviewed_within_sla_percent < 95.0`
+  - `reviewer_participation_concentration.largest_reviewer_share > 0.60`
+  - `review_depth_proxies.override_rate_percent > 20.0`
+
+This endpoint is intended for dashboard ingestion and automated threshold alerting.
+
+
+## Strict release gate workflow
+
+Release-tag pushes and manual release gate runs now use `.github/workflows/governance_strict_release_gate.yml`.
+
+Required jobs (all blocking):
+
+- `determinism-lint`
+- `entropy-discipline-checks`
+- `governance-strict-mode-validation`
+  - Includes a rule-activation assertion that fails when any constitution rule with baseline `severity=blocking` or a `tier_overrides` blocking severity is disabled in `runtime/governance/constitution.yaml`.
+- `replay-strict-validation`
+- `constitution-fingerprint-stability`
+
+The terminal `release-gate` job is fail-closed and requires each upstream job result to be `success`; any failure, cancellation, or skip state blocks release gating.
+
+
+- The strict release rule-activation assertion uses the runtime constitution policy loader (`runtime.constitution.load_constitution_policy`) to avoid parser drift between CI checks and runtime governance evaluation.

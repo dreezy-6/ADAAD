@@ -1,9 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 from pathlib import Path
+
+import pytest
 
 from tools import lint_determinism
 
+
+QA7_LINT_ROLLOUT_ENABLED = os.getenv("QA7_LINT_ROLLOUT", "").lower() in {"1", "true", "yes", "on"}
+qa7_rollout = pytest.mark.qa7
+qa7_gate = pytest.mark.skipif(
+    not QA7_LINT_ROLLOUT_ENABLED,
+    reason="QA-7 rollout lint tests are gated until lint scope expansion lands (set QA7_LINT_ROLLOUT=1 to enable).",
+)
+
+
+# Current-policy contract tests (must pass now)
 
 def test_lint_determinism_flags_forbidden_dynamic_execution(tmp_path: Path) -> None:
     target = tmp_path / "runtime" / "governance" / "bad.py"
@@ -149,3 +162,128 @@ def find_files_deterministic(path):
     issues = lint_determinism._lint_file(target)
 
     assert issues == []
+
+
+def test_lint_determinism_allows_direct_print_in_tools_cli_scripts(tmp_path: Path) -> None:
+    target = tmp_path / "tools" / "cli.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("def run():\n    print('user output')\n", encoding="utf-8")
+
+    issues = lint_determinism._lint_file(target)
+
+    assert all(issue.message != "forbidden_direct_print" for issue in issues)
+
+
+def test_lint_determinism_flags_direct_nondeterministic_calls_in_governance_critical_scope(tmp_path: Path) -> None:
+    target = tmp_path / "security" / "entropy.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("import uuid\n\ndef run():\n    return uuid.uuid4().hex\n", encoding="utf-8")
+
+    issues = lint_determinism._lint_file(target)
+
+    assert any(issue.message == "forbidden_governance_nondeterminism_api" for issue in issues)
+
+
+def test_lint_determinism_allows_approved_wrapper_for_nondeterminism_calls(tmp_path: Path) -> None:
+    target = tmp_path / "runtime" / "governance" / "provider.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "import uuid\n\ndef next_id():\n    return uuid.uuid4().hex\n",
+        encoding="utf-8",
+    )
+
+    issues = lint_determinism._lint_file(target)
+
+    assert all(issue.message != "forbidden_governance_nondeterminism_api" for issue in issues)
+
+
+def test_lint_required_governance_files_include_federation_protocol_stack() -> None:
+    required = set(lint_determinism.REQUIRED_GOVERNANCE_FILES)
+    assert "runtime/governance/federation/protocol.py" in required
+    assert "runtime/governance/federation/manifest.py" in required
+
+
+# QA-7 rollout tests (enable with QA7_LINT_ROLLOUT=1)
+
+
+@qa7_rollout
+@qa7_gate
+def test_lint_determinism_flags_entropy_calls_in_replay_sensitive_app_scope(tmp_path: Path) -> None:
+    target = tmp_path / "app" / "dream_mode.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "import time\n\ndef run():\n    return time.time()\n",
+        encoding="utf-8",
+    )
+
+    issues = lint_determinism._lint_file(target)
+
+    assert issues
+    assert any(issue.message == "forbidden_entropy_source" for issue in issues)
+
+
+@qa7_rollout
+@qa7_gate
+def test_lint_determinism_allows_documented_entropy_exception_for_beast_mode(tmp_path: Path) -> None:
+    target = tmp_path / "app" / "beast_mode_loop.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "import time\n\ndef _clock():\n    return time.time(), time.monotonic()\n",
+        encoding="utf-8",
+    )
+
+    issues = lint_determinism._lint_file(target)
+
+    assert all(issue.message != "forbidden_entropy_source" for issue in issues)
+
+
+@qa7_rollout
+@qa7_gate
+def test_lint_determinism_flags_direct_print_in_operational_modules(tmp_path: Path) -> None:
+    target = tmp_path / "app" / "main.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("def run():\n    print('status')\n", encoding="utf-8")
+
+    issues = lint_determinism._lint_file(target)
+
+    assert any(issue.message == "forbidden_direct_print" for issue in issues)
+
+
+@qa7_rollout
+@qa7_gate
+def test_lint_targets_include_selected_replay_sensitive_app_modules() -> None:
+    targets = set(lint_determinism.TARGET_FILES)
+    assert "app/dream_mode.py" in targets
+    assert "app/beast_mode_loop.py" in targets
+
+
+def _call_path(node):
+
+    if isinstance(node, ast.Name):
+        return (node.id,)
+    if isinstance(node, ast.Attribute):
+        return _call_path(node.value) + (node.attr,)
+    return ()
+
+
+def test_dream_mode_hardened_path_forbids_wall_clock_sources_but_allows_wrappers() -> None:
+    source = Path("app/dream_mode.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    dream_mode = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "DreamMode")
+    run_cycle = next(node for node in dream_mode.body if isinstance(node, ast.FunctionDef) and node.name == "run_cycle")
+
+    forbidden_paths = {
+        ("time", "time"),
+        ("time", "strftime"),
+        ("time", "gmtime"),
+    }
+    approved_wrapper_paths = {
+        ("self", "provider", "next_token"),
+        ("self", "provider", "iso_now"),
+        ("deterministic_token_with_budget",),
+    }
+
+    run_cycle_calls = {_call_path(node.func) for node in ast.walk(run_cycle) if isinstance(node, ast.Call)}
+    assert forbidden_paths.isdisjoint(run_cycle_calls)
+    assert approved_wrapper_paths.intersection(run_cycle_calls)
+

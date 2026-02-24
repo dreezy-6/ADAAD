@@ -13,6 +13,157 @@ from runtime import ROOT_DIR
 from runtime.governance.deterministic_filesystem import read_file_deterministic
 
 LEDGER_V2_PATH = ROOT_DIR / "security" / "ledger" / "lineage_v2.jsonl"
+LINEAGE_V2_PATH = LEDGER_V2_PATH
+
+
+class LineageResolutionError(RuntimeError):
+    """Raised when lineage chain resolution fails."""
+
+
+def _canonical_json(value: Dict[str, Any]) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _hash_entry(prev_hash: str, payload: Dict[str, Any]) -> str:
+    return hashlib.sha256((prev_hash + _canonical_json(payload)).encode("utf-8")).hexdigest()
+
+
+def _agent_id(entry: Dict[str, Any]) -> str:
+    payload = dict(entry.get("payload") or {})
+    certificate = dict(payload.get("certificate") or {})
+    return str(payload.get("agent_id") or certificate.get("agent_id") or "")
+
+
+def _mutation_id(entry: Dict[str, Any]) -> str:
+    payload = dict(entry.get("payload") or {})
+    certificate = dict(payload.get("certificate") or {})
+    return str(payload.get("mutation_id") or payload.get("bundle_id") or certificate.get("mutation_id") or certificate.get("bundle_id") or "")
+
+
+def _parent_mutation_id(entry: Dict[str, Any]) -> str:
+    payload = dict(entry.get("payload") or {})
+    certificate = dict(payload.get("certificate") or {})
+    lineage = dict(payload.get("lineage") or {})
+    return str(
+        payload.get("parent_mutation_id")
+        or payload.get("parent_bundle_id")
+        or certificate.get("parent_mutation_id")
+        or certificate.get("parent_bundle_id")
+        or lineage.get("parent_mutation_id")
+        or ""
+    )
+
+
+def resolve_chain(agent_id: str, *, ledger_path: Path | None = None) -> List[str] | None:
+    """Resolve lineage hash chain ending at latest mutation for agent_id if available."""
+    path = ledger_path or LINEAGE_V2_PATH
+    if not path.exists():
+        return None
+
+    entries: List[Dict[str, Any]] = []
+    prev_hash = "0" * 64
+    for line in path.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            entry = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise LineageResolutionError("lineage_entry_malformed") from exc
+        if not isinstance(entry, dict):
+            raise LineageResolutionError("lineage_entry_malformed")
+        payload = {k: v for k, v in entry.items() if k != "hash"}
+        computed = _hash_entry(prev_hash, payload)
+        if str(entry.get("prev_hash") or "") != prev_hash or str(entry.get("hash") or "") != computed:
+            raise LineageResolutionError("lineage_hash_mismatch")
+        prev_hash = computed
+        entries.append(entry)
+
+    if not entries:
+        return None
+
+    by_mutation: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        mutation_id = _mutation_id(entry)
+        if mutation_id:
+            by_mutation[mutation_id] = entry
+
+    normalized_agent_id = str(agent_id or "").strip()
+    if normalized_agent_id:
+        tail = next((entry for entry in reversed(entries) if _mutation_id(entry) and _agent_id(entry) == normalized_agent_id), None)
+    else:
+        tail = next((entry for entry in reversed(entries) if _mutation_id(entry)), None)
+    if tail is None:
+        return None
+
+    chain: List[str] = []
+    visited: set[str] = set()
+    cursor = tail
+    while cursor is not None:
+        mutation_id = _mutation_id(cursor)
+        if mutation_id in visited:
+            raise LineageResolutionError("lineage_cycle_detected")
+        if mutation_id:
+            visited.add(mutation_id)
+
+        link_hash = str(cursor.get("hash") or "")
+        if not link_hash:
+            raise LineageResolutionError("lineage_entry_malformed")
+        chain.append(link_hash)
+        parent_id = _parent_mutation_id(cursor)
+        cursor = by_mutation.get(parent_id) if parent_id else None
+
+    chain.reverse()
+    if chain and chain[0] != entries[0].get("hash"):
+        chain.insert(0, str(entries[0].get("hash") or ""))
+    return chain
+
+
+def resolve_certified_ancestor_path(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve canonical mutation identity + ancestry links for a lineage entry.
+
+    Expected invariant: ``ancestor_chain`` is ordered oldest->newest, so the tail
+    (last element) must match ``parent_mutation_id`` when both are present.
+    """
+
+    payload = dict(entry.get("payload") or {})
+    certificate = payload.get("certificate") if isinstance(payload.get("certificate"), dict) else {}
+    lineage = payload.get("lineage") if isinstance(payload.get("lineage"), dict) else {}
+
+    mutation_id = str(
+        payload.get("mutation_id")
+        or payload.get("bundle_id")
+        or certificate.get("mutation_id")
+        or certificate.get("bundle_id")
+        or ""
+    )
+    parent_mutation_id = str(
+        payload.get("parent_mutation_id")
+        or payload.get("parent_bundle_id")
+        or certificate.get("parent_mutation_id")
+        or certificate.get("parent_bundle_id")
+        or lineage.get("parent_mutation_id")
+        or ""
+    )
+
+    ancestors_raw = (
+        payload.get("ancestor_chain")
+        or payload.get("ancestor_mutation_ids")
+        or certificate.get("ancestor_chain")
+        or certificate.get("ancestor_mutation_ids")
+        or lineage.get("ancestor_chain")
+        or []
+    )
+    ancestor_chain = [str(item) for item in ancestors_raw if str(item)] if isinstance(ancestors_raw, list) else []
+
+    certified_signature = str(certificate.get("signature") or "")
+
+    return {
+        "mutation_id": mutation_id,
+        "parent_mutation_id": parent_mutation_id,
+        "ancestor_chain": ancestor_chain,
+        "certified_signature": certified_signature,
+    }
 
 
 class LineageIntegrityError(RuntimeError):
@@ -267,6 +418,9 @@ __all__ = [
     "EpochEndEvent",
     "MutationBundleEvent",
     "LEDGER_V2_PATH",
+    "LINEAGE_V2_PATH",
     "LineageIntegrityError",
     "LineageRecoveryHook",
+    "LineageResolutionError",
+    "resolve_chain",
 ]

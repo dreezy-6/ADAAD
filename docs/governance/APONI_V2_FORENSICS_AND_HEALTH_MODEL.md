@@ -113,6 +113,10 @@ Returns a deterministic weighted instability projection with:
 The endpoint also exposes a deterministic Wilson-style confidence interval and `velocity_spike_anomaly` when velocity exceeds a fixed threshold.
 Anomaly mode is `absolute_delta`: both sharp destabilization and sharp stabilization deltas are flagged for operator review.
 
+### `GET /metrics/review-quality`
+
+Returns a deterministic review latency and SLA coverage summary over a bounded metrics window (`limit`) using a caller-specified or default `sla_seconds` threshold.
+
 ### `GET /policy/simulate`
 
 Read-only policy simulation endpoint that compares health outcomes under current policy vs a candidate governance policy artifact.
@@ -175,3 +179,5 @@ The UI JavaScript is served as `/ui/aponi.js` to remain CSP-compatible without i
 - Federation divergence incident response: `docs/governance/FEDERATION_CONFLICT_RUNBOOK.md`.
 
 Aponi governance intelligence responses are validated against draft-2020-12 schemas in `schemas/aponi_responses/`; validation failures return structured `governance_error: "response_schema_violation"` fail-closed responses.
+
+Runtime alignment note: mutation fitness is emitted from the epoch-frozen `FitnessOrchestrator`, and governance gate/policy enforcement is governed by Canon Law v1.0 fail-closed escalation semantics for deterministic audit replay.

@@ -34,3 +34,21 @@ This policy governs JSON schemas under `schemas/` that define governance artifac
   1. `python scripts/validate_governance_schemas.py`
   2. Relevant test targets covering schema consumers and validators.
 - Pull requests that introduce mixed drafts or non-canonical `$id` values must be rejected.
+
+
+## Release gate semantics migration (strict governance release workflow)
+- Releases are now gated by `.github/workflows/governance_strict_release_gate.yml` for governance/public-readiness tag flows.
+- Migration impact: release candidates must pass determinism lint, entropy discipline checks, governance strict-mode validation (including rule activation assertions), strict replay validation, and constitution fingerprint stability checks before gate completion.
+- Operational expectation: any non-success state in a required strict-release job is release-blocking until resolved; there is no permissive skip path for these checks.
+
+## Checkpoint governance event migration notes
+- New schema contracts:
+  - `schemas/checkpoint_event.v1.json` for `checkpoint_created` governance payloads emitted alongside legacy checkpoint materialization.
+  - `schemas/checkpoint_chain_event.v1.json` for `checkpoint_chain_verified` and `checkpoint_chain_violated` verifier outcomes.
+- Versioning:
+  - Both contracts are introduced at `schema_version: "1.0"` and follow the same major-version compatibility rules defined above.
+- Compatibility transition:
+  - `EpochCheckpointEvent` remains append-compatible as the canonical replay/checkpoint material source for existing readers.
+  - During migration, checkpoint producers emit both `EpochCheckpointEvent` and schema-bound governance event records (`checkpoint_created`) to preserve legacy replay consumers.
+  - Verifier consumers should transition to governance chain events while retaining support for `verify_checkpoint_chain` return structure (`passed/errors`) until all downstream contracts consume `checkpoint_chain_*` records.
+  - Historical ledgers are immutable; no backfill mutation is permitted. Consumers may compute read-time projections that join legacy `EpochCheckpointEvent` entries with new governance event payloads.

@@ -42,8 +42,12 @@ Use the provided units under `ops/systemd/`:
 ```bash
 sudo cp ops/systemd/adaad-forensic-retention.service /etc/systemd/system/
 sudo cp ops/systemd/adaad-forensic-retention.timer /etc/systemd/system/
+
+# Optional: override install path when ADAAD is not deployed at /opt/adaad
+printf 'ADAAD_ROOT=/srv/adaad\n' | sudo tee /etc/default/adaad >/dev/null
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now adaad-forensic-retention.timer
 ```
 
-The service invokes `ops/systemd/run_forensic_retention.sh`, which passes an explicit epoch timestamp to the deterministic retention script and appends disposition logs.
+The service invokes `ops/systemd/run_forensic_retention.sh`, which resolves `ADAAD_ROOT` (default: repo root when run directly, `/opt/adaad` when run via the service), passes an explicit epoch timestamp to the deterministic retention script, and appends disposition logs.

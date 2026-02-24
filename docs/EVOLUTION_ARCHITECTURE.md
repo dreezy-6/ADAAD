@@ -46,6 +46,16 @@ Governor certificates include `replay_seed` (16 hex chars) used by mutation mani
 ### Strategy anchoring
 Certificates include `strategy_snapshot` and `strategy_snapshot_hash`, and cumulative bundle digesting includes those fields.
 
+### Mutation target normalization
+`MutationExecutor.execute` preserves backward compatibility for both `MutationRequest.targets` and legacy `MutationRequest.ops`, but both forms are normalized into a shared `MutationTarget[]` plan before applying any file changes.
+
+Rationale: a single transaction gate keeps governance/test/journal/lineage handling consistent across request formats.
+
+Expected invariants:
+- all mutation applications run through `MutationTransaction`
+- test failures always rollback mutated targets before returning
+- mutation lineage payload shape is consistent (`[{path, checksum, applied, skipped}]`) for both request forms
+
 ## Runtime Hooks
 - `boot()`
 - `before_mutation_cycle()`
@@ -64,6 +74,10 @@ Certificates include `strategy_snapshot` and `strategy_snapshot_hash`, and cumul
 ## EvolutionKernel Execution Routing
 - `runtime.evolution.evolution_kernel.EvolutionKernel.run_cycle(agent_id=None)` preserves legacy behavior by delegating to `compatibility_adapter.run_cycle(None)` when an adapter is configured and no explicit target agent is requested.
 - `run_cycle(agent_id=...)` executes the kernel-native pipeline (`load_agent -> propose_mutation -> validate_mutation -> execute_in_sandbox -> evaluate_fitness -> sign_certificate`) and marks the response with `kernel_path: true`.
+- Fitness acceptance and ranking are intentionally separated:
+  - **Acceptance** uses base fitness score compared to `fitness_threshold` (default `0.70`).
+  - **Ranking** uses objective weighting (`objective_weight`) to prioritize accepted candidates without redefining the acceptance gate.
+  - Explainability payloads include weighted contributions and threshold rationale for every decision.
 - Agent resolution is canonicalized via `Path.resolve()` for both discovered agent directories and explicit `agent_id` candidate paths to avoid false-negative lookup failures under symlinked or aliased roots.
 - Deterministic failure semantics:
   - `RuntimeError("no_agents_available")` when discovery yields no valid agents.
@@ -125,3 +139,9 @@ Certificates include `strategy_snapshot` and `strategy_snapshot_hash`, and cumul
 - Test execution uses `HardenedSandboxExecutor`, records sandbox evidence hashes in append-only ledger storage, and feeds evidence hashes into epoch checkpoint aggregation.
 - Sandbox enforcement includes deterministic syscall, filesystem, network, and resource policy checks prior to execution.
 - Sandbox replay verification computes deterministic evidence/hash parity via `runtime.sandbox.replay`.
+
+## Android Telemetry → Constitutional Resource Bounds
+- During `evaluate_mutation`, the runtime samples `AndroidMonitor.snapshot()` and normalizes it via `runtime.governance.resource_accounting.normalize_platform_telemetry_snapshot`.
+- The deterministic envelope state stores merged `platform_telemetry` that `_validate_resources` consumes for `memory_mb`/`cpu_percent` pressure signals plus contextual `battery_percent`/`storage_mb`.
+- Merge precedence is conservative and deterministic: memory/cpu use `max(sandbox_observed, android_monitor)`, while battery/storage use `min(...)` to retain the most constrained mobile context.
+- Resource usage enforcement still resolves hard limits through `coalesce_resource_usage_snapshot(...)` and blocks fail-closed when bounds are exceeded.

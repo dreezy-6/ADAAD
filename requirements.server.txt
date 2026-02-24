@@ -1,2 +1,5 @@
+# Source of truth for production/runtime dependency pins.
 fastapi==0.115.5
 uvicorn==0.30.6
+anthropic==0.40.0
+PyYAML==6.0.2

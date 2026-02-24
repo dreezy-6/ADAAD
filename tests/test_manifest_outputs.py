@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 from app.dream_mode import DreamMode
-from app.main import Orchestrator
+from runtime.evolution.replay_service import ReplayVerificationService
+from runtime.governance.foundation import SeededDeterminismProvider
 
 
 class _Fitness:
@@ -15,7 +16,13 @@ class _Fitness:
 
 
 def test_write_dream_manifest_creates_expected_file(tmp_path: Path) -> None:
-    dream = DreamMode(tmp_path / "agents", tmp_path / "lineage", replay_mode="audit", recovery_tier="advisory")
+    dream = DreamMode(
+        tmp_path / "agents",
+        tmp_path / "lineage",
+        replay_mode="audit",
+        recovery_tier="advisory",
+        provider=SeededDeterminismProvider(seed="manifest"),
+    )
     staged_path = tmp_path / "lineage" / "_staging" / "candidate"
     staged_path.mkdir(parents=True)
 
@@ -38,8 +45,8 @@ def test_write_dream_manifest_creates_expected_file(tmp_path: Path) -> None:
     assert payload["fitness"]["score"] == 0.95
 
 
-def test_write_replay_manifest_creates_expected_file() -> None:
-    orchestrator = object.__new__(Orchestrator)
+def test_write_replay_manifest_creates_expected_file(tmp_path: Path) -> None:
+    service = ReplayVerificationService(manifests_dir=tmp_path / "replay_manifests")
     outcome = {
         "mode": "strict",
         "verify_only": False,
@@ -51,7 +58,7 @@ def test_write_replay_manifest_creates_expected_file() -> None:
         "ts": "2026-02-13T10:00:00Z",
     }
 
-    manifest_path = orchestrator.write_replay_manifest(outcome)
+    manifest_path = service.write_replay_manifest(outcome)
 
     assert Path(manifest_path).exists()
     assert Path(manifest_path).parent.name == "replay_manifests"
@@ -61,4 +68,3 @@ def test_write_replay_manifest_creates_expected_file() -> None:
     assert payload["decision"] == "match"
     assert payload["ok"] is True
 
-    Path(manifest_path).unlink(missing_ok=True)

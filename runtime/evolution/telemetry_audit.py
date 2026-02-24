@@ -3,48 +3,78 @@
 
 from __future__ import annotations
 
+import argparse
+import json
+from pathlib import Path
 from statistics import mean
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 from runtime.evolution.lineage_v2 import LineageLedgerV2
 
 
-def get_epoch_entropy_breakdown(epoch_id: str, ledger: LineageLedgerV2 | None = None) -> Dict[str, Any]:
-    """Return declared/observed entropy aggregates for an epoch.
+def compute_epoch_entropy_breakdown(epoch_id: str, events: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Compute deterministic declared/observed entropy totals for epoch events."""
 
-    Sources are extracted from `PromotionEvent.payload` fields emitted by
-    mutation governance (`entropy_declared_bits`, `entropy_observed_bits`,
-    `entropy_observed_sources`).
-    """
-
-    runtime_ledger = ledger or LineageLedgerV2()
-    declared_bits = 0
-    observed_bits = 0
-    source_totals: dict[str, int] = {"runtime_rng": 0, "runtime_clock": 0, "external_io": 0}
+    declared_total = 0
+    observed_total = 0
     event_count = 0
+    source_totals: dict[str, int] = {"runtime_rng": 0, "runtime_clock": 0, "external_io": 0}
 
-    for entry in runtime_ledger.read_epoch(epoch_id):
-        if entry.get("type") != "PromotionEvent":
+    for entry in events:
+        if str(entry.get("type") or "") != "PromotionEvent":
             continue
         payload = dict((entry.get("payload") or {}).get("payload") or {})
         event_count += 1
 
-        declared_bits += max(0, int(payload.get("entropy_declared_bits", 0) or 0))
-        observed_value = max(0, int(payload.get("entropy_observed_bits", 0) or 0))
-        observed_bits += observed_value
+        declared_bits = max(0, int(payload.get("entropy_declared_bits", 0) or 0))
+        observed_bits = max(0, int(payload.get("entropy_observed_bits", 0) or 0))
+
+        declared_total += declared_bits
+        observed_total += observed_bits
 
         raw_sources = payload.get("entropy_observed_sources") or []
         normalized_sources = tuple(sorted({str(item).strip().lower() for item in raw_sources if str(item).strip()}))
         for source in normalized_sources:
-            source_totals[source] = source_totals.get(source, 0) + observed_value
+            source_totals[source] = source_totals.get(source, 0) + observed_bits
 
+    overflow_total = max(0, observed_total - declared_total)
     return {
         "epoch_id": epoch_id,
         "event_count": event_count,
-        "declared_bits": declared_bits,
-        "observed_bits": observed_bits,
-        "total_bits": declared_bits + observed_bits,
-        "observed_sources": source_totals,
+        "declared_total": declared_total,
+        "observed_total": observed_total,
+        "overflow_total": overflow_total,
+        "source_totals": source_totals,
+    }
+
+
+def epoch_entropy_summary(epoch_id: str, ledger: LineageLedgerV2 | None = None) -> Dict[str, Any]:
+    """HTTP-friendly deterministic entropy summary for a single epoch."""
+
+    runtime_ledger = ledger or LineageLedgerV2()
+    events = runtime_ledger.read_epoch(epoch_id)
+    breakdown = compute_epoch_entropy_breakdown(epoch_id, events)
+    return {
+        "epoch_id": breakdown["epoch_id"],
+        "event_count": int(breakdown["event_count"]),
+        "declared_total": int(breakdown["declared_total"]),
+        "observed_total": int(breakdown["observed_total"]),
+        "overflow_total": int(breakdown["overflow_total"]),
+        "source_totals": dict(sorted(breakdown["source_totals"].items())),
+    }
+
+
+def get_epoch_entropy_breakdown(epoch_id: str, ledger: LineageLedgerV2 | None = None) -> Dict[str, Any]:
+    """Return declared/observed entropy aggregates for an epoch."""
+
+    summary = epoch_entropy_summary(epoch_id, ledger=ledger)
+    return {
+        "epoch_id": summary["epoch_id"],
+        "event_count": summary["event_count"],
+        "declared_bits": summary["declared_total"],
+        "observed_bits": summary["observed_total"],
+        "total_bits": summary["declared_total"] + summary["observed_total"],
+        "observed_sources": summary["source_totals"],
     }
 
 
@@ -147,7 +177,43 @@ def detect_entropy_drift(
     }
 
 
+def _profile_entropy_baseline(out: Path, ledger: LineageLedgerV2 | None = None) -> Dict[str, Any]:
+    runtime_ledger = ledger or LineageLedgerV2()
+    epoch_ids = runtime_ledger.list_epoch_ids()
+    overflow_total = 0
+    for epoch_id in epoch_ids:
+        overflow_total += int(epoch_entropy_summary(epoch_id, ledger=runtime_ledger)["overflow_total"])
+    drift = detect_entropy_drift(ledger=runtime_ledger)
+    report = {
+        "epoch_count": len(epoch_ids),
+        "overflow_total": overflow_total,
+        "drift_detected": bool(drift.get("drift_detected", False)),
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    return report
+
+
+def _main() -> int:
+    parser = argparse.ArgumentParser(description="Generate deterministic entropy baseline artifact")
+    parser.add_argument("--out", required=True, help="output artifact path")
+    args = parser.parse_args()
+
+    report = _profile_entropy_baseline(Path(args.out))
+    if int(report.get("overflow_total", 0)) > 0:
+        return 2
+    if bool(report.get("drift_detected", False)):
+        return 3
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(_main())
+
+
 __all__ = [
+    "compute_epoch_entropy_breakdown",
+    "epoch_entropy_summary",
     "get_epoch_entropy_breakdown",
     "get_epoch_entropy_envelope_summary",
     "detect_entropy_drift",

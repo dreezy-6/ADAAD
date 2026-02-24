@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
 from runtime.evolution.metrics_schema import METRICS_STATE_DIR
+from runtime.governance.foundation import canonical_json, sha256_prefixed_digest
 
 DEFAULT_WEIGHTS = {
     "correctness_score": 0.3,
@@ -17,6 +19,8 @@ DEFAULT_WEIGHTS = {
     "goal_alignment_score": 0.15,
     "simulated_market_score": 0.15,
 }
+DEFAULT_FITNESS_THRESHOLD = 0.7
+ALLOWED_WEIGHT_KEYS = tuple(DEFAULT_WEIGHTS.keys())
 
 
 @dataclass(frozen=True)
@@ -33,9 +37,14 @@ class EconomicFitnessResult:
     passed_tests: bool
     passed_constitution: bool
     performance_delta: float
+    weighted_contributions: Dict[str, float]
+    fitness_threshold: float
+    config_version: int
+    config_hash: str
+    weight_snapshot_hash: str
 
     def is_viable(self) -> bool:
-        return self.score >= 0.7
+        return self.score >= self.fitness_threshold
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -52,33 +61,63 @@ class EconomicFitnessResult:
             "passed_tests": self.passed_tests,
             "passed_constitution": self.passed_constitution,
             "performance_delta": self.performance_delta,
+            "weighted_contributions": dict(self.weighted_contributions),
+            "fitness_threshold": self.fitness_threshold,
+            "config_version": self.config_version,
+            "config_hash": self.config_hash,
+            "weight_snapshot_hash": self.weight_snapshot_hash,
         }
 
 
 class EconomicFitnessEvaluator:
     def __init__(self, config_path: Path | None = None, *, rebalance_interval: int = 25):
         self.config_path = config_path or Path(__file__).resolve().parent / "config" / "fitness_weights.json"
-        self.weights = self._load_weights(self.config_path)
+        config_payload = self._read_config_payload(self.config_path)
+        self.weights = self._load_weights(config_payload)
+        self.config_version = self._read_config_version(config_payload)
+        self.config_hash = self._compute_config_hash(config_payload)
+        self.fitness_threshold = DEFAULT_FITNESS_THRESHOLD
         self.rebalance_interval = max(1, int(rebalance_interval))
         self._eval_count = 0
+        self._epoch_weight_snapshots: Dict[str, Dict[str, float]] = {}
+        self._epoch_weight_snapshot_hashes: Dict[str, str] = {}
 
     @staticmethod
-    def _load_weights(config_path: Path) -> Dict[str, float]:
-        weights = dict(DEFAULT_WEIGHTS)
-        try:
-            payload = json.loads(config_path.read_text(encoding="utf-8"))
-            configured = payload.get("weights", {}) if isinstance(payload, dict) else {}
-            if isinstance(configured, dict):
-                for key in DEFAULT_WEIGHTS:
-                    if key in configured:
-                        weights[key] = float(configured[key])
-        except Exception:
-            pass
+    def _read_config_payload(config_path: Path) -> Dict[str, Any]:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("fitness_config_invalid_payload")
+        return payload
 
-        total = sum(max(0.0, float(value)) for value in weights.values())
+    @staticmethod
+    def _read_config_version(payload: Mapping[str, Any]) -> int:
+        version = int(payload.get("version", 1))
+        return max(1, version)
+
+    @staticmethod
+    def _compute_config_hash(payload: Mapping[str, Any]) -> str:
+        canonical = json.dumps(dict(payload), sort_keys=True, separators=(",", ":"))
+        return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _load_weights(payload: Mapping[str, Any]) -> Dict[str, float]:
+        configured = payload.get("weights")
+        if not isinstance(configured, Mapping):
+            raise ValueError("fitness_config_missing_weights")
+
+        unexpected = sorted(key for key in configured.keys() if key not in ALLOWED_WEIGHT_KEYS)
+        if unexpected:
+            raise ValueError(f"fitness_config_unexpected_weight_keys:{','.join(unexpected)}")
+
+        missing = sorted(key for key in ALLOWED_WEIGHT_KEYS if key not in configured)
+        if missing:
+            raise ValueError(f"fitness_config_missing_weight_keys:{','.join(missing)}")
+
+        weights = {key: max(0.0, float(configured[key])) for key in ALLOWED_WEIGHT_KEYS}
+        total = sum(weights.values())
         if total <= 0.0:
-            return dict(DEFAULT_WEIGHTS)
-        return {key: max(0.0, float(value)) / total for key, value in weights.items()}
+            raise ValueError("fitness_config_zero_total_weight")
+        return {key: value / total for key, value in weights.items()}
 
     @staticmethod
     def _clamp(value: Any) -> float:
@@ -103,7 +142,6 @@ class EconomicFitnessEvaluator:
                 except (TypeError, ValueError):
                     return default
         return default
-
 
     def rebalance_from_history(self, history_entries: List[Mapping[str, Any]]) -> Dict[str, float]:
         """Gradient-free signal amplification using goal-score contribution hints."""
@@ -158,6 +196,7 @@ class EconomicFitnessEvaluator:
 
     def evaluate(self, mutation_payload: Mapping[str, Any]) -> EconomicFitnessResult:
         self.maybe_rebalance_from_metrics()
+        epoch_weights, weight_snapshot_hash = self._resolve_epoch_snapshot(mutation_payload)
         correctness = self._correctness_score(mutation_payload)
         efficiency = self._efficiency_score(mutation_payload)
         policy = self._policy_compliance_score(mutation_payload)
@@ -171,7 +210,11 @@ class EconomicFitnessEvaluator:
             "goal_alignment_score": goal_alignment,
             "simulated_market_score": market,
         }
-        score = sum(breakdown[name] * self.weights[name] for name in breakdown)
+        score = sum(breakdown[name] * epoch_weights[name] for name in breakdown)
+        weighted_contributions = {
+            name: self._clamp(breakdown[name] * epoch_weights[name])
+            for name in breakdown
+        }
 
         passed_syntax = self._bool_from(mutation_payload, "passed_syntax", "syntax_ok")
         if not passed_syntax:
@@ -201,21 +244,67 @@ class EconomicFitnessEvaluator:
             goal_alignment_score=goal_alignment,
             simulated_market_score=market,
             breakdown=breakdown,
-            weights=dict(self.weights),
+            weights=dict(epoch_weights),
             passed_syntax=passed_syntax,
             passed_tests=passed_tests,
             passed_constitution=passed_constitution,
             performance_delta=performance_delta,
+            weighted_contributions=weighted_contributions,
+            fitness_threshold=self.fitness_threshold,
+            config_version=self.config_version,
+            config_hash=self.config_hash,
+            weight_snapshot_hash=weight_snapshot_hash,
         )
 
-    def evaluate_content(self, mutation_content: str, *, constitution_ok: bool = True) -> EconomicFitnessResult:
-        payload = {
+    def _resolve_epoch_snapshot(self, mutation_payload: Mapping[str, Any]) -> tuple[Dict[str, float], str]:
+        """Resolve deterministic per-epoch weight snapshot and hash.
+
+        Mutation rationale: pin a single hash-stable weight vector per epoch so
+        replay/attestation cannot drift when adaptive weights rebalance later.
+        Expected invariants: same epoch_id => identical weights/hash; no epoch_id
+        => hash reflects current evaluator weights without persistence side effects.
+        """
+
+        epoch_id = str(mutation_payload.get("epoch_id") or "").strip()
+        if not epoch_id:
+            weights = dict(self.weights)
+            snapshot_hash = sha256_prefixed_digest(canonical_json({"weights": weights}))
+            return weights, snapshot_hash
+
+        snapshot = self._epoch_weight_snapshots.get(epoch_id)
+        snapshot_hash = self._epoch_weight_snapshot_hashes.get(epoch_id)
+        if snapshot is None or snapshot_hash is None:
+            snapshot = dict(self.weights)
+            snapshot_hash = sha256_prefixed_digest(canonical_json({"weights": snapshot}))
+            self._epoch_weight_snapshots[epoch_id] = snapshot
+            self._epoch_weight_snapshot_hashes[epoch_id] = snapshot_hash
+
+        epoch_meta = mutation_payload.get("epoch_metadata")
+        if isinstance(epoch_meta, dict):
+            existing_snapshot_hash = str(epoch_meta.get("fitness_weight_snapshot_hash") or "").strip()
+            if existing_snapshot_hash and existing_snapshot_hash != snapshot_hash:
+                raise RuntimeError("fitness_weight_snapshot_hash_mismatch")
+            epoch_meta.setdefault("fitness_weight_snapshot_hash", snapshot_hash)
+        return dict(snapshot), str(snapshot_hash)
+
+    def evaluate_content(
+        self,
+        mutation_content: str,
+        *,
+        constitution_ok: bool = True,
+        source_signal: Mapping[str, Any] | None = None,
+    ) -> EconomicFitnessResult:
+        payload: Dict[str, Any] = {
             "content": mutation_content,
             "passed_syntax": bool(mutation_content and "mutation" in mutation_content),
             "tests_ok": bool(mutation_content),
             "constitution_ok": bool(constitution_ok),
-            "simulated_market_score": 0.5,
         }
+        if isinstance(source_signal, Mapping):
+            payload.update(dict(source_signal))
+        elif mutation_content:
+            derived_proxy = min(1.0, len(mutation_content.strip()) / 400.0)
+            payload["task_value_proxy"] = {"value_score": round(derived_proxy, 6)}
         return self.evaluate(payload)
 
     def _correctness_score(self, payload: Mapping[str, Any]) -> float:
