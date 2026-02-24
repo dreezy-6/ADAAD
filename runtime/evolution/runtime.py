@@ -18,6 +18,7 @@ from runtime.evolution.checkpoint_registry import CheckpointRegistry
 from runtime.evolution.checkpoint_verifier import CheckpointVerifier, CheckpointVerificationError, verify_checkpoint_chain
 from runtime import constitution
 from runtime.governance.foundation import RuntimeDeterminismProvider, require_replay_safe_provider
+from runtime.governance.federation.coherence_validator import FederationCoherenceValidator, RECOMMENDATION_HALT
 
 
 class EvolutionRuntime:
@@ -36,6 +37,7 @@ class EvolutionRuntime:
             recovery_tier=self.governor.recovery_tier.value,
         )
         self.metrics_emitter = EvolutionMetricsEmitter(self.ledger)
+        self.coherence_validator = FederationCoherenceValidator()
 
         self.current_epoch_id = ""
         self.epoch_metadata: Dict[str, Any] = {}
@@ -76,6 +78,20 @@ class EvolutionRuntime:
         self.metrics_emitter = EvolutionMetricsEmitter(self.ledger)
 
     def boot(self) -> Dict[str, Any]:
+        coherence_report = self.coherence_validator.validate()
+        self.ledger.append_event(
+            "FederationCoherenceEvent",
+            {
+                "epoch_id": self.current_epoch_id or "boot",
+                "report": coherence_report.to_dict(),
+                "recommendation": coherence_report.recommendation,
+                "report_hash": coherence_report.report_hash,
+            },
+        )
+        if coherence_report.recommendation == RECOMMENDATION_HALT:
+            self._enter_fail_closed_replay(epoch_id=self.current_epoch_id or "boot", reason="federation_split_brain")
+            raise RuntimeError("federation_split_brain")
+
         lineage_check = constitution.VALIDATOR_REGISTRY["lineage_continuity"](
             MutationRequest(
                 agent_id="runtime_bootstrap",
