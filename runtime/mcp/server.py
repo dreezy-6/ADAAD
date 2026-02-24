@@ -9,7 +9,6 @@ import hashlib
 import hmac
 import json
 import os
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict
@@ -18,6 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from runtime.mcp.candidate_ranker import rank_candidates
+from runtime.governance.foundation.determinism import RuntimeDeterminismProvider, default_provider, require_replay_safe_provider
 from runtime.mcp.mutation_analyzer import analyze_mutation
 from runtime.mcp.proposal_queue import append_proposal
 from runtime.mcp.proposal_validator import ProposalValidationError, validate_proposal
@@ -65,8 +65,17 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-def create_app(server_name: str = "mcp-proposal-writer") -> FastAPI:
+def create_app(
+    server_name: str = "mcp-proposal-writer",
+    *,
+    provider: RuntimeDeterminismProvider | None = None,
+    replay_mode: str = "off",
+    recovery_tier: str | None = None,
+) -> FastAPI:
+    runtime_provider = provider or default_provider()
+    require_replay_safe_provider(runtime_provider, replay_mode=replay_mode, recovery_tier=recovery_tier)
     app = FastAPI(title=server_name, lifespan=lifespan)
+    app.state.determinism_provider = runtime_provider
 
     @app.middleware("http")
     async def jwt_middleware(request: Request, call_next):
@@ -96,7 +105,7 @@ def create_app(server_name: str = "mcp-proposal-writer") -> FastAPI:
                 except Exception:
                     pass
             raise HTTPException(status_code=exc.status_code, detail=body)
-        proposal_id = str(uuid.uuid4())
+        proposal_id = runtime_provider.next_id(label="mcp-proposal", length=32)
         queue_entry = append_proposal(proposal_id=proposal_id, request=request)
         return {
             "ok": True,
@@ -140,7 +149,18 @@ def main() -> None:
 
     import uvicorn
 
-    uvicorn.run(create_app(args.server), host=args.host, port=args.port)
+    replay_mode = os.getenv("ADAAD_REPLAY_MODE", "off")
+    recovery_tier = os.getenv("ADAAD_RECOVERY_TIER")
+    uvicorn.run(
+        create_app(
+            args.server,
+            provider=default_provider(),
+            replay_mode=replay_mode,
+            recovery_tier=recovery_tier,
+        ),
+        host=args.host,
+        port=args.port,
+    )
 
 
 if __name__ == "__main__":
