@@ -117,3 +117,31 @@ def test_storage_manager_prune_report_and_counts_are_deterministic(
     assert high.exists()
     assert not old.exists()
     assert recent.exists()
+
+
+def test_storage_manager_warn_emits_metric_with_path(monkeypatch, tmp_path: Path) -> None:
+    candidates = tmp_path / "candidates"
+    broken = candidates / "broken"
+    broken.mkdir(parents=True)
+    fitness_file = broken / "fitness.json"
+    fitness_file.write_text('{"score": "nanx"}', encoding="utf-8")
+
+    records: list[tuple[str, dict[str, object], str]] = []
+    monkeypatch.setattr(
+        "runtime.platform.storage_manager.metrics.log",
+        lambda event_type, payload, level="INFO": records.append((event_type, payload, level)),
+    )
+
+    mgr = StorageManager(tmp_path, max_storage_mb=0.0)
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("always")
+        pruned = mgr._prune_failed_candidates()
+
+    assert pruned == 0
+    assert len(records) == 1
+    event_type, payload, level = records[0]
+    assert event_type == "storage_manager_prune_fallback"
+    assert level == "WARNING"
+    assert payload["path"] == str(fitness_file)
+    assert payload["context"]["candidate"] == str(broken)
+    assert payload["context"]["error"] == "ValueError"

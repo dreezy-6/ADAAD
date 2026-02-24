@@ -4,11 +4,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import time
 import warnings
 from json import JSONDecodeError
 from pathlib import Path
+
+from runtime import metrics
+
+
+LOG = logging.getLogger(__name__)
+METRIC_EVENT = "storage_manager_prune_fallback"
 
 
 class StorageManager:
@@ -69,7 +76,16 @@ class StorageManager:
                     context={"candidate": str(candidate), "error": type(exc).__name__},
                 )
                 continue
-            if float(fitness.get("score", 1.0)) < self.failed_candidate_score_threshold:
+            try:
+                score = float(fitness.get("score", 1.0))
+            except ValueError as exc:
+                self._warn(
+                    "Failed to parse candidate fitness score for pruning",
+                    path=fitness_file,
+                    context={"candidate": str(candidate), "error": type(exc).__name__},
+                )
+                continue
+            if score < self.failed_candidate_score_threshold:
                 shutil.rmtree(candidate, ignore_errors=True)
                 pruned += 1
         return pruned
@@ -100,10 +116,12 @@ class StorageManager:
     @staticmethod
     def _warn(message: str, path: Path, context: dict[str, str]) -> None:
         details = {
-            "message": message,
+            "warning_message": message,
             "path": str(path),
             "context": context,
         }
+        LOG.warning("storage manager prune fallback", extra=details)
+        metrics.log(event_type=METRIC_EVENT, payload=details, level="WARNING")
         warnings.warn(json.dumps(details, sort_keys=True), stacklevel=2)
 
 
