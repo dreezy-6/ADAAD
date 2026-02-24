@@ -7,6 +7,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from runtime.governance.foundation import SeededDeterminismProvider
 from runtime.mcp.server import create_app
 from security import cryovant
 
@@ -64,6 +65,72 @@ def test_propose_contracts(tmp_path, monkeypatch):
         lambda *_args, **_kwargs: {"passed": False, "verdicts": [{"severity": "blocking", "ok": False, "rule": "x"}]},
     )
     assert client.post("/mutation/propose", json=payload, headers=hdr).status_code == 422
+
+
+def test_propose_contracts_deterministic_ids_in_strict_and_audit_modes(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADAAD_MCP_JWT_SECRET", "secret")
+    monkeypatch.setattr(cryovant, "KEYS_DIR", tmp_path)
+    (tmp_path / "signing-key.pem").write_text("k", encoding="utf-8")
+    monkeypatch.setattr("runtime.mcp.proposal_validator.evaluate_mutation", lambda *_args, **_kwargs: {"passed": True, "verdicts": []})
+
+    payload = {
+        "agent_id": "claude-proposal-agent",
+        "generation_ts": "2026-01-01T00:00:00Z",
+        "intent": "x",
+        "ops": [{"op": "replace", "value": "safe"}],
+        "targets": [{"agent_id": "a", "path": "app/foo.py", "target_type": "file", "ops": []}],
+        "signature": "s",
+        "nonce": "n",
+        "authority_level": "governor-review",
+    }
+
+    strict_provider = SeededDeterminismProvider("strict-seed")
+    strict_client = TestClient(create_app(provider=strict_provider, replay_mode="strict"))
+    tok = _jwt("secret", int(time.time()) + 500)
+    hdr = {"Authorization": f"Bearer {tok}"}
+    strict_resp = strict_client.post("/mutation/propose", json=payload, headers=hdr)
+    assert strict_resp.status_code == 200
+    assert strict_resp.json()["proposal_id"] == strict_provider.next_id(label="mcp-proposal", length=32)
+
+    audit_provider = SeededDeterminismProvider("audit-seed")
+    audit_client = TestClient(create_app(provider=audit_provider, recovery_tier="audit"))
+    audit_resp = audit_client.post("/mutation/propose", json=payload, headers=hdr)
+    assert audit_resp.status_code == 200
+    assert audit_resp.json()["proposal_id"] == audit_provider.next_id(label="mcp-proposal", length=32)
+
+
+def test_propose_contracts_live_mode_ids_are_unique_and_hex(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADAAD_MCP_JWT_SECRET", "secret")
+    monkeypatch.setattr(cryovant, "KEYS_DIR", tmp_path)
+    (tmp_path / "signing-key.pem").write_text("k", encoding="utf-8")
+    monkeypatch.setattr("runtime.mcp.proposal_validator.evaluate_mutation", lambda *_args, **_kwargs: {"passed": True, "verdicts": []})
+
+    payload = {
+        "agent_id": "claude-proposal-agent",
+        "generation_ts": "2026-01-01T00:00:00Z",
+        "intent": "x",
+        "ops": [{"op": "replace", "value": "safe"}],
+        "targets": [{"agent_id": "a", "path": "app/foo.py", "target_type": "file", "ops": []}],
+        "signature": "s",
+        "nonce": "n",
+        "authority_level": "governor-review",
+    }
+
+    client = TestClient(create_app(replay_mode="off"))
+    tok = _jwt("secret", int(time.time()) + 500)
+    hdr = {"Authorization": f"Bearer {tok}"}
+
+    first = client.post("/mutation/propose", json=payload, headers=hdr)
+    second = client.post("/mutation/propose", json=payload, headers=hdr)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    first_id = first.json()["proposal_id"]
+    second_id = second.json()["proposal_id"]
+    assert first_id != second_id
+    assert len(first_id) == 32
+    assert len(second_id) == 32
+    assert all(ch in "0123456789abcdef" for ch in first_id)
+    assert all(ch in "0123456789abcdef" for ch in second_id)
 
 
 def test_startup_refuses_when_signing_key_absent(tmp_path, monkeypatch):
