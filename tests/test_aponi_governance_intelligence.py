@@ -203,10 +203,15 @@ def test_user_console_uses_external_script_for_csp_compatibility() -> None:
     assert "fetch('/control/capability-matrix'" in script
     assert "Promise.allSettled([" in script
     assert "statusLabel = response.ok ?" in script
+    assert "const commandPayload = readCommandPayload();" in script
     assert "[HTTP ${response.status}]" in script
     assert "if (!response.ok) throw new Error(`endpoint returned HTTP ${response.status}`);" in script
     assert "Failed to load skill profiles:" in script
     assert "Agent ID is required before queue submission." in script
+    assert "id=\"controlCapabilities\" class=\"floating-select\" multiple" in html
+    assert "id=\"controlAbility\" class=\"floating-select\"" in html
+    assert "id=\"controlTask\" class=\"floating-select\"" in html
+    assert "function ensureSelectOption(selectEl, value)" in script
     assert 'id="actionCardTemplate"' in html
     assert 'id="tasksActions"' in html
     assert 'id="insightsActions"' in html
@@ -237,9 +242,31 @@ def test_user_console_uses_external_script_for_csp_compatibility() -> None:
     assert "const UX_SESSION_KEY = 'aponi.ux.session.v1';" in script
     assert "function normalizeInsights(payload)" in script
     assert "function renderInsights(items)" in script
-    assert "id=\"uxSummary\"" in html
+    assert "paint('uxSummary', '/ux/summary')" in script
     assert "'/ux/events'" in script
     assert "Expand insight details" in script
+
+
+def test_cancel_control_command_writes_cancellation_entry(tmp_path, monkeypatch) -> None:
+    queue_path = tmp_path / "queue.jsonl"
+    monkeypatch.setattr("ui.aponi_dashboard.CONTROL_QUEUE_PATH", queue_path)
+
+    queued = aponi_dashboard._queue_control_command({"type": "create_agent", "agent_id": "triage_agent"})
+    result = aponi_dashboard._cancel_control_command(str(queued["command_id"]))
+
+    assert result["ok"] is True
+    assert result["backend_supported"] is True
+    assert result["cancellation_entry"]["status"] == "canceled"
+    assert result["cancellation_entry"]["payload"]["type"] == "cancel_intent"
+
+
+def test_cancel_control_command_returns_not_found(tmp_path, monkeypatch) -> None:
+    queue_path = tmp_path / "queue.jsonl"
+    monkeypatch.setattr("ui.aponi_dashboard.CONTROL_QUEUE_PATH", queue_path)
+
+    result = aponi_dashboard._cancel_control_command("cmd-missing")
+
+    assert result == {"ok": False, "error": "queue_empty"}
 
 def test_risk_instability_uses_weighted_deterministic_formula() -> None:
     handler = _handler_class()
@@ -395,6 +422,33 @@ def test_control_command_validation_rejects_unknown_skill_profile(tmp_path, monk
 
     assert invalid["ok"] is False
     assert invalid["error"] == "invalid_skill_profile"
+
+def test_control_command_validation_rejects_invalid_mode(tmp_path, monkeypatch) -> None:
+    sources_path = tmp_path / "free_sources.json"
+    sources_path.write_text(json.dumps({"_schema_version": "1", "wikipedia": {"provider": "Wikimedia"}}), encoding="utf-8")
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(json.dumps({"_schema_version": "1", "triage-basic": {"knowledge_domains": ["release_notes"], "abilities": ["summarize"], "allowed_capabilities": ["wikipedia"]}}), encoding="utf-8")
+    monkeypatch.setattr("ui.aponi_dashboard.FREE_CAPABILITY_SOURCES_PATH", sources_path)
+    monkeypatch.setattr("ui.aponi_dashboard.SKILL_PROFILES_PATH", profiles_path)
+    handler = _handler_class()
+
+    invalid = handler._validate_control_command(
+        {
+            "type": "run_task",
+            "agent_id": "triage_agent",
+            "governance_profile": "strict",
+            "mode": "unsupported",
+            "skill_profile": "triage-basic",
+            "knowledge_domain": "release_notes",
+            "capabilities": ["wikipedia"],
+            "task": "summarize release risk",
+            "ability": "summarize",
+        }
+    )
+
+    assert invalid["ok"] is False
+    assert invalid["error"] == "invalid_mode"
+
 
 def test_control_command_validation_rejects_capability_outside_profile(tmp_path, monkeypatch) -> None:
     sources_path = tmp_path / "free_sources.json"
@@ -789,55 +843,6 @@ def test_epoch_export_includes_bundle_export_metadata() -> None:
     assert payload["export_metadata"]["digest"] == "sha256:def"
 
 
-def test_cancel_control_command_writes_cancellation_entry(tmp_path, monkeypatch) -> None:
-    queue_path = tmp_path / "queue.jsonl"
-    monkeypatch.setattr("ui.aponi_dashboard.CONTROL_QUEUE_PATH", queue_path)
-
-    queued = aponi_dashboard._queue_control_command({"type": "create_agent", "agent_id": "triage_agent"})
-    result = aponi_dashboard._cancel_control_command(str(queued["command_id"]))
-
-    assert result["ok"] is True
-    assert result["backend_supported"] is True
-    assert result["cancellation_entry"]["status"] == "canceled"
-    assert result["cancellation_entry"]["payload"]["type"] == "cancel_intent"
-
-
-def test_cancel_control_command_returns_queue_empty(tmp_path, monkeypatch) -> None:
-    queue_path = tmp_path / "queue.jsonl"
-    monkeypatch.setattr("ui.aponi_dashboard.CONTROL_QUEUE_PATH", queue_path)
-
-    result = aponi_dashboard._cancel_control_command("cmd-missing")
-
-    assert result == {"ok": False, "error": "queue_empty"}
-
-
-def test_control_command_validation_rejects_invalid_mode(tmp_path, monkeypatch) -> None:
-    sources_path = tmp_path / "free_sources.json"
-    sources_path.write_text(json.dumps({"_schema_version": "1", "wikipedia": {"provider": "Wikimedia"}}), encoding="utf-8")
-    profiles_path = tmp_path / "profiles.json"
-    profiles_path.write_text(json.dumps({"_schema_version": "1", "triage-basic": {"knowledge_domains": ["release_notes"], "abilities": ["summarize"], "allowed_capabilities": ["wikipedia"]}}), encoding="utf-8")
-    monkeypatch.setattr("ui.aponi_dashboard.FREE_CAPABILITY_SOURCES_PATH", sources_path)
-    monkeypatch.setattr("ui.aponi_dashboard.SKILL_PROFILES_PATH", profiles_path)
-    handler = _handler_class()
-
-    invalid = handler._validate_control_command(
-        {
-            "type": "run_task",
-            "agent_id": "triage_agent",
-            "governance_profile": "strict",
-            "mode": "unsupported",
-            "skill_profile": "triage-basic",
-            "knowledge_domain": "release_notes",
-            "capabilities": ["wikipedia"],
-            "task": "summarize release risk",
-            "ability": "summarize",
-        }
-    )
-
-    assert invalid["ok"] is False
-    assert invalid["error"] == "invalid_mode"
-
-
 def test_validate_ux_event_requires_type_session_and_feature() -> None:
     invalid = aponi_dashboard._validate_ux_event({"event_type": "interaction"})
     assert invalid["ok"] is False
@@ -867,103 +872,3 @@ def test_ux_summary_aggregates_recent_metrics_events() -> None:
     assert summary["event_count"] == 3
     assert summary["unique_sessions"] == 2
     assert summary["counts"]["interaction"] == 2
-
-
-def test_execution_control_validation_requires_dedicated_contract() -> None:
-    handler = _handler_class()
-
-    invalid = handler._validate_execution_control_command(
-        {
-            "type": "run_task",
-            "action": "cancel",
-            "target_command_id": "cmd-000001-a1b2c3d4e5f6",
-        }
-    )
-
-    assert invalid["ok"] is False
-    assert invalid["error"] == "unsupported_type"
-
-
-def test_execution_control_validation_accepts_cancel_and_fork() -> None:
-    handler = _handler_class()
-
-    cancel_valid = handler._validate_execution_control_command(
-        {
-            "type": "execution_control",
-            "action": "cancel",
-            "target_command_id": "cmd-000001-a1b2c3d4e5f6",
-            "reason": "operator cancelled",
-        }
-    )
-    fork_valid = handler._validate_execution_control_command(
-        {
-            "type": "execution_control",
-            "action": "fork",
-            "target_command_id": "cmd-000222-001122334455",
-        }
-    )
-
-    assert cancel_valid["ok"] is True
-    assert cancel_valid["command"]["action"] == "cancel"
-    assert cancel_valid["command"]["reason"] == "operator cancelled"
-    assert fork_valid["ok"] is True
-    assert fork_valid["command"]["action"] == "fork"
-
-
-def test_execution_control_validation_rejects_invalid_target_command_id() -> None:
-    handler = _handler_class()
-
-    invalid = handler._validate_execution_control_command(
-        {
-            "type": "execution_control",
-            "action": "cancel",
-            "target_command_id": "not-a-command-id",
-        }
-    )
-
-    assert invalid["ok"] is False
-    assert invalid["error"] == "invalid_target_command_id"
-
-
-def test_execution_control_validation_accepts_hex_command_id() -> None:
-    handler = _handler_class()
-
-    valid = handler._validate_execution_control_command(
-        {
-            "type": "execution_control",
-            "action": "cancel",
-            "target_command_id": "cmd-000001-a1b2c3d4e5f6",
-        }
-    )
-
-    assert valid["ok"] is True
-    assert valid["command"]["target_command_id"] == "cmd-000001-a1b2c3d4e5f6"
-
-
-def test_find_control_queue_entry_returns_latest_match(tmp_path, monkeypatch) -> None:
-    queue_path = tmp_path / "queue.jsonl"
-    monkeypatch.setattr("ui.aponi_dashboard.CONTROL_QUEUE_PATH", queue_path)
-
-    first = aponi_dashboard._queue_control_command({"type": "run_task", "agent_id": "triage_agent", "governance_profile": "strict", "mode": "builder", "skill_profile": "triage-basic", "knowledge_domain": "release_notes", "capabilities": ["wikipedia"], "task": "t1", "ability": "summarize"})
-    second = aponi_dashboard._queue_control_command({"type": "run_task", "agent_id": "triage_agent", "governance_profile": "strict", "mode": "builder", "skill_profile": "triage-basic", "knowledge_domain": "release_notes", "capabilities": ["wikipedia"], "task": "t2", "ability": "summarize"})
-
-    found = aponi_dashboard._find_control_queue_entry(str(second["command_id"]))
-
-    assert found is not None
-    assert found["command_id"] == second["command_id"]
-    assert found["command_id"] != first["command_id"]
-
-
-def test_execution_control_validation_rejects_non_hex_suffix() -> None:
-    handler = _handler_class()
-
-    invalid = handler._validate_execution_control_command(
-        {
-            "type": "execution_control",
-            "action": "cancel",
-            "target_command_id": "cmd-000001-zzzzzzzzzzzz",
-        }
-    )
-
-    assert invalid["ok"] is False
-    assert invalid["error"] == "invalid_target_command_id"

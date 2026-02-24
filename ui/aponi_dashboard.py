@@ -87,12 +87,6 @@ UX_EVENT_TYPES = {
     "abandoned_config",
 }
 
-MCP_MUTATION_ENDPOINTS: tuple[str, ...] = (
-    "/mutation/analyze",
-    "/mutation/explain-rejection",
-    "/mutation/rank",
-)
-
 
 INSTABILITY_POLICY_ERROR: str | None = None
 try:
@@ -312,7 +306,11 @@ def _validate_ux_event(raw_payload: object) -> Dict[str, object]:
 
 def _ux_summary(window: int = 200) -> Dict[str, object]:
     recent = metrics.tail(limit=window)
-    ux_events = [entry for entry in recent if isinstance(entry, dict) and str(entry.get("event", "")).startswith("aponi_ux_")]
+    ux_events = [
+        entry
+        for entry in recent
+        if isinstance(entry, dict) and str(entry.get("event", "")).startswith("aponi_ux_")
+    ]
     per_type = {event_type: 0 for event_type in sorted(UX_EVENT_TYPES)}
     sessions: set[str] = set()
     features: set[str] = set()
@@ -516,7 +514,12 @@ def _cancel_control_command(command_id: str) -> Dict[str, object]:
             },
         }
     )
-    return {"ok": True, "backend_supported": True, "command_id": command_id, "cancellation_entry": cancellation_entry}
+    return {
+        "ok": True,
+        "backend_supported": True,
+        "command_id": command_id,
+        "cancellation_entry": cancellation_entry,
+    }
 
 
 class AponiDashboard:
@@ -800,17 +803,14 @@ class AponiDashboard:
                 if parsed.path.startswith("/policy/simulate"):
                     self._send_json({"ok": False, "error": "method_not_allowed", "detail": "policy/simulate is GET only"}, status_code=405)
                     return
-                if not (
-                    parsed.path.startswith("/control/queue")
-                    or parsed.path.startswith("/control/telemetry")
-                    or parsed.path.startswith("/ux/events")
-                    or parsed.path.startswith("/control/execution")
-                    or (serve_mcp and parsed.path in MCP_MUTATION_ENDPOINTS)
-                ):
+                # Route priority: /ux/events and /control/telemetry are handled before generic
+                # /control/queue validation so observability stays available even when command surface is off.
+                if not (parsed.path.startswith("/control/queue") or parsed.path.startswith("/control/telemetry") or parsed.path.startswith("/ux/events")):
                     self.send_response(404)
                     self.end_headers()
                     return
-                if (parsed.path.startswith("/control/queue") or parsed.path.startswith("/control/execution")) and not self._command_surface_enabled():
+                # Observability endpoints remain available even when the command surface is disabled.
+                if parsed.path.startswith("/control/queue") and not self._command_surface_enabled():
                     self._send_json({"ok": False, "error": "command_surface_disabled"})
                     return
                 content_length = int(self.headers.get("Content-Length", "0") or "0")
@@ -823,95 +823,6 @@ class AponiDashboard:
                     self._send_json({"ok": False, "error": "invalid_json"})
                     return
 
-                if parsed.path == "/mutation/analyze":
-                    from runtime.mcp.mutation_analyzer import analyze_mutation
-
-                    self._send_json(analyze_mutation(payload))
-                    return
-                if parsed.path == "/mutation/explain-rejection":
-                    from runtime.mcp.rejection_explainer import explain_rejection
-
-                    mutation_id = str(payload.get("mutation_id") or "")
-                    try:
-                        self._send_json(explain_rejection(mutation_id))
-                    except KeyError:
-                        self._send_json({"ok": False, "error": "mutation_not_found"}, status_code=404)
-                    return
-                if parsed.path == "/mutation/rank":
-                    from runtime.mcp.candidate_ranker import rank_candidates
-
-                    mutation_ids = payload.get("mutation_ids")
-                    if not isinstance(mutation_ids, list) or not mutation_ids:
-                        self._send_json({"ok": False, "error": "empty_candidates"}, status_code=400)
-                        return
-                    self._send_json(rank_candidates([str(v) for v in mutation_ids]))
-                    return
-                if parsed.path.startswith("/control/execution"):
-                    if not self._execution_control_surface_enabled():
-                        self._send_json(
-                            {
-                                "ok": False,
-                                "error": "not_supported_yet",
-                                "detail": "execution control endpoint is present but disabled",
-                                "supported": False,
-                            },
-                            status_code=501,
-                        )
-                        return
-                    validated = self._validate_execution_control_command(payload)
-                    if not validated.get("ok"):
-                        self._send_json(
-                            {
-                                "ok": False,
-                                "error": "validation_failed",
-                                "validation_error": validated.get("error", "invalid_payload"),
-                                "detail": validated.get("detail", "execution control payload did not pass validation"),
-                                "supported": True,
-                            },
-                            status_code=400,
-                        )
-                        return
-                    command = validated["command"]
-                    target_command_id = str(command.get("target_command_id", "")).strip()
-                    target_entry = _find_control_queue_entry(target_command_id)
-                    if target_entry is None:
-                        self._send_json(
-                            {
-                                "ok": False,
-                                "error": "target_not_found",
-                                "detail": "target_command_id was not found in control queue",
-                                "supported": True,
-                            },
-                            status_code=404,
-                        )
-                        return
-                    target_payload = target_entry.get("payload") if isinstance(target_entry.get("payload"), dict) else {}
-                    target_type = str(target_payload.get("type", "")).strip()
-                    if target_type != "run_task":
-                        self._send_json(
-                            {
-                                "ok": False,
-                                "error": "target_not_executable",
-                                "detail": "execution control applies only to run_task commands",
-                                "supported": True,
-                            },
-                            status_code=409,
-                        )
-                        return
-                    command["target_snapshot"] = {
-                        "target_command_id": target_command_id,
-                        "target_type": target_type,
-                    }
-                    entry = _queue_control_command(command)
-                    metrics.log(
-                        event_type="aponi_execution_control_command_queued",
-                        payload={"command_id": entry["command_id"], "action": command["action"], "target_command_id": target_command_id},
-                        level="INFO",
-                        element_id=ELEMENT_ID,
-                    )
-                    self._send_json({"ok": True, "entry": entry, "supported": True, "contract": "execution_control_v1"})
-                    return
-
                 if parsed.path.startswith("/ux/events"):
                     validated = _validate_ux_event(payload)
                     if not validated.get("ok"):
@@ -921,6 +832,7 @@ class AponiDashboard:
                     metrics.log(event_type="aponi_ux_event", payload=event, level="INFO", element_id=ELEMENT_ID)
                     self._send_json({"ok": True, "event": event})
                     return
+
                 if parsed.path.startswith("/control/telemetry"):
                     event_type = _normalized_field(payload, "event_type")
                     if not event_type:
@@ -932,6 +844,7 @@ class AponiDashboard:
                     metrics.log(event_type=event_type, payload=event_payload, level="INFO", element_id=ELEMENT_ID)
                     self._send_json({"ok": True})
                     return
+
                 if parsed.path.startswith("/control/queue/cancel"):
                     command_id = _normalized_field(payload, "command_id")
                     if not command_id:
@@ -941,6 +854,7 @@ class AponiDashboard:
                     metrics.log(event_type="aponi_control_command_cancel_attempt", payload={"command_id": command_id, "ok": bool(result.get("ok"))}, level="INFO", element_id=ELEMENT_ID)
                     self._send_json(result)
                     return
+
                 validated = self._validate_control_command(payload)
                 if not validated.get("ok"):
                     self._send_json(validated)
@@ -1633,7 +1547,6 @@ class AponiDashboard:
                         }
                     )
                 return timeline
-
             @staticmethod
             def _user_console() -> str:
                 return f"""<!doctype html>
@@ -1653,6 +1566,8 @@ class AponiDashboard:
     h3 {{ font-size: 0.9rem; color: #bcd4ff; margin-top: 0.9rem; }}
     pre {{ overflow-x: auto; white-space: pre-wrap; margin: 0; }}
     .meta {{ color: #a8b8cc; font-size: 0.9rem; margin-top: 0.3rem; }}
+    .meta-row {{ display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.8rem; margin-top: 0.45rem; }}
+    .meta-select {{ background: #0a1422; color: #e8eef6; border: 1px solid #2f4768; border-radius: 6px; padding: 0.25rem 0.45rem; }}
     .floating-panel {{ position: fixed; right: 1rem; bottom: 1rem; width: min(420px, calc(100vw - 2rem)); z-index: 20; border: 1px solid #2f4768; border-radius: 10px; background: #0f1d30; box-shadow: 0 12px 30px rgba(0,0,0,0.45); }}
     .floating-header {{ cursor: move; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; background: #18314d; padding: 0.55rem 0.7rem; border-bottom: 1px solid #2f4768; border-top-left-radius: 10px; border-top-right-radius: 10px; }}
     .floating-body {{ padding: 0.7rem; display: grid; gap: 0.6rem; }}
@@ -1663,21 +1578,80 @@ class AponiDashboard:
     .floating-actions {{ display: flex; gap: 0.5rem; }}
     .floating-btn {{ border: 1px solid #3f5f89; color: #e6f0ff; background: #1f3555; padding: 0.45rem 0.7rem; border-radius: 6px; cursor: pointer; }}
     .floating-status {{ font-size: 0.8rem; color: #9cc0f5; white-space: pre-wrap; }}
-    .app-view {{ display: none; }}
-    .app-view.is-active {{ display: grid; gap: 1rem; }}
-    .app-view:focus {{ outline: 2px solid #76a6f0; outline-offset: 4px; }}
-    .command-bar {{ position: fixed; left: 0; right: 0; bottom: 0; z-index: 18; display: flex; justify-content: center; align-items: center; padding: 0.5rem 1rem calc(0.55rem + env(safe-area-inset-bottom)); background: rgba(9, 19, 33, 0.95); border-top: 1px solid #304769; backdrop-filter: blur(6px); }}
-    .command-list {{ list-style: none; margin: 0; padding: 0; display: flex; gap: 0.55rem; align-items: center; }}
-    .command-item {{ margin: 0; }}
-    .command-btn {{ width: 2.6rem; height: 2.6rem; border-radius: 999px; border: 1px solid #3b5477; color: #cde2ff; background: #13233a; cursor: pointer; font-size: 1.15rem; }}
-    .command-btn[aria-current="page"] {{ background: #1f3555; border-color: #73a0e2; color: #fff; }}
-    .command-btn--primary {{ width: 3.2rem; height: 3.2rem; border-color: #8db9ff; background: linear-gradient(135deg, #1d4f9c, #2e71d2); box-shadow: 0 8px 18px rgba(31, 99, 193, 0.45); transform: translateY(-0.35rem); }}
+    .view-nav {{ display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }}
+    .view-btn {{ border: 1px solid #345077; background: #14243a; color: #dbe9ff; padding: 0.4rem 0.65rem; border-radius: 6px; cursor: pointer; }}
+    .view-btn.active {{ background: #28508a; border-color: #3e6db2; }}
+    .view {{ display: none; gap: 1rem; }}
+    .view.active {{ display: grid; }}
+    .context-strip {{ display: flex; gap: 0.5rem; flex-wrap: wrap; }}
+    .context-pill {{ border: 1px solid #2f4768; border-radius: 999px; padding: 0.25rem 0.55rem; font-size: 0.82rem; color: #c4d8f5; background: #101d31; }}
+    .primary-card {{ border: 1px solid #3d5f90; background: linear-gradient(135deg, #10223b 0%, #172f4c 100%); }}
+    .primary-headline {{ font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }}
+    .primary-reason {{ color: #bbd3f3; margin-bottom: 0.6rem; }}
+    .primary-cta {{ border: 1px solid #4876b9; background: #24528f; color: #f2f7ff; border-radius: 6px; padding: 0.45rem 0.8rem; cursor: pointer; }}
+    .quick-actions {{ display: flex; gap: 0.5rem; flex-wrap: wrap; }}
+    .quick-action {{ border: 1px solid #3f5f89; background: #18304d; color: #dbe9ff; border-radius: 8px; padding: 0.42rem 0.75rem; cursor: pointer; transition: transform 120ms ease, box-shadow 120ms ease; }}
+    .quick-action:hover {{ transform: translateY(-1px); box-shadow: 0 6px 14px rgba(17,35,58,0.45); }}
+    .action-grid {{ display: grid; gap: 0.7rem; }}
+    .action-card {{ border: 1px solid #2e4464; background: #0d192a; border-radius: 8px; padding: 0.65rem; display: grid; gap: 0.55rem; }}
+    .action-card h3 {{ margin: 0; font-size: 0.95rem; }}
+    .action-desc {{ margin: 0; color: #b7c9e2; font-size: 0.86rem; }}
+    .action-estimate {{ font-size: 0.8rem; color: #8db2e8; }}
+    .action-inputs {{ border: 1px solid #2e4464; border-radius: 6px; padding: 0.4rem 0.5rem; }}
+    .action-inputs summary {{ cursor: pointer; color: #9ac0ff; font-size: 0.82rem; }}
+    .action-input-list {{ margin-top: 0.45rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.4rem; }}
+    .action-field {{ display: grid; gap: 0.2rem; }}
+    .action-field span {{ font-size: 0.72rem; color: #a8bddc; }}
+    .action-field input, .action-field textarea {{ width: 100%; box-sizing: border-box; background: #0a1422; color: #e8eef6; border: 1px solid #2f4768; border-radius: 6px; padding: 0.4rem; }}
+    .action-field textarea {{ min-height: 58px; resize: vertical; }}
+    .action-footer {{ display: flex; justify-content: space-between; align-items: center; gap: 0.55rem; }}
+    .action-status {{ font-size: 0.78rem; color: #9cc0f5; white-space: pre-wrap; }}
+    .action-run {{ border: 1px solid #3f5f89; color: #e6f0ff; background: #1f3555; padding: 0.38rem 0.62rem; border-radius: 6px; cursor: pointer; }}
+    .action-card.executing {{ border-color: #557fb9; background: #10233d; }}
+    .action-card.executing .action-inputs {{ opacity: 0.5; pointer-events: none; }}
+    .action-card.done {{ border-color: #2c6f4f; }}
+    .execution-panel {{ border: 1px solid #355179; border-radius: 8px; padding: 0.55rem; background: #0c1829; display: grid; gap: 0.5rem; }}
+    .execution-panel.hidden {{ display: none; }}
+    .execution-summary {{ font-size: 0.85rem; color: #d8e7ff; }}
+    .execution-progress {{ width: 100%; }}
+    details.execution-raw summary {{ cursor: pointer; color: #9ac0ff; font-size: 0.8rem; }}
+    .execution-actions {{ display: flex; gap: 0.5rem; }}
+    .history-toolbar {{ display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; margin-bottom: 0.8rem; }}
+    .history-toolbar label {{ font-size: 0.78rem; color: #b8cae1; display: grid; gap: 0.25rem; min-width: 150px; }}
+    .history-toolbar input, .history-toolbar select {{ background: #0a1422; color: #e8eef6; border: 1px solid #2f4768; border-radius: 6px; padding: 0.4rem; }}
+    .history-items {{ display: grid; gap: 0.6rem; }}
+    .history-item {{ border: 1px solid #2d4260; border-radius: 8px; background: #0c1728; padding: 0.65rem; }}
+    .history-item-header {{ display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }}
+    .history-item-title {{ font-weight: 600; color: #d7e8ff; }}
+    .history-item-meta {{ font-size: 0.78rem; color: #9fb4d0; margin-top: 0.2rem; }}
+    .history-item-actions {{ display: flex; gap: 0.4rem; flex-wrap: wrap; }}
+    .history-item-actions button {{ border: 1px solid #3f5f89; color: #dbe9ff; background: #18304f; padding: 0.3rem 0.55rem; border-radius: 6px; cursor: pointer; font-size: 0.76rem; }}
+    .history-item details {{ margin-top: 0.45rem; }}
+    .insight-card {{ border: 1px solid #2e4464; background: #0d192a; border-radius: 8px; padding: 0.65rem; margin-bottom: 0.6rem; }}
+    .insight-card h3 {{ margin: 0 0 0.3rem 0; font-size: 0.92rem; }}
+    .insight-card p {{ margin: 0; color: #b7c9e2; font-size: 0.82rem; }}
+    .insight-card details {{ margin-top: 0.4rem; }}
   </style>
 </head>
 <body>
   <header>
     <h1>{HUMAN_DASHBOARD_TITLE}</h1>
     <div class="meta">Read-only governance intelligence view plus strict-gated command intent initiator.</div>
+    <div class="meta-row" id="contextStrip">
+      <label for="modeSwitcher">Profile / Settings mode</label>
+      <select id="modeSwitcher" class="meta-select" aria-label="Profile mode selector">
+        <option value="builder">Builder</option>
+        <option value="automation">Automation</option>
+        <option value="analysis">Analysis</option>
+        <option value="growth">Growth</option>
+      </select>
+      <span id="modeSummary" class="meta"></span>
+    </div>
+    <div class="view-nav" role="tablist" aria-label="Dashboard views">
+      <button class="view-btn active" data-view="home" type="button">Home</button>
+      <button class="view-btn" data-view="insights" type="button">Insights</button>
+      <button class="view-btn" data-view="history" type="button">History</button>
+    </div>
   </header>
 
 
@@ -1700,79 +1674,129 @@ class AponiDashboard:
     <span>Cancel action</span><span>Fork action</span><span>Raw execution event payload</span><span>History</span>
   </div>
   <main>
-    <section id="view-home" class="app-view is-active" data-route="home" aria-labelledby="homeHeading" tabindex="-1">
-      <h2 id="homeHeading">Home</h2>
-      <section><h3>System state</h3><pre id="state">Loading...</pre></section>
-      <section><h3>Intelligence snapshot</h3><pre id="intelligence">Loading...</pre></section>
+    <div id="view-home" class="view active" role="tabpanel">
+      <section class="primary-card">
+        <h2>Primary action</h2>
+        <div id="homePrimaryHeadline" class="primary-headline">Analyzing current conditions…</div>
+        <div id="homePrimaryReason" class="primary-reason">Loading recommendation inputs from live governance endpoints.</div>
+        <button id="homePrimaryCta" type="button" class="primary-cta">Open control panel</button>
+      </section>
+      <section>
+        <h2>Context</h2>
+        <div class="context-strip">
+          <span class="context-pill" id="homeProject">Project: --</span>
+          <span class="context-pill" id="homeAgent">Active agent: --</span>
+          <span class="context-pill" id="homeMode">Mode: --</span>
+        </div>
+      </section>
+      <section>
+        <h2>Quick actions</h2>
+        <div id="homeQuickActions" class="quick-actions"></div>
+      </section>
+    </div>
+    <div id="view-insights" class="view" role="tabpanel" aria-hidden="true">
+      <section id="card-state" data-card-key="state"><h2>System state</h2><pre id="state">Loading...</pre></section>
+      <section id="card-intelligence" data-card-key="intelligence"><h2>Intelligence snapshot</h2><pre id="intelligence">Loading...</pre></section>
+      <section id="card-risk" data-card-key="risk"><h2>Risk summary</h2><pre id="risk">Loading...</pre></section>
+      <section id="card-instability" data-card-key="instability"><h2>Risk instability</h2><pre id="instability">Loading...</pre></section>
+      <section id="card-uxSummary" data-card-key="uxSummary"><h2>UX summary</h2><pre id="uxSummary">Loading...</pre></section>
+    </div>
+    <div id="view-history" class="view" role="tabpanel" aria-hidden="true">
+      <section id="card-replay" data-card-key="replay"><h2>Replay divergence</h2><pre id="replay">Loading...</pre></section>
+      <section id="card-timeline" data-card-key="timeline">
+        <h2>History</h2>
+        <div class="history-toolbar">
+          <label>Type
+            <select id="historyTypeFilter"><option value="all">All event types</option></select>
+          </label>
+          <label>From
+            <input id="historyDateFrom" type="datetime-local" />
+          </label>
+          <label>To
+            <input id="historyDateTo" type="datetime-local" />
+          </label>
+        </div>
+        <div id="historyList" class="history-items">Loading...</div>
+      </section>
+    </div>
+    <section>
+      <h2>Tasks</h2>
+      <div id="tasksActions" class="action-grid">Loading...</div>
     </section>
-    <section id="view-tasks" class="app-view" data-route="tasks" aria-labelledby="tasksHeading" tabindex="-1">
-      <h2 id="tasksHeading">Tasks</h2>
-      <section><h3>Risk summary</h3><pre id="risk">Loading...</pre></section>
-      <section><h3>Risk instability</h3><pre id="instability">Loading...</pre></section>
-    </section>
-    <section id="view-insights-page" class="app-view" data-route="insights" aria-labelledby="insightsHeading" tabindex="-1">
-      <h2 id="insightsHeading">Insights</h2>
-      <section><h3>Live insights</h3><div id="insights">Loading...</div></section>
-      <section><h3>UX summary</h3><pre id="uxSummary">Loading...</pre></section>
-    </section>
-    <section id="view-history" class="app-view" data-route="history" aria-labelledby="historyHeading" tabindex="-1">
-      <h2 id="historyHeading">History</h2>
-      <section><h3>Replay divergence</h3><pre id="replay">Loading...</pre></section>
-      <section><h3>Evolution timeline (latest)</h3><pre id="timeline">Loading...</pre></section>
-    </section>
-    <section id="view-profile" class="app-view" data-route="profile" aria-labelledby="profileHeading" tabindex="-1">
-      <h2 id="profileHeading">Profile</h2>
-      <section><h3>Governance queue status</h3><pre id="queueSummaryProfile">Use command panel to review queue status.</pre></section>
+    <section>
+      <h2>Insights</h2>
+      <div id="insights"></div>
+      <div id="insightsActions" class="action-grid">Loading...</div>
     </section>
   </main>
-  <nav class="command-bar" aria-label="Primary destinations">
-    <ul class="command-list">
-      <li class="command-item"><button type="button" class="command-btn" data-route-target="home" aria-label="Home">⌂</button></li>
-      <li class="command-item"><button type="button" class="command-btn" data-route-target="tasks" aria-label="Tasks">✓</button></li>
-      <li class="command-item"><button type="button" class="command-btn command-btn--primary" data-route-target="insights" aria-label="Insights">◎</button></li>
-      <li class="command-item"><button type="button" class="command-btn" data-route-target="history" aria-label="History">↺</button></li>
-      <li class="command-item"><button type="button" class="command-btn" data-route-target="profile" aria-label="Profile">◉</button></li>
-    </ul>
-  </nav>
+  <template id="actionCardTemplate">
+    <article class="action-card" data-source="" data-kind="" data-payload="">
+      <h3 class="action-title"></h3>
+      <p class="action-desc"></p>
+      <details class="action-inputs">
+        <summary>Inline inputs</summary>
+        <div class="action-input-list"></div>
+      </details>
+      <div class="action-estimate"></div>
+      <div class="action-footer">
+        <button type="button" class="action-run">Run</button>
+        <div class="action-status">Ready.</div>
+      </div>
+    </article>
+  </template>
   <aside id="controlPanel" class="floating-panel" aria-label="Aponi command initiator">
     <div id="controlPanelHeader" class="floating-header">
-      <strong>Aponi Command Initiator</strong>
+      <strong>Aponi Guided Assistant</strong>
       <button id="controlToggle" type="button" class="floating-btn">Collapse</button>
     </div>
     <div class="floating-body">
       <div class="floating-label">Command queue status</div>
       <pre id="queueSummary">Loading...</pre>
-      <h3>Queue new governed intent</h3>
-      <label class="floating-label" for="controlType">Type</label>
+      <div id="executionPanel" class="execution-panel hidden" aria-live="polite">
+        <div id="executionSummary" class="execution-summary">No active execution.</div>
+        <details class="execution-raw">
+          <summary>Raw execution event payload</summary>
+          <pre id="executionRaw">{{}}</pre>
+        </details>
+        <progress id="executionProgress" class="execution-progress" max="100" value="0"></progress>
+        <div id="executionProgressLabel" class="floating-label">0% queued</div>
+        <div class="execution-actions">
+          <button id="executionCancel" type="button" class="floating-btn">Cancel action</button>
+          <button id="executionFork" type="button" class="floating-btn">Fork action</button>
+        </div>
+      </div>
+      <h3>Create a new action</h3>
+      <div class="floating-helper">Choose from guided options below. Advanced safeguards are applied automatically.</div>
+      <div id="controlGuidance" class="guidance-pills"></div>
+      <label class="floating-label" for="controlType">What do you want to do?</label>
       <select id="controlType" class="floating-select">
         <option value="create_agent">create_agent</option>
         <option value="run_task">run_task</option>
       </select>
-      <label class="floating-label" for="controlAgentId">Agent ID</label>
+      <label class="floating-label" for="controlAgentId">Agent name</label>
       <input id="controlAgentId" class="floating-input" value="triage_agent" />
-      <label class="floating-label" for="controlGovernance">Governance profile</label>
+      <label class="floating-label" for="controlGovernance">Safety level</label>
       <select id="controlGovernance" class="floating-select">
-        <option value="strict">strict</option>
-        <option value="high-assurance">high-assurance</option>
+        <option value="strict">Strict</option>
+        <option value="high-assurance">High Assurance</option>
       </select>
-      <label class="floating-label" for="controlSkillProfile">Skill profile</label>
+      <label class="floating-label" for="controlSkillProfile">Skill set</label>
       <select id="controlSkillProfile" class="floating-select"></select>
-      <label class="floating-label" for="controlKnowledgeDomain">Knowledge domain</label>
+      <label class="floating-label" for="controlKnowledgeDomain">Knowledge area</label>
       <select id="controlKnowledgeDomain" class="floating-select"></select>
-      <label class="floating-label" for="controlCapabilities">Capabilities (comma-separated allowlist keys)</label>
-      <input id="controlCapabilities" class="floating-input" value="wikipedia" />
-      <label class="floating-label" for="controlAbility">Ability (required for run_task)</label>
-      <input id="controlAbility" class="floating-input" value="summarize" />
-      <label class="floating-label" for="controlTask">Task (run_task) / Purpose (create_agent)</label>
-      <textarea id="controlTask" class="floating-textarea"></textarea>
+      <label class="floating-label" for="controlCapabilities">Capabilities to use (select one or more)</label>
+      <select id="controlCapabilities" class="floating-select" multiple></select>
+      <label class="floating-label" for="controlAbility">Ability to apply</label>
+      <select id="controlAbility" class="floating-select"></select>
+      <label class="floating-label" for="controlTask">Suggested task / purpose</label>
+      <select id="controlTask" class="floating-select"></select>
       <div class="floating-actions">
-        <button id="queueSubmit" type="button" class="floating-btn">Queue intent</button>
-        <button id="queueRefresh" type="button" class="floating-btn">Refresh queue</button>
+        <button id="queueSubmit" type="button" class="floating-btn">Submit action</button>
+        <button id="queueRefresh" type="button" class="floating-btn">Refresh status</button>
       </div>
-      <div class="floating-actions">
-        <button id="execCancel" type="button" class="floating-btn">Cancel latest task</button>
-        <button id="execFork" type="button" class="floating-btn">Fork latest task</button>
-      </div>
+      <div class="floating-label">Command lifecycle</div>
+      <div id="controlStageLabel" class="floating-status">Stage: select</div>
+      <progress id="controlStageProgress" max="4" value="0" style="width:100%;"></progress>
       <div id="controlStatus" class="floating-status">Awaiting command input.</div>
     </div>
   </aside>
@@ -1787,55 +1811,276 @@ class AponiDashboard:
 const DRAFT_STORAGE_KEY = 'aponi.control.draft.v1';
 const MODE_STORAGE_KEY = 'aponi.user.mode.v1';
 const UX_SESSION_KEY = 'aponi.ux.session.v1';
+let uxFirstSuccessMarked = false;
+const DEFAULT_MODE = 'builder';
+const QUICK_ACTION_LIMIT = 3;
 const EXECUTION_POLL_MS = 1500;
-const CONTROL_STATES = { select: 0, configure: 1, execute: 2, complete: 3, failed: 4 };
-const APP_ROUTES = ['home', 'tasks', 'insights', 'history', 'profile'];
+const UNDO_TOAST_MS = 5000;
+const CONTROL_AGENT_ID_RE = /^[a-z0-9_-]{3,64}$/;
+const ALLOWED_GOVERNANCE_PROFILES = ['strict', 'high-assurance'];
+const CONTROL_CAPABILITIES_MAX = 8;
+const CONTROL_MODES_LIST = ['builder', 'automation', 'analysis', 'growth'];
+const MODE_CONFIG = {
+  builder: { summary: 'Design-first view for creating governed agents.', defaultType: 'create_agent', showQueueComposer: true, cardOrder: ['state','timeline','intelligence','risk','instability','replay'] },
+  automation: { summary: 'Execution-first view for task dispatch and queue monitoring.', defaultType: 'run_task', showQueueComposer: true, cardOrder: ['state','intelligence','risk','timeline','instability','replay'] },
+  analysis: { summary: 'Investigation-first view focused on risk and replay analysis.', defaultType: 'run_task', showQueueComposer: false, cardOrder: ['risk','instability','replay','intelligence','timeline','state'] },
+  growth: { summary: 'Trajectory-first view focused on evolution and capability growth.', defaultType: 'create_agent', showQueueComposer: true, cardOrder: ['timeline','state','intelligence','risk','instability','replay'] },
+};
 
-// TODO(aponi-ui): remove compatibility marker shim once full multi-view dashboard is restored.
-const __compatMarkers = `
-metadata: { mode: selectedMode }
-reorderHomeCards(mode);
-function createControlStateMachine()
-failed: ['select', 'configure']
-function validateConfiguration(payload)
-window.aponiControlMachine = createControlStateMachine();
-registerUndoAction({
-/control/queue/cancel
-/control/telemetry
-function toCardModelFromTemplate(
-function toCardModelFromInsightRecommendation(
-function toCardModelFromHistoryRerun(
-cardElement.classList.add('executing');
-refreshActionCards(),
-endpoint_todo: '/control/execution (pending)'
-function wireExecutionActions()
-hydrateForkDraft(executionState.activeEntry);
-execution_backend: 'queue_bridge'
-setInterval(refreshControlQueue, EXECUTION_POLL_MS);
-Built agent pipeline
-Queued governed intent
-Show raw JSON
-data-action="rerun"
-data-action="fork"
-function normalizeInsights(payload)
-function renderInsights(items)
-paint('uxSummary', '/ux/summary')
-'/ux/events'
-Expand insight details
-`;
+const executionState = {
+  activeEntry: null,
+  lastFingerprint: '',
+};
+
+const undoManager = { stack: [], toastTimer: null };
+
+async function postTelemetry(eventType, payload) {
+  try {
+    await fetch('/control/telemetry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: eventType, payload: payload || {} }),
+    });
+  } catch (_) {
+    return;
+  }
+}
+
+function ensureUndoToast() {
+  let el = document.getElementById('undoToast');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'undoToast';
+  el.style.position = 'fixed';
+  el.style.left = '20px';
+  el.style.bottom = '20px';
+  el.style.background = 'rgba(20, 25, 40, 0.95)';
+  el.style.border = '1px solid #406db3';
+  el.style.borderRadius = '8px';
+  el.style.padding = '10px 12px';
+  el.style.color = '#d6e7ff';
+  el.style.zIndex = '1000';
+  el.style.display = 'none';
+  const label = document.createElement('span');
+  label.id = 'undoToastLabel';
+  const undoBtn = document.createElement('button');
+  undoBtn.type = 'button';
+  undoBtn.className = 'floating-btn';
+  undoBtn.style.marginLeft = '10px';
+  undoBtn.textContent = 'Undo';
+  undoBtn.addEventListener('click', () => undoLatestAction('toast'));
+  el.appendChild(label);
+  el.appendChild(undoBtn);
+  document.body.appendChild(el);
+  return el;
+}
+
+function showUndoToast(action) {
+  const toast = ensureUndoToast();
+  const label = document.getElementById('undoToastLabel');
+  if (label) label.textContent = action.label;
+  toast.style.display = 'block';
+  if (undoManager.toastTimer) clearTimeout(undoManager.toastTimer);
+  undoManager.toastTimer = setTimeout(() => {
+    toast.style.display = 'none';
+    postTelemetry('aponi_control_undo_toast_expired', { undo_id: action.id, action_type: action.type });
+  }, UNDO_TOAST_MS);
+}
+
+function registerUndoAction(action) {
+  const stamp = Date.now();
+  const undoAction = { id: `undo-${stamp}-${Math.random().toString(16).slice(2, 8)}`, created_at: stamp, ...action };
+  undoManager.stack.push(undoAction);
+  showUndoToast(undoAction);
+  postTelemetry('aponi_control_undo_registered', { undo_id: undoAction.id, action_type: undoAction.type });
+}
+
+async function undoLatestAction(source) {
+  const action = undoManager.stack.pop();
+  const toast = document.getElementById('undoToast');
+  if (!action) { if (toast) toast.style.display = 'none'; return; }
+  try {
+    await action.undo();
+    postTelemetry('aponi_control_undo_executed', { undo_id: action.id, action_type: action.type, source: source || 'unknown' });
+  } catch (err) {
+    postTelemetry('aponi_control_undo_failed', { undo_id: action.id, action_type: action.type, error: String(err) });
+  }
+  if (toast) toast.style.display = 'none';
+}
+
+function currentMode() {
+  const raw = localStorage.getItem(MODE_STORAGE_KEY) || DEFAULT_MODE;
+  return Object.prototype.hasOwnProperty.call(MODE_CONFIG, raw) ? raw : DEFAULT_MODE;
+}
+
+function modeConfig(mode) { return MODE_CONFIG[mode] || MODE_CONFIG[DEFAULT_MODE]; }
+
+function reorderHomeCards(mode) {
+  const host = document.querySelector('main');
+  if (!host) return;
+  const config = modeConfig(mode);
+  const allCards = Array.from(host.querySelectorAll('[data-card-key]'));
+  const byKey = new Map(allCards.map((card) => [card.getAttribute('data-card-key'), card]));
+  const ordered = [];
+  for (const key of config.cardOrder || []) {
+    const node = byKey.get(key);
+    if (node) ordered.push(node);
+  }
+  for (const card of allCards) if (!ordered.includes(card)) ordered.push(card);
+  for (const card of ordered) host.appendChild(card);
+}
+
+function applyMode(mode) {
+  const config = modeConfig(mode);
+  localStorage.setItem(MODE_STORAGE_KEY, mode);
+  const switcher = document.getElementById('modeSwitcher');
+  if (switcher && switcher.value !== mode) switcher.value = mode;
+  const summary = document.getElementById('modeSummary');
+  if (summary) summary.textContent = config.summary;
+  const typeInput = document.getElementById('controlType');
+  if (typeInput && config.defaultType) typeInput.value = config.defaultType;
+  const composerHeading = document.querySelector('.floating-body h3');
+  const hideComposer = !config.showQueueComposer;
+  const composerIds = ['controlType','controlAgentId','controlGovernance','controlSkillProfile','controlKnowledgeDomain','controlCapabilities','controlAbility','controlTask','queueSubmit'];
+  if (composerHeading) composerHeading.style.display = hideComposer ? 'none' : '';
+  for (const id of composerIds) {
+    const node = document.getElementById(id);
+    if (!node) continue;
+    const label = document.querySelector(`label[for="${id}"]`);
+    node.style.display = hideComposer ? 'none' : '';
+    if (label) label.style.display = hideComposer ? 'none' : '';
+  }
+  reorderHomeCards(mode);
+  renderControlGuidance();
+}
+
+function setupModeSwitcher() {
+  const switcher = document.getElementById('modeSwitcher');
+  if (!switcher) return;
+  switcher.value = currentMode();
+  switcher.addEventListener('change', (event) => {
+    const selectedMode = String((event.target || {}).value || DEFAULT_MODE);
+    applyMode(selectedMode);
+  });
+  applyMode(currentMode());
+}
 
 
+function renderControlGuidance(extra = {}) {
+  const host = document.getElementById('controlGuidance');
+  if (!host) return;
+  const type = ((document.getElementById('controlType') || {}).value || 'run_task').replace('_', ' ');
+  const profile = (document.getElementById('controlSkillProfile') || {}).value || 'not selected';
+  const mode = currentMode();
+  const safety = (document.getElementById('controlGovernance') || {}).value || 'strict';
+  const pills = [
+    `Mode: ${mode}`,
+    `Action: ${type}`,
+    `Skill set: ${profile}`,
+    `Safety: ${safety}`,
+  ];
+  if (typeof extra.capabilityCount === 'number') pills.push(`Capabilities: ${extra.capabilityCount}`);
+  host.innerHTML = pills.map((text) => `<span class="guidance-pill">${text}</span>`).join('');
+}
+
+function bindComposerPersistence() {
+  const ids = ['controlType','controlAgentId','controlGovernance','controlSkillProfile','controlKnowledgeDomain','controlCapabilities','controlAbility','controlTask'];
+  ids.forEach((id) => {
+    const node = document.getElementById(id);
+    if (!node) return;
+    node.addEventListener('change', () => {
+      persistDraft(readCommandPayload());
+      renderControlGuidance();
+    });
+  });
+}
+
+
+function ensureSelectOption(selectEl, value) {
+  if (!selectEl) return;
+  const normalized = String(value || '').trim();
+  if (!normalized) return;
+  const exists = Array.from(selectEl.options || []).some((opt) => opt.value === normalized);
+  if (!exists) {
+    const option = document.createElement('option');
+    option.value = normalized;
+    option.textContent = normalized;
+    selectEl.appendChild(option);
+  }
+  selectEl.value = normalized;
+}
+
+function paintDraft(payload) {
+  const type = document.getElementById('controlType');
+  const agentId = document.getElementById('controlAgentId');
+  const governance = document.getElementById('controlGovernance');
+  const skill = document.getElementById('controlSkillProfile');
+  const domain = document.getElementById('controlKnowledgeDomain');
+  const caps = document.getElementById('controlCapabilities');
+  const ability = document.getElementById('controlAbility');
+  const task = document.getElementById('controlTask');
+  if (type && payload.type) type.value = payload.type;
+  if (agentId && payload.agent_id) agentId.value = payload.agent_id;
+  if (governance && payload.governance_profile) governance.value = payload.governance_profile;
+  if (skill && payload.skill_profile) skill.value = payload.skill_profile;
+  if (domain && payload.knowledge_domain) domain.value = payload.knowledge_domain;
+  if (caps && Array.isArray(payload.capabilities)) {
+    const selected = new Set(payload.capabilities.map((item) => String(item)));
+    Array.from(caps.options || []).forEach((opt) => { opt.selected = selected.has(opt.value); });
+  }
+  if (ability && payload.ability) ensureSelectOption(ability, payload.ability);
+  if (task) ensureSelectOption(task, payload.task || payload.purpose || '');
+}
+
+function persistDraft(payload) { localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload)); }
+function restoreDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') paintDraft(parsed);
+  } catch (_) { return; }
+}
+
+function activateView(viewName) {
+  document.querySelectorAll('[data-view]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.view === viewName);
+  });
+  document.querySelectorAll('.view').forEach((viewEl) => {
+    const isActive = viewEl.id === `view-${viewName}`;
+    viewEl.classList.toggle('active', isActive);
+    viewEl.setAttribute('aria-hidden', String(!isActive));
+  });
+}
+
+function setupViews() {
+  document.querySelectorAll('[data-view]').forEach((btn) => {
+    btn.addEventListener('click', () => activateView(btn.dataset.view || 'home'));
+  });
+}
+
+function openControlPanel() {
+  const panel = document.getElementById('controlPanel');
+  if (!panel) return;
+  panel.classList.remove('collapsed');
+  const toggle = document.getElementById('controlToggle');
+  if (toggle) toggle.textContent = 'Collapse';
+  panel.scrollIntoView({ behavior: 'smooth' });
+  persistPanelState();
+}
 
 async function paint(id, endpoint) {
   const el = document.getElementById(id);
-  if (!el) return;
+  if (!el) return null;
   try {
     const response = await fetch(endpoint, { cache: 'no-store' });
     if (!response.ok) throw new Error(`endpoint returned HTTP ${response.status}`);
     const payload = await response.json();
     el.textContent = JSON.stringify(payload, null, 2);
+    return payload;
   } catch (err) {
     el.textContent = 'Failed to load ' + endpoint + ': ' + err;
+    return null;
   }
 }
 
@@ -1900,9 +2145,21 @@ function setupFloatingPanel() {
   restorePanelState();
   toggle.textContent = panel.classList.contains('collapsed') ? 'Expand' : 'Collapse';
   toggle.addEventListener('click', () => {
+    const wasCollapsed = panel.classList.contains('collapsed');
     panel.classList.toggle('collapsed');
     toggle.textContent = panel.classList.contains('collapsed') ? 'Expand' : 'Collapse';
     persistPanelState();
+    markInteraction('panel_toggle');
+    registerUndoAction({
+      type: 'quick_toggle',
+      label: `Panel ${panel.classList.contains('collapsed') ? 'collapsed' : 'expanded'}.`,
+      undo: async () => {
+        markUndo('panel_toggle', { collapsed: wasCollapsed });
+        panel.classList.toggle('collapsed', wasCollapsed);
+        toggle.textContent = panel.classList.contains('collapsed') ? 'Expand' : 'Collapse';
+        persistPanelState();
+      },
+    });
   });
 
   let dragging = false;
@@ -1937,12 +2194,19 @@ async function refreshSkillProfiles() {
   const domainSelect = document.getElementById('controlKnowledgeDomain');
   const capabilityInput = document.getElementById('controlCapabilities');
   const abilityInput = document.getElementById('controlAbility');
+  const typeSelect = document.getElementById('controlType');
+  const taskSelect = document.getElementById('controlTask');
   const status = document.getElementById('controlStatus');
-  if (!profileSelect || !domainSelect) return;
+  if (!profileSelect || !domainSelect || !capabilityInput || !abilityInput || !taskSelect) return;
   try {
-    const response = await fetch('/control/capability-matrix', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`capability-matrix returned HTTP ${response.status}`);
-    const payload = await response.json();
+    const [matrixResponse, templatesResponse] = await Promise.all([
+      fetch('/control/capability-matrix', { cache: 'no-store' }),
+      fetch('/control/templates', { cache: 'no-store' }),
+    ]);
+    if (!matrixResponse.ok) throw new Error(`capability-matrix returned HTTP ${matrixResponse.status}`);
+    const payload = await matrixResponse.json();
+    const templatePayload = templatesResponse.ok ? await templatesResponse.json() : { templates: {} };
+    const templates = templatePayload && templatePayload.templates ? templatePayload.templates : {};
     const matrix = payload && payload.matrix ? payload.matrix : {};
     const keys = Object.keys(matrix).sort();
     if (!keys.length) {
@@ -1953,19 +2217,277 @@ async function refreshSkillProfiles() {
 
     const applyProfile = () => {
       const selected = profileSelect.value;
+      const selectedType = (typeSelect && typeSelect.value) || 'run_task';
       const profile = matrix[selected] || {};
       const domains = Array.isArray(profile.knowledge_domains) ? profile.knowledge_domains : [];
       const abilities = Array.isArray(profile.abilities) ? profile.abilities : [];
       const capabilities = Array.isArray(profile.capabilities) ? profile.capabilities : [];
+      const template = (templates[selected] && templates[selected][selectedType]) || {};
+      const taskOptions = [];
+      if (typeof template.task === 'string' && template.task.trim()) taskOptions.push(template.task.trim());
+      if (typeof template.purpose === 'string' && template.purpose.trim()) taskOptions.push(template.purpose.trim());
+      if (!taskOptions.length && abilities.length && domains.length) taskOptions.push(`${abilities[0]} ${domains[0]} updates`);
+
       domainSelect.innerHTML = domains.map((item) => `<option value="${item}">${item}</option>`).join('');
-      if (abilityInput && abilities.length) abilityInput.value = abilities[0];
-      if (capabilityInput && capabilities.length) capabilityInput.value = capabilities[0];
+      abilityInput.innerHTML = abilities.map((item) => `<option value="${item}">${item}</option>`).join('');
+      capabilityInput.innerHTML = capabilities.map((item) => `<option value="${item}" selected>${item}</option>`).join('');
+      taskSelect.innerHTML = taskOptions.map((item) => `<option value="${item}">${item}</option>`).join('');
+      if (!taskOptions.length) taskSelect.innerHTML = '<option value="">No task presets available</option>';
+      renderControlGuidance({ capabilityCount: capabilities.length });
     };
 
     profileSelect.onchange = applyProfile;
+    if (typeSelect) {
+      typeSelect.onchange = applyProfile;
+      typeSelect.addEventListener('change', () => renderControlGuidance({ capabilityCount: Array.isArray((matrix[profileSelect.value] || {}).capabilities) ? (matrix[profileSelect.value] || {}).capabilities.length : 0 }));
+    }
     applyProfile();
+    restoreDraft();
   } catch (err) {
     if (status) status.textContent = 'Failed to load skill profiles: ' + err;
+  }
+}
+
+function executionFingerprint(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  return `${entry.command_id || ''}:${entry.status || ''}:${entry.digest || ''}`;
+}
+
+function summarizeExecution(entry) {
+  if (!entry || typeof entry !== 'object') return 'No active execution.';
+  const payload = entry.payload || {};
+  const parts = [payload.type || 'action', payload.agent_id ? `agent=${payload.agent_id}` : '', payload.ability ? `ability=${payload.ability}` : ''].filter(Boolean);
+  return `${parts.join(' · ') || 'Queued action'} · status=${entry.status || 'queued'} · command=${entry.command_id || 'unknown'}`;
+}
+
+function setExecutionPanelVisibility(visible) {
+  const panel = document.getElementById('executionPanel');
+  if (!panel) return;
+  panel.classList.toggle('hidden', !visible);
+}
+
+function renderExecution(entry) {
+  const summaryEl = document.getElementById('executionSummary');
+  const rawEl = document.getElementById('executionRaw');
+  const progressEl = document.getElementById('executionProgress');
+  const progressLabel = document.getElementById('executionProgressLabel');
+  if (!summaryEl || !rawEl || !progressEl || !progressLabel) return;
+  if (!entry) { setExecutionPanelVisibility(false); return; }
+  setExecutionPanelVisibility(true);
+  summaryEl.textContent = summarizeExecution(entry);
+  rawEl.textContent = JSON.stringify(entry, null, 2);
+  const status = String(entry.status || 'queued').toLowerCase();
+  const progressMap = { queued: 10, pending: 20, running: 60, completed: 100, complete: 100, done: 100, failed: 100, error: 100, canceled: 100, cancelled: 100 };
+  const progressValue = Number.isFinite(entry.progress_percent) ? Math.max(0, Math.min(100, Number(entry.progress_percent))) : (progressMap[status] || 15);
+  progressEl.value = progressValue;
+  progressLabel.textContent = `${progressValue}% ${status}`;
+}
+
+function hydrateForkDraft(entry) {
+  if (!entry || typeof entry !== 'object') return;
+  const payload = entry.payload || {};
+  const typeEl = document.getElementById('controlType');
+  const agentEl = document.getElementById('controlAgentId');
+  const governanceEl = document.getElementById('controlGovernance');
+  const profileEl = document.getElementById('controlSkillProfile');
+  const domainEl = document.getElementById('controlKnowledgeDomain');
+  const capsEl = document.getElementById('controlCapabilities');
+  const abilityEl = document.getElementById('controlAbility');
+  const taskEl = document.getElementById('controlTask');
+  if (typeEl && payload.type) typeEl.value = payload.type;
+  if (agentEl && payload.agent_id) agentEl.value = payload.agent_id;
+  if (governanceEl && payload.governance_profile) governanceEl.value = payload.governance_profile;
+  if (profileEl && payload.skill_profile) profileEl.value = payload.skill_profile;
+  if (domainEl && payload.knowledge_domain) domainEl.value = payload.knowledge_domain;
+  if (capsEl && Array.isArray(payload.capabilities)) {
+    const selected = new Set(payload.capabilities.map((item) => String(item)));
+    Array.from(capsEl.options || []).forEach((opt) => { opt.selected = selected.has(opt.value); });
+  }
+  if (abilityEl) ensureSelectOption(abilityEl, payload.ability || '');
+  if (taskEl) ensureSelectOption(taskEl, payload.task || payload.purpose || '');
+}
+
+async function queueExecutionControl(type, activeEntry) {
+  const status = document.getElementById('controlStatus');
+  if (!activeEntry || !activeEntry.command_id) {
+    if (status) status.textContent = `No active command to ${type}.`;
+    return;
+  }
+  const payload = {
+    type: 'run_task',
+    agent_id: (activeEntry.payload && activeEntry.payload.agent_id) || 'triage_agent',
+    governance_profile: (activeEntry.payload && activeEntry.payload.governance_profile) || 'strict',
+    skill_profile: (activeEntry.payload && activeEntry.payload.skill_profile) || ((document.getElementById('controlSkillProfile') || {}).value || ''),
+    knowledge_domain: (activeEntry.payload && activeEntry.payload.knowledge_domain) || ((document.getElementById('controlKnowledgeDomain') || {}).value || ''),
+    capabilities: Array.isArray(activeEntry.payload && activeEntry.payload.capabilities) ? activeEntry.payload.capabilities : [],
+    ability: type === 'cancel' ? 'cancel_execution' : 'fork_execution',
+    task: `${type} execution for ${activeEntry.command_id}`,
+    execution_ref: activeEntry.command_id,
+    execution_backend: 'queue_bridge',
+  };
+  try {
+    const response = await fetch('/control/queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const result = await response.json();
+    const statusLabel = response.ok ? '' : `[HTTP ${response.status}] `;
+    if (status) status.textContent = statusLabel + JSON.stringify(result, null, 2);
+    await refreshControlQueue();
+  } catch (err) {
+    if (status) status.textContent = `Failed to ${type} execution: ` + err;
+  }
+}
+
+function wireExecutionActions() {
+  document.getElementById('executionCancel')?.addEventListener('click', async () => {
+    await queueExecutionControl('cancel', executionState.activeEntry);
+  });
+  document.getElementById('executionFork')?.addEventListener('click', () => {
+    hydrateForkDraft(executionState.activeEntry);
+    const status = document.getElementById('controlStatus');
+    if (status) status.textContent = 'Fork draft loaded from active execution. Update details and queue intent.';
+  });
+}
+
+const HISTORY_WINDOW_MS = 10 * 60 * 1000;
+const HISTORY_LABELS = {
+  built_agent_pipeline: 'Built agent pipeline',
+  ran_scan: 'Ran scan',
+  queued_governed_intent: 'Queued governed intent',
+  replay_health_update: 'Evaluated replay health',
+  evolution_activity: 'Tracked evolution activity',
+  governance_signal: 'Observed governance signal',
+  operational_event: 'Recorded operational event',
+};
+
+function eventTypeOf(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  if (typeof entry.event_type === 'string' && entry.event_type) return entry.event_type;
+  if (typeof entry.event === 'string' && entry.event) return entry.event;
+  return '';
+}
+
+function eventTimestamp(entry) {
+  const raw = (entry && (entry.timestamp || entry.ts || entry.time)) || '';
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function semanticGroupFor(entry) {
+  const eventType = eventTypeOf(entry);
+  if (eventType === 'aponi_control_command_queued' || eventType.includes('queue')) return 'queued_governed_intent';
+  if (eventType.includes('scan') || eventType.includes('replay') || eventType.includes('diff')) return 'ran_scan';
+  if (eventType.includes('agent') || eventType.includes('mutation') || eventType.includes('evolution')) return 'built_agent_pipeline';
+  if (eventType.includes('override') || eventType.includes('constitution') || eventType.includes('policy')) return 'governance_signal';
+  return 'operational_event';
+}
+
+function groupHistoryEvents(entries) {
+  const grouped = new Map();
+  const normalized = entries.filter((entry) => entry && typeof entry === 'object').map((entry) => {
+    const ts = eventTimestamp(entry);
+    const tsMs = ts ? ts.getTime() : 0;
+    return { entry, eventType: eventTypeOf(entry) || 'unknown', tsMs, semanticType: semanticGroupFor(entry) };
+  }).sort((a,b)=>b.tsMs-a.tsMs);
+
+  for (const item of normalized) {
+    const bucket = item.tsMs ? Math.floor(item.tsMs / HISTORY_WINDOW_MS) : 0;
+    const key = `${item.semanticType}:${bucket}`;
+    if (!grouped.has(key)) grouped.set(key, { id:key, semanticType:item.semanticType, label:HISTORY_LABELS[item.semanticType] || item.semanticType, eventTypes:new Set(), count:0, items:[], latestTsMs:item.tsMs });
+    const cur = grouped.get(key);
+    cur.count += 1; cur.items.push(item.entry); cur.eventTypes.add(item.eventType);
+    if (item.tsMs > cur.latestTsMs) cur.latestTsMs = item.tsMs;
+  }
+
+  return Array.from(grouped.values()).map((g)=>({ ...g, eventTypes:Array.from(g.eventTypes).sort(), latestIso:g.latestTsMs ? new Date(g.latestTsMs).toISOString() : ''})).sort((a,b)=>b.latestTsMs-a.latestTsMs);
+}
+
+function withinDateFilter(group, fromDate, toDate) {
+  if (!group.latestTsMs) return true;
+  if (fromDate && group.latestTsMs < fromDate.getTime()) return false;
+  if (toDate && group.latestTsMs > toDate.getTime()) return false;
+  return true;
+}
+
+function safeJSON(value) {
+  return JSON.stringify(value, null, 2).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+function rerunHistoryItem(group) {
+  const task = `rerun history item ${group.label.toLowerCase()} (${group.eventTypes.join(', ')})`;
+  const taskInput = document.getElementById('controlTask');
+  const typeInput = document.getElementById('controlType');
+  if (taskInput) ensureSelectOption(taskInput, task);
+  if (typeInput) typeInput.value = 'run_task';
+  queueIntent();
+}
+
+function forkHistoryItem(group) {
+  const task = `fork from history item ${group.label.toLowerCase()} (${group.eventTypes.join(', ')})`;
+  const taskInput = document.getElementById('controlTask');
+  const typeInput = document.getElementById('controlType');
+  if (taskInput) ensureSelectOption(taskInput, task);
+  if (typeInput) typeInput.value = 'create_agent';
+  queueIntent();
+}
+
+function renderHistory(groups) {
+  const list = document.getElementById('historyList');
+  const typeFilter = document.getElementById('historyTypeFilter');
+  const fromInput = document.getElementById('historyDateFrom');
+  const toInput = document.getElementById('historyDateTo');
+  if (!list || !typeFilter || !fromInput || !toInput) return;
+
+  const allEventTypes = new Set();
+  for (const group of groups) for (const eventType of group.eventTypes) allEventTypes.add(eventType);
+  const existingValue = typeFilter.value || 'all';
+  typeFilter.innerHTML = '<option value="all">All event types</option>' + Array.from(allEventTypes).sort().map((eventType) => `<option value="${eventType}">${eventType}</option>`).join('');
+  if (existingValue && Array.from(allEventTypes).includes(existingValue)) typeFilter.value = existingValue;
+
+  const selectedType = typeFilter.value;
+  const fromDate = fromInput.value ? new Date(fromInput.value) : null;
+  const toDate = toInput.value ? new Date(toInput.value) : null;
+  const filtered = groups.filter((group) => (selectedType === 'all' || group.eventTypes.includes(selectedType)) && withinDateFilter(group, fromDate, toDate));
+
+  if (!filtered.length) { list.innerHTML = '<div class="history-item">No matching history items.</div>'; return; }
+
+  list.innerHTML = filtered.map((group) => {
+    const summary = `${group.count} event${group.count === 1 ? '' : 's'} · ${group.latestIso || 'unknown time'}`;
+    const raw = safeJSON(group.items);
+    return `<article class="history-item" data-history-id="${group.id}"><div class="history-item-header"><div><div class="history-item-title">${group.label}</div><div class="history-item-meta">${summary}</div><div class="history-item-meta">Types: ${group.eventTypes.join(', ') || 'unknown'}</div></div><div class="history-item-actions"><button type="button" data-action="rerun">Rerun</button><button type="button" data-action="fork">Fork</button></div></div><details><summary>Show raw JSON</summary><pre>${raw}</pre></details></article>`;
+  }).join('');
+
+  list.querySelectorAll('[data-action="rerun"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.closest('[data-history-id]')?.getAttribute('data-history-id');
+      const group = filtered.find((candidate) => candidate.id === id);
+      if (group) rerunHistoryItem(group);
+    });
+  });
+  list.querySelectorAll('[data-action="fork"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.closest('[data-history-id]')?.getAttribute('data-history-id');
+      const group = filtered.find((candidate) => candidate.id === id);
+      if (group) forkHistoryItem(group);
+    });
+  });
+}
+
+async function refreshHistory() {
+  try {
+    const [lineageResponse, metricsResponse] = await Promise.all([
+      fetch('/lineage', { cache: 'no-store' }),
+      fetch('/metrics', { cache: 'no-store' }),
+    ]);
+    const lineagePayload = lineageResponse.ok ? await lineageResponse.json() : [];
+    const metricsPayload = metricsResponse.ok ? await metricsResponse.json() : {};
+    const lineageEntries = Array.isArray(lineagePayload) ? lineagePayload : [];
+    const metricEntries = Array.isArray(metricsPayload.entries) ? metricsPayload.entries : [];
+    const groups = groupHistoryEvents([...lineageEntries, ...metricEntries]);
+    renderHistory(groups);
+  } catch (err) {
+    const list = document.getElementById('historyList');
+    if (list) list.textContent = 'Failed to load history: ' + err;
   }
 }
 
@@ -1983,6 +2505,16 @@ async function refreshControlQueue() {
     ]);
     const payload = queueResult.status === 'fulfilled' ? queueResult.value : {};
     const verify = verifyResult.status === 'fulfilled' ? verifyResult.value : {};
+    const entries = Array.isArray(payload.entries) ? payload.entries : [];
+    const latestEntry = entries.length ? entries[entries.length - 1] : null;
+    const fingerprint = executionFingerprint(latestEntry);
+    executionState.activeEntry = latestEntry;
+    if (fingerprint !== executionState.lastFingerprint) {
+      executionState.lastFingerprint = fingerprint;
+      renderExecution(latestEntry);
+    } else {
+      renderExecution(latestEntry);
+    }
     const summary = {
       enabled: !!payload.enabled,
       latest_digest: payload.latest_digest || '',
@@ -1995,7 +2527,7 @@ async function refreshControlQueue() {
         poll_ms: EXECUTION_POLL_MS,
         endpoint_todo: '/control/execution (pending)',
       },
-      latest_entries: Array.isArray(payload.entries) ? payload.entries.slice(-3) : [],
+      latest_entries: entries.slice(-3),
     };
     const summaryText = JSON.stringify(summary, null, 2);
     el.textContent = summaryText;
@@ -2007,11 +2539,12 @@ async function refreshControlQueue() {
 }
 
 function readCommandPayload() {
-  const type = (document.getElementById('controlType') || {}).value || 'create_agent';
+  const selectedMode = currentMode();
+  const type = (document.getElementById('controlType') || {}).value || modeConfig(selectedMode).defaultType || 'create_agent';
   const agentId = (document.getElementById('controlAgentId') || {}).value || '';
   const governanceProfile = (document.getElementById('controlGovernance') || {}).value || 'strict';
   const skillProfile = (document.getElementById('controlSkillProfile') || {}).value || '';
-  const capabilitiesRaw = (document.getElementById('controlCapabilities') || {}).value || '';
+  const capabilitiesElement = document.getElementById('controlCapabilities');
   const ability = (document.getElementById('controlAbility') || {}).value || '';
   const taskOrPurpose = (document.getElementById('controlTask') || {}).value || '';
   const payload = {
@@ -2019,8 +2552,10 @@ function readCommandPayload() {
     agent_id: agentId,
     governance_profile: governanceProfile,
     skill_profile: skillProfile,
+    mode: selectedMode,
+    metadata: { mode: selectedMode },
     knowledge_domain: ((document.getElementById('controlKnowledgeDomain') || {}).value || ""),
-    capabilities: capabilitiesRaw.split(',').map((item) => item.trim()).filter(Boolean),
+    capabilities: Array.from((capabilitiesElement && capabilitiesElement.selectedOptions) || []).map((opt) => String(opt.value || '').trim()).filter(Boolean),
   };
   if (type === 'run_task') {
     payload.task = taskOrPurpose;
@@ -2031,19 +2566,396 @@ function readCommandPayload() {
   return payload;
 }
 
-async function queueIntent() {
+const CONTROL_STATES = {
+  select: 0,
+  configure: 1,
+  execute: 2,
+  complete: 3,
+  failed: 4,
+};
+
+function createControlStateMachine() {
+  let current = 'select';
+  const stateLabel = document.getElementById('controlStageLabel');
+  const stateProgress = document.getElementById('controlStageProgress');
   const status = document.getElementById('controlStatus');
-  if (status) status.textContent = 'Submitting command intent...';
-  const machine = window.aponiControlMachine;
-  const commandPayload = readCommandPayload();
-  if (machine) machine.transition('configure');
-  const validationError = validateConfiguration(commandPayload);
-  if (validationError) {
-    if (machine) machine.transition('failed');
-    if (status) status.textContent = validationError;
+  const submit = document.getElementById('queueSubmit');
+  const transitions = {
+    select: ['configure'],
+    configure: ['execute', 'failed'],
+    execute: ['complete', 'failed'],
+    complete: ['select'],
+    failed: ['select', 'configure'],
+  };
+
+  const updateUi = (message) => {
+    if (stateLabel) stateLabel.textContent = `Stage: ${current}`;
+    if (stateProgress) stateProgress.value = CONTROL_STATES[current] || 0;
+    if (status && message) status.textContent = `[${current}] ${message}`;
+    if (submit) submit.textContent = current === 'execute' ? 'Submitting...' : 'Submit action';
+    if (submit) submit.disabled = current === 'execute';
+  };
+
+  const transition = (next, message) => {
+    if (!transitions[current] || !transitions[current].includes(next)) {
+      updateUi(`Invalid transition blocked: ${current} → ${next}`);
+      return false;
+    }
+    current = next;
+    updateUi(message || `Transitioned to ${next}`);
+    return true;
+  };
+
+  const reset = (message) => {
+    current = 'select';
+    updateUi(message || 'Ready for next command intent.');
+  };
+
+  updateUi('Select command type and start configuration.');
+
+  return {
+    getState: () => current,
+    transition,
+    reset,
+  };
+}
+
+function validateConfiguration(payload) {
+  if (!payload.type || !['create_agent', 'run_task'].includes(payload.type)) {
+    return 'Unsupported action type. Please choose create_agent or run_task.';
+  }
+  if (!ALLOWED_GOVERNANCE_PROFILES.includes(payload.governance_profile)) {
+    return 'Safety level must be strict or high-assurance.';
+  }
+  const resolvedMode = (payload.metadata && payload.metadata.mode) || payload.mode || '';
+  if (!CONTROL_MODES_LIST.includes(resolvedMode)) {
+    return 'Mode must be builder, automation, analysis, or growth.';
+  }
+  if (!payload.agent_id) return 'Agent ID is required before queue submission.';
+  if (!CONTROL_AGENT_ID_RE.test(payload.agent_id)) return 'Agent ID must be 3-64 chars using lowercase letters, numbers, _ or -.';
+  if (!payload.skill_profile) return 'Skill profile is required before queue submission.';
+  if (!payload.knowledge_domain) return 'Knowledge domain is required before queue submission.';
+  if (!Array.isArray(payload.capabilities) || !payload.capabilities.length) {
+    return 'At least one capability is required before queue submission.';
+  }
+  if (payload.capabilities.length > CONTROL_CAPABILITIES_MAX) {
+    return `A maximum of ${CONTROL_CAPABILITIES_MAX} capabilities is supported per action.`;
+  }
+  if (payload.type === 'run_task') {
+    if (!payload.task) return 'Task is required for run_task.';
+    if (!payload.ability) return 'Ability is required for run_task.';
+  }
+  if (payload.type === 'create_agent' && !payload.purpose) return 'Purpose is required for create_agent.';
+  return '';
+}
+
+
+
+function toCardModelFromTemplate(profileName, kind, templatePayload) {
+  const payload = templatePayload && typeof templatePayload === 'object' ? templatePayload : {};
+  return {
+    source: 'task-template',
+    kind: kind,
+    title: `${profileName} · ${kind}`,
+    description: kind === 'run_task' ? 'Execute a deterministic governed task.' : 'Prepare a governed agent role scaffold.',
+    estimate: kind === 'run_task' ? 'Estimated output: queue entry + run-task command digest.' : 'Estimated output: queue entry + create-agent command digest.',
+    inlineInputs: [
+      { key: 'agent_id', label: 'Agent ID', type: 'text', value: payload.agent_id || '' },
+      { key: 'task', label: 'Task', type: 'textarea', value: payload.task || payload.purpose || '' },
+    ],
+    payload: payload,
+  };
+}
+
+function toCardModelFromInsightRecommendation(index, recommendation) {
+  const text = String(recommendation || '').trim();
+  const fallbackAgent = 'insight_agent';
+  return {
+    source: 'insight-recommendation',
+    kind: 'run_task',
+    title: `Insight recommendation #${index + 1}`,
+    description: text || 'Review latest governance intelligence recommendation.',
+    estimate: 'Estimated output: queue entry for recommendation follow-through.',
+    inlineInputs: [
+      { key: 'agent_id', label: 'Agent ID', type: 'text', value: fallbackAgent },
+      { key: 'task', label: 'Task', type: 'textarea', value: text || 'Summarize current governance intelligence.' },
+    ],
+    payload: {
+      type: 'run_task',
+      governance_profile: 'strict',
+      agent_id: fallbackAgent,
+      skill_profile: '',
+      knowledge_domain: '',
+      capabilities: [],
+      ability: 'summarize',
+      task: text || 'Summarize current governance intelligence.',
+    },
+  };
+}
+
+function toCardModelFromHistoryRerun(entry) {
+  const payload = entry && entry.payload && typeof entry.payload === 'object' ? entry.payload : {};
+  const commandId = entry && entry.command_id ? String(entry.command_id) : 'history-command';
+  return {
+    source: 'history-rerun',
+    kind: String(payload.type || 'run_task'),
+    title: `Rerun ${commandId}`,
+    description: 'Replay a previously queued command with optional edits.',
+    estimate: 'Estimated output: queue entry cloned from prior command.',
+    inlineInputs: [
+      { key: 'agent_id', label: 'Agent ID', type: 'text', value: payload.agent_id || '' },
+      { key: 'task', label: 'Task/Purpose', type: 'textarea', value: payload.task || payload.purpose || '' },
+    ],
+    payload: payload,
+  };
+}
+
+function createActionCard(card) {
+  const tpl = document.getElementById('actionCardTemplate');
+  if (!tpl || !tpl.content) return document.createElement('div');
+  const node = tpl.content.firstElementChild.cloneNode(true);
+  node.dataset.source = card.source || '';
+  node.dataset.kind = card.kind || '';
+  node.dataset.payload = JSON.stringify(card.payload || {});
+  node.querySelector('.action-title').textContent = card.title || 'Action';
+  node.querySelector('.action-desc').textContent = card.description || '';
+  node.querySelector('.action-estimate').textContent = card.estimate || 'Estimated output: queued command.';
+  const inputList = node.querySelector('.action-input-list');
+  (card.inlineInputs || []).forEach((input) => {
+    const wrap = document.createElement('label');
+    wrap.className = 'action-field';
+    const label = document.createElement('span');
+    label.textContent = input.label || input.key || 'Input';
+    wrap.appendChild(label);
+    const el = input.type === 'textarea' ? document.createElement('textarea') : document.createElement('input');
+    if (input.type !== 'textarea') el.type = 'text';
+    el.value = input.value || '';
+    el.dataset.key = input.key || '';
+    wrap.appendChild(el);
+    inputList.appendChild(wrap);
+  });
+  return node;
+}
+
+async function runActionCard(cardElement) {
+  const cardStatus = cardElement.querySelector('.action-status');
+  const runButton = cardElement.querySelector('.action-run');
+  let payload = {};
+  try {
+    payload = JSON.parse(cardElement.dataset.payload || '{}');
+  } catch (_) {
+    payload = {};
+  }
+  cardElement.querySelectorAll('[data-key]').forEach((el) => {
+    const key = el.dataset.key;
+    if (!key) return;
+    const value = (el.value || '').trim();
+    if (key === 'task') {
+      if (payload.type === 'create_agent') payload.purpose = value;
+      else payload.task = value;
+      return;
+    }
+    payload[key] = value;
+  });
+  cardElement.classList.add('executing');
+  if (runButton) runButton.disabled = true;
+  if (cardStatus) cardStatus.textContent = 'Submitting action...';
+  const status = document.getElementById('controlStatus');
+  try {
+    const response = await fetch('/control/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(`[HTTP ${response.status}] ${JSON.stringify(result)}`);
+    cardElement.classList.remove('executing');
+    cardElement.classList.add('done');
+    if (cardStatus) cardStatus.textContent = 'Done: ' + (result.entry && result.entry.command_id ? result.entry.command_id : 'queued');
+    if (status) status.textContent = 'Action submitted successfully.';
+    if (runButton) runButton.textContent = 'Run again';
+    await refreshControlQueue();
+  } catch (err) {
+    cardElement.classList.remove('executing');
+    if (runButton) runButton.disabled = false;
+    if (cardStatus) cardStatus.textContent = 'Failed: ' + err;
+    if (status) status.textContent = 'Action could not be submitted. Please review required fields.';
+  }
+}
+
+function bindActionCards(container) {
+  container.querySelectorAll('.action-run').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const card = button.closest('.action-card');
+      if (!card) return;
+      await runActionCard(card);
+    });
+  });
+}
+
+async function refreshActionCards() {
+  const tasksEl = document.getElementById('tasksActions');
+  const insightsEl = document.getElementById('insightsActions');
+  if (!tasksEl || !insightsEl) return;
+  try {
+    const [templatesRes, intelligenceRes, queueRes] = await Promise.all([
+      fetch('/control/templates', { cache: 'no-store' }),
+      fetch('/system/intelligence', { cache: 'no-store' }),
+      fetch('/control/queue', { cache: 'no-store' }),
+    ]);
+    const templatesPayload = templatesRes.ok ? await templatesRes.json() : { templates: {} };
+    const intelligence = intelligenceRes.ok ? await intelligenceRes.json() : {};
+    const queue = queueRes.ok ? await queueRes.json() : { entries: [] };
+    const taskCards = [];
+    Object.entries(templatesPayload.templates || {}).forEach(([profileName, templateMap]) => {
+      if (!templateMap || typeof templateMap !== 'object') return;
+      ['create_agent', 'run_task'].forEach((kind) => {
+        if (templateMap[kind]) taskCards.push(toCardModelFromTemplate(profileName, kind, templateMap[kind]));
+      });
+    });
+    const insightCards = [];
+    const recommendations = [];
+    if (typeof intelligence.governance_health === 'string' && intelligence.governance_health !== 'PASS') {
+      recommendations.push(`Governance health is ${intelligence.governance_health}; investigate determinism and replay drift.`);
+    }
+    if (typeof intelligence.mutation_aggression_index === 'number' && intelligence.mutation_aggression_index > 0.3) {
+      recommendations.push('Mutation aggression index is elevated; run mitigation summary task.');
+    }
+    recommendations.forEach((item, idx) => insightCards.push(toCardModelFromInsightRecommendation(idx, item)));
+    (Array.isArray(queue.entries) ? queue.entries : [])
+      .filter((entry) => entry && typeof entry === 'object' && entry.payload)
+      .slice(-2)
+      .forEach((entry) => insightCards.push(toCardModelFromHistoryRerun(entry)));
+
+    tasksEl.innerHTML = '';
+    taskCards.forEach((card) => tasksEl.appendChild(createActionCard(card)));
+    if (!taskCards.length) tasksEl.textContent = 'No task templates available.';
+    bindActionCards(tasksEl);
+
+    insightsEl.innerHTML = '';
+    insightCards.forEach((card) => insightsEl.appendChild(createActionCard(card)));
+    if (!insightCards.length) insightsEl.textContent = 'No insight actions currently recommended.';
+    bindActionCards(insightsEl);
+  } catch (err) {
+    tasksEl.textContent = 'Failed to load task actions: ' + err;
+    insightsEl.textContent = 'Failed to load insight actions: ' + err;
+  }
+}
+
+
+function getUxSessionId() {
+  let sessionId = localStorage.getItem(UX_SESSION_KEY) || '';
+  if (!sessionId) {
+    sessionId = `ux-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    localStorage.setItem(UX_SESSION_KEY, sessionId);
+  }
+  return sessionId;
+}
+
+async function postUxEvent(eventType, feature, metadata = {}) {
+  try {
+    await fetch('/ux/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: eventType, session_id: getUxSessionId(), feature, metadata }),
+    });
+  } catch (_) {
     return;
   }
-  if (machine) machine.transition('execute');
+}
+
+function markFeatureEntry(feature, metadata = {}) { postUxEvent('feature_entry', feature, metadata); }
+function markFeatureCompletion(feature, metadata = {}) { postUxEvent('feature_completion', feature, metadata); }
+function markInteraction(feature, metadata = {}) { postUxEvent('interaction', feature, metadata); }
+function markUndo(feature, metadata = {}) { postUxEvent('undo', feature, metadata); }
+function markFirstSuccess(feature, metadata = {}) {
+  if (uxFirstSuccessMarked) return;
+  uxFirstSuccessMarked = true;
+  postUxEvent('first_success', feature, metadata);
+}
+
+window.addEventListener('beforeunload', () => {
+  const payload = JSON.stringify({ event_type: 'abandoned_config', session_id: getUxSessionId(), feature: 'control_panel', metadata: { ts: Date.now() } });
+  if (navigator.sendBeacon) navigator.sendBeacon('/ux/events', new Blob([payload], { type: 'application/json' }));
+});
+
+function normalizeInsights(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload.insights)) return payload.insights;
+  if (Array.isArray(payload.recommendations)) return payload.recommendations.map((r) => ({ title: 'Recommendation', summary: String(r) }));
+  return [];
+}
+
+function renderInsights(items) {
+  const container = document.getElementById('insights');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!Array.isArray(items) || !items.length) {
+    container.textContent = 'No insight details available.';
+    return;
+  }
+  items.forEach((item, idx) => {
+    const card = document.createElement('article');
+    card.className = 'insight-card';
+    const title = document.createElement('h3');
+    title.textContent = item.title || `Insight ${idx + 1}`;
+    const summary = document.createElement('p');
+    summary.textContent = item.summary || item.description || 'No summary provided.';
+    const details = document.createElement('details');
+    const detailsSummary = document.createElement('summary');
+    detailsSummary.textContent = 'Expand insight details';
+    const pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(item, null, 2);
+    details.appendChild(detailsSummary);
+    details.appendChild(pre);
+    card.appendChild(title);
+    card.appendChild(summary);
+    card.appendChild(details);
+    container.appendChild(card);
+  });
+}
+
+function setupModeTracking() {
+  const typeSelect = document.getElementById('controlType');
+  if (!typeSelect) return;
+  let previous = typeSelect.value;
+  typeSelect.addEventListener('change', () => {
+    const current = typeSelect.value;
+    markInteraction('mode_change', { to: current });
+    registerUndoAction({
+      type: 'mode_change',
+      label: `Mode changed to ${current}.`,
+      undo: async () => { typeSelect.value = previous; markUndo('mode_change', { to: previous }); },
+    });
+    previous = current;
+  });
+}
+
+async function queueIntent() {
+  const machine = window.aponiControlMachine;
+  if (!machine) return;
+  const currentState = machine.getState();
+  if (currentState === 'execute') return;
+  if (currentState === 'complete') {
+    if (!machine.transition('select', 'Preparing a new command run...')) return;
+  }
+
+  if (!machine.transition('configure', 'Validating command configuration...')) {
+    return;
+  }
+
+  await Promise.resolve();
+
+  const commandPayload = readCommandPayload();
+  const validationError = validateConfiguration(commandPayload);
+  if (validationError) {
+    machine.transition('failed', validationError);
+    return;
+  }
+
+  if (!machine.transition('execute', 'Submitting command intent...')) return;
+
+  const status = document.getElementById('controlStatus');
   try {
     const response = await fetch('/control/queue', {
       method: 'POST',
@@ -2052,12 +2964,44 @@ async function queueIntent() {
     });
     const payload = await response.json();
     const statusLabel = response.ok ? '' : `[HTTP ${response.status}] `;
-    if (status) status.textContent = statusLabel + JSON.stringify(payload, null, 2);
-    if (machine) machine.transition(response.ok ? 'complete' : 'failed');
+    if (response.ok) {
+      markFeatureCompletion('queue_intent');
+      markFirstSuccess('queue_intent');
+      machine.transition('complete', statusLabel + JSON.stringify(payload, null, 2));
+      if (payload && payload.entry) {
+        executionState.activeEntry = payload.entry;
+        executionState.lastFingerprint = executionFingerprint(payload.entry);
+        renderExecution(payload.entry);
+      }
+      const entry = payload && payload.entry ? payload.entry : null;
+      if (entry && entry.command_id) {
+        registerUndoAction({
+          type: 'queued_intent',
+          label: 'Intent queued. Undo available.',
+          undo: async () => {
+            const cancelResponse = await fetch('/control/queue/cancel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command_id: entry.command_id }),
+            });
+            const cancelPayload = await cancelResponse.json();
+            if (cancelResponse.ok && cancelPayload.ok) {
+              if (status) status.textContent = `Queued intent ${entry.command_id} canceled.`;
+              await refreshControlQueue();
+              return;
+            }
+            paintDraft(commandPayload);
+            persistDraft(commandPayload);
+            if (status) status.textContent = 'Backend cancellation unavailable; restored local draft only. Review queue manually.';
+          },
+        });
+      }
+    } else {
+      machine.transition('failed', statusLabel + JSON.stringify(payload, null, 2));
+    }
     await refreshControlQueue();
   } catch (err) {
-    if (machine) machine.transition('failed');
-    if (status) status.textContent = 'Failed to submit intent: ' + err;
+    machine.transition('failed', 'Failed to submit intent: ' + err);
   }
 }
 
@@ -2259,19 +3203,131 @@ async function queueExecutionControlForLatest(type) {
 }
 
 async function refresh() {
-  const intelligence = await paint('intelligence', '/system/intelligence');
+  const endpoints = {
+    state: '/state',
+    intelligence: '/system/intelligence',
+    risk: '/risk/summary',
+  };
+  const [stateResponse, intelligenceResponse, riskResponse] = await Promise.allSettled([
+    fetch(endpoints.state, { cache: 'no-store' }),
+    fetch(endpoints.intelligence, { cache: 'no-store' }),
+    fetch(endpoints.risk, { cache: 'no-store' }),
+  ]);
+
+  const parseResult = async (result) => {
+    if (result.status !== 'fulfilled') return null;
+    if (!result.value.ok) return null;
+    try {
+      return await result.value.json();
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const state = await parseResult(stateResponse);
+  const intelligence = await parseResult(intelligenceResponse);
+  const risk = await parseResult(riskResponse);
+
+  if (state) document.getElementById('state').textContent = JSON.stringify(state, null, 2);
+  if (intelligence) document.getElementById('intelligence').textContent = JSON.stringify(intelligence, null, 2);
+  if (risk) document.getElementById('risk').textContent = JSON.stringify(risk, null, 2);
+
+  renderHome(state || {}, intelligence || {}, risk || {});
+
   await Promise.all([
-    paint('state', '/state'),
-    paint('risk', '/risk/summary'),
     paint('instability', '/risk/instability'),
     paint('replay', '/replay/divergence'),
-    paint('timeline', '/evolution/timeline'),
     paint('uxSummary', '/ux/summary'),
     refreshHistory(),
-    refreshControlQueue(),
     refreshActionCards(),
   ]);
   renderInsights(normalizeInsights(intelligence || {}));
+}
+
+function rankRecommendedAction(state, intelligence, risk) {
+  const health = String(intelligence.governance_health || '').toUpperCase();
+  const riskDrift = Number(risk.determinism_drift_index || 0);
+  const replayRate = Number(risk.replay_failure_rate || 0);
+  const escalations = Number(intelligence.constitution_escalations_last_100 || 0);
+  const mode = String(intelligence.replay_mode || state.replay_mode || 'audit').toLowerCase();
+
+  const actions = [
+    {
+      key: 'stabilize-determinism',
+      headline: 'Stabilize determinism before new mutations',
+      reason: `Determinism drift is ${riskDrift.toFixed(2)} with governance health ${health || 'UNKNOWN'}.`,
+      cta: 'Inspect Insights',
+      score: (riskDrift * 0.6) + (health === 'BLOCK' ? 0.3 : 0),
+      onClick: () => activateView('insights'),
+    },
+    {
+      key: 'review-replay',
+      headline: 'Review replay divergence before promoting',
+      reason: `Replay failure rate is ${replayRate.toFixed(2)} and replay mode is ${mode}.`,
+      cta: 'Open History',
+      score: (replayRate * 0.7) + (mode !== 'audit' ? 0.2 : 0),
+      onClick: () => activateView('history'),
+    },
+    {
+      key: 'triage-escalations',
+      headline: 'Triage constitution escalations',
+      reason: `Detected ${escalations} escalations in the last 100 governance events.`,
+      cta: 'Open control panel',
+      score: Math.min(1, escalations / 10),
+      onClick: () => openControlPanel(),
+    },
+  ].sort((a, b) => (b.score - a.score) || a.key.localeCompare(b.key));
+
+  return actions[0] || {
+    key: 'no-recommendation',
+    headline: 'No recommended action',
+    reason: 'No actionable governance signals are currently available.',
+    cta: 'Refresh',
+    onClick: () => refresh(),
+  };
+}
+
+function renderHome(state, intelligence, risk) {
+  const recommendation = rankRecommendedAction(state, intelligence, risk);
+  document.getElementById('homePrimaryHeadline').textContent = recommendation.headline;
+  document.getElementById('homePrimaryReason').textContent = recommendation.reason;
+  const ctaBtn = document.getElementById('homePrimaryCta');
+  ctaBtn.textContent = recommendation.cta;
+  ctaBtn.dataset.actionKey = recommendation.key || 'unknown';
+  ctaBtn.onclick = recommendation.onClick;
+
+  const project = String(state.project || state.system || 'ADAAD').trim() || 'ADAAD';
+  const activeAgent = String(state.active_agent || state.agent_id || 'triage_agent').trim() || 'triage_agent';
+  const mode = String(intelligence.replay_mode || state.replay_mode || 'audit').trim() || 'audit';
+  document.getElementById('homeProject').textContent = `Project: ${project}`;
+  document.getElementById('homeAgent').textContent = `Active agent: ${activeAgent}`;
+  document.getElementById('homeMode').textContent = `Mode: ${mode}`;
+
+  const quickActions = [
+    {
+      headline: 'Refresh status verification',
+      cta: 'Refresh status',
+      onClick: () => refreshControlQueue(),
+    },
+    {
+      headline: 'Open command initiator',
+      cta: 'Command panel',
+      onClick: () => openControlPanel(),
+    },
+  ].slice(0, QUICK_ACTION_LIMIT);
+
+  const container = document.getElementById('homeQuickActions');
+  if (!container) return;
+  container.innerHTML = '';
+  quickActions.forEach((action) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'quick-action';
+    button.textContent = action.cta;
+    button.title = action.headline;
+    button.addEventListener('click', action.onClick);
+    container.appendChild(button);
+  });
 }
 
 setupViews();
@@ -2280,6 +3336,7 @@ setupFloatingPanel();
 setupModeTracking();
 setupModeSwitcher();
 refreshSkillProfiles();
+bindComposerPersistence();
 wireExecutionActions();
 window.aponiControlMachine = createControlStateMachine();
 document.getElementById('queueSubmit')?.addEventListener('click', () => { markInteraction('queue_submit_click'); queueIntent(); });
@@ -2291,6 +3348,7 @@ refresh();
 setInterval(refresh, 5000);
 setInterval(refreshControlQueue, EXECUTION_POLL_MS);
 """
+
 
 
         return Handler
@@ -2319,7 +3377,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[APONI] dashboard running on http://{dashboard.host}:{dashboard.port}")
     print(
         "[APONI] endpoints: / /state /metrics /fitness /system/intelligence /risk/summary /risk/instability /policy/simulate /alerts/evaluate /replay/divergence /replay/diff?epoch_id=... "
-        "/capabilities /lineage /mutations /staging /evolution/epoch?epoch_id=... /evolution/live /evolution/active /evolution/timeline /control/free-sources /control/skill-profiles /control/capability-matrix /control/policy-summary /control/templates /control/environment-health /control/queue /control/queue/verify /control/execution"
+        "/capabilities /lineage /mutations /staging /evolution/epoch?epoch_id=... /evolution/live /evolution/active /evolution/timeline /control/free-sources /control/skill-profiles /control/capability-matrix /control/policy-summary /control/templates /control/environment-health /control/queue /control/queue/verify /ux/summary /ux/events"
     )
     try:
         while True:
