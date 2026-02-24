@@ -47,68 +47,79 @@ def _attribute_path(node: ast.AST) -> str | None:
 
 
 def _ast_forbidden_patterns(tree: ast.AST) -> tuple[bool, list[str]]:
-    module_aliases: dict[str, str] = {}
-    symbol_aliases: dict[str, str] = {}
-    reasons: list[str] = []
-    dynamic_aliases: set[str] = set()
+    reasons: set[str] = set()
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
+    class _SecurityVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.aliases: dict[str, str] = {}
+
+        def _resolve_expr(self, node: ast.AST) -> str | None:
+            if isinstance(node, ast.Name):
+                return self.aliases.get(node.id, node.id)
+            if isinstance(node, ast.Attribute):
+                base = self._resolve_expr(node.value)
+                return f"{base}.{node.attr}" if base else None
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == "getattr":
+                    if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+                        base = self._resolve_expr(node.args[0])
+                        return f"{base}.{node.args[1].value}" if base else node.args[1].value
+                if isinstance(node.func, ast.Name) and node.func.id == "__import__":
+                    if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                        return node.args[0].value.split(".")[0]
+            return _attribute_path(node)
+
+        def _record_call_path(self, path: str, call_node: ast.Call) -> None:
+            parts = path.split(".")
+            root = parts[0]
+            leaf = parts[-1]
+
+            if isinstance(call_node.func, ast.Name) and call_node.func.id in DYNAMIC_EXEC_PRIMITIVES:
+                reasons.add(f"dynamic_primitive:{call_node.func.id}")
+
+            if isinstance(call_node.func, ast.Name) and call_node.func.id in self.aliases:
+                resolved = self.aliases[call_node.func.id]
+                if resolved.split(".")[-1] in DYNAMIC_EXEC_PRIMITIVES:
+                    reasons.add(f"dynamic_primitive_alias:{call_node.func.id}")
+
+            if leaf in DYNAMIC_EXEC_PRIMITIVES:
+                reasons.add(f"attribute_dynamic_primitive:{path}")
+
+            if root in MODULE_RUNTIME_RISKS:
+                reasons.add(f"module_runtime_risk:{path}")
+                if leaf in SUSPICIOUS_ATTR_INVOCATIONS:
+                    reasons.add(f"suspicious_attribute_invocation:{path}")
+
+        def visit_Import(self, node: ast.Import) -> None:
             for alias in node.names:
                 top_level = alias.name.split(".")[0]
-                bound_name = alias.asname or top_level
-                module_aliases[bound_name] = top_level
-        elif isinstance(node, ast.ImportFrom) and node.module:
+                self.aliases[alias.asname or top_level] = top_level
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            if not node.module:
+                return
             top_level = node.module.split(".")[0]
             for alias in node.names:
                 bound_name = alias.asname or alias.name
-                symbol_aliases[bound_name] = f"{top_level}.{alias.name}"
-        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
-            call = node.value
-            if isinstance(call.func, ast.Name) and call.func.id == "getattr":
-                if len(call.args) >= 2 and isinstance(call.args[1], ast.Constant) and isinstance(call.args[1].value, str):
-                    if call.args[1].value in DYNAMIC_EXEC_PRIMITIVES:
-                        for target in node.targets:
-                            if isinstance(target, ast.Name):
-                                dynamic_aliases.add(target.id)
+                self.aliases[bound_name] = f"{top_level}.{alias.name}"
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
+        def visit_Assign(self, node: ast.Assign) -> None:
+            resolved = self._resolve_expr(node.value)
+            if resolved:
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        self.aliases[target.id] = resolved
+            self.generic_visit(node)
 
-        if isinstance(node.func, ast.Name):
-            callee = node.func.id
-            if callee in DYNAMIC_EXEC_PRIMITIVES:
-                reasons.append(f"dynamic_primitive:{callee}")
-            mapped_symbol = symbol_aliases.get(callee)
-            if callee in dynamic_aliases:
-                reasons.append(f"dynamic_primitive_alias:{callee}")
-            if mapped_symbol and mapped_symbol.split(".")[0] in MODULE_RUNTIME_RISKS:
-                reasons.append(f"module_runtime_risk:{mapped_symbol}")
-            continue
+        def visit_Call(self, node: ast.Call) -> None:
+            path = self._resolve_expr(node.func)
+            if path:
+                self._record_call_path(path, node)
+            self.generic_visit(node)
 
-        attr_path = _attribute_path(node.func)
-        if attr_path:
-            parts = attr_path.split(".")
-            root = parts[0]
-            if root in module_aliases:
-                mapped_root = module_aliases[root]
-                mapped_path = ".".join([mapped_root, *parts[1:]])
-                if mapped_root in MODULE_RUNTIME_RISKS:
-                    reasons.append(f"module_runtime_risk:{mapped_path}")
-                if mapped_root in MODULE_RUNTIME_RISKS and parts[-1] in SUSPICIOUS_ATTR_INVOCATIONS:
-                    reasons.append(f"suspicious_attribute_invocation:{mapped_path}")
-            if parts[-1] in DYNAMIC_EXEC_PRIMITIVES:
-                reasons.append(f"attribute_dynamic_primitive:{attr_path}")
+    _SecurityVisitor().visit(tree)
 
-        if isinstance(node.func, ast.Call) and isinstance(node.func.func, ast.Name) and node.func.func.id == "getattr":
-            getter_args = node.func.args
-            if len(getter_args) >= 2 and isinstance(getter_args[1], ast.Constant) and isinstance(getter_args[1].value, str):
-                attr_name = getter_args[1].value
-                if attr_name in DYNAMIC_EXEC_PRIMITIVES:
-                    reasons.append(f"getattr_dynamic_primitive:{attr_name}")
-
-    return (len(reasons) == 0, sorted(set(reasons)))
+    return (len(reasons) == 0, sorted(reasons))
 
 
 @dataclass
