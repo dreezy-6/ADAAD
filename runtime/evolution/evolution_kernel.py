@@ -7,11 +7,15 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
-from app.agents.discovery import iter_agent_dirs
-from app.agents.mutation_engine import MutationEngine
-from app.agents.mutation_request import MutationRequest
-from app.agents.mutation_strategies import adapt_generated_request_payload, load_skill_weights, select_strategy
-from app.mutation_executor import MutationExecutor
+from runtime.api.agents import (
+    MutationEngine,
+    MutationRequest,
+    adapt_generated_request_payload,
+    iter_agent_dirs,
+    load_skill_weights,
+    select_strategy,
+)
+from runtime.api.mutation import MutationExecutor
 from runtime import ROOT_DIR
 from runtime.evolution.change_classifier import apply_metadata_updates, classify_mutation_change
 from runtime.evolution.mutation_fitness_evaluator import MutationFitnessEvaluator

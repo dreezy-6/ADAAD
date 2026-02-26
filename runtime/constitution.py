@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, List, Mapping
 
 import yaml
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 from runtime import metrics
 from runtime.governance.debt_ledger import GovernanceDebtLedger
 from runtime.governance.resource_accounting import (

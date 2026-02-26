@@ -28,6 +28,9 @@ GOVERNANCE_IMPL_VIOLATION_MESSAGE = (
 )
 GOVERNANCE_IMPL_ALLOWED_ASSIGNMENTS: frozenset[str] = frozenset({"__all__", "__version__", "__author__"})
 LAYER_BOUNDARY_VIOLATION_MESSAGE = "forbidden cross-layer import; see docs/ARCHITECTURE_CONTRACT.md"
+ARCHIVE_IMPORT_VIOLATION_MESSAGE = "imports from archives/ are forbidden"
+RUNTIME_APP_IMPORT_VIOLATION_MESSAGE = "runtime/* must not import app/* (except runtime/api facade modules)"
+APP_RUNTIME_INTERNAL_VIOLATION_MESSAGE = "app/* must import runtime only via runtime.api facade"
 
 LAYER_IMPORT_BOUNDARIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Directory scopes MUST end with "/" so prefix checks remain segment-safe.
@@ -45,6 +48,9 @@ _RULE_MAP: dict[str, str] = {
     VIOLATION_MESSAGE: "governance_direct_import",
     GOVERNANCE_IMPL_VIOLATION_MESSAGE: "governance_impl_leak",
     LAYER_BOUNDARY_VIOLATION_MESSAGE: "layer_boundary_violation",
+    ARCHIVE_IMPORT_VIOLATION_MESSAGE: "archive_import_violation",
+    RUNTIME_APP_IMPORT_VIOLATION_MESSAGE: "runtime_imports_app_violation",
+    APP_RUNTIME_INTERNAL_VIOLATION_MESSAGE: "app_runtime_internal_violation",
     "syntax_error": "syntax_error",
 }
 
@@ -142,6 +148,8 @@ def _iter_issues(path: Path, tree: ast.AST) -> Iterable[LintIssue]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
+                if alias.name == "archives" or alias.name.startswith("archives."):
+                    yield LintIssue(path, getattr(node, "lineno", 1), getattr(node, "col_offset", 0), ARCHIVE_IMPORT_VIOLATION_MESSAGE)
                 if _is_forbidden_import(alias.name):
                     yield LintIssue(
                         path,
@@ -152,6 +160,8 @@ def _iter_issues(path: Path, tree: ast.AST) -> Iterable[LintIssue]:
         elif isinstance(node, ast.ImportFrom):
             if node.level > 0 or not node.module:
                 continue
+            if node.module == "archives" or node.module.startswith("archives."):
+                yield LintIssue(path, getattr(node, "lineno", 1), getattr(node, "col_offset", 0), ARCHIVE_IMPORT_VIOLATION_MESSAGE)
             if _is_forbidden_import(node.module):
                 yield LintIssue(
                     path,
@@ -227,6 +237,44 @@ def _iter_layer_boundary_issues(path: Path, tree: ast.AST) -> Iterable[LintIssue
                 yield LintIssue(path, node.lineno, node.col_offset, LAYER_BOUNDARY_VIOLATION_MESSAGE)
 
 
+def _iter_runtime_app_boundary_issues(path: Path, tree: ast.AST) -> Iterable[LintIssue]:
+    rel = _relative_path(path)
+    if not rel.startswith("runtime/") or rel.startswith("runtime/api/"):
+        return
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "app" or alias.name.startswith("app."):
+                    yield LintIssue(path, node.lineno, node.col_offset, RUNTIME_APP_IMPORT_VIOLATION_MESSAGE)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level > 0:
+                continue
+            module_name = node.module or ""
+            if module_name == "app" or module_name.startswith("app."):
+                yield LintIssue(path, node.lineno, node.col_offset, RUNTIME_APP_IMPORT_VIOLATION_MESSAGE)
+
+
+def _iter_app_runtime_facade_issues(path: Path, tree: ast.AST) -> Iterable[LintIssue]:
+    rel = _relative_path(path)
+    if not rel.startswith("app/"):
+        return
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "runtime" or alias.name.startswith("runtime."):
+                    if not (alias.name == "runtime.api" or alias.name.startswith("runtime.api.")):
+                        yield LintIssue(path, node.lineno, node.col_offset, APP_RUNTIME_INTERNAL_VIOLATION_MESSAGE)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level > 0:
+                continue
+            module_name = node.module or ""
+            if module_name == "runtime" or module_name.startswith("runtime."):
+                if not (module_name == "runtime.api" or module_name.startswith("runtime.api.")):
+                    yield LintIssue(path, node.lineno, node.col_offset, APP_RUNTIME_INTERNAL_VIOLATION_MESSAGE)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(argv or sys.argv[1:])
     output_format = "text"
@@ -250,6 +298,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         issues.extend(_iter_issues(file_path, tree))
         issues.extend(_iter_governance_impl_issues(file_path, tree))
         issues.extend(_iter_layer_boundary_issues(file_path, tree))
+        issues.extend(_iter_runtime_app_boundary_issues(file_path, tree))
+        issues.extend(_iter_app_runtime_facade_issues(file_path, tree))
 
     sorted_issues = sorted(issues, key=lambda item: (str(item.path), item.line, item.column, item.message))
 

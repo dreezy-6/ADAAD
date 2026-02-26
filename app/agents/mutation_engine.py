@@ -13,9 +13,7 @@ from typing import Any, Dict, List, Tuple
 
 from app.agents.mutation_request import MutationRequest
 from app.agents.mutation_strategies import DEFAULT_REGISTRY
-from runtime import ROOT_DIR
-from runtime import metrics
-from runtime.metrics_analysis import summarize_preflight_rejections, top_preflight_rejections
+from runtime.api.app_layer import ROOT_DIR, metrics, summarize_preflight_rejections, top_preflight_rejections
 
 EMA_ALPHA = float(os.getenv("ADAAD_MUTATION_EMA_ALPHA", "0.3"))
 LOW_IMPACT_THRESHOLD = float(os.getenv("ADAAD_MUTATION_LOW_IMPACT_THRESHOLD", "0.3"))

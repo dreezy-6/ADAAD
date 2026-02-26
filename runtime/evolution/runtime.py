@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 from runtime.evolution.baseline import BaselineStore
 from runtime.evolution.epoch import EpochManager
 from runtime.evolution.fitness_regression import RegressionSeverity, emit_fitness_regression_signal

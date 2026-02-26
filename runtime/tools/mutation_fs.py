@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-from app.agents.mutation_request import MutationTarget
+from runtime.api.agents import MutationTarget
 from runtime import ROOT_DIR
 from runtime.tools.mutation_guard import _apply_ops
 

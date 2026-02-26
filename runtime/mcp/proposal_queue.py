@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 from runtime.timeutils import now_iso
 
 

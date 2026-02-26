@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 
 
 @dataclass(frozen=True)

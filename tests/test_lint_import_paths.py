@@ -182,7 +182,7 @@ def test_main_json_output_contains_rule_ids(tmp_path: Path, monkeypatch, capsys)
 def test_main_json_output_empty_when_clean(tmp_path: Path, monkeypatch, capsys) -> None:
     src = tmp_path / "app" / "x.py"
     src.parent.mkdir(parents=True, exist_ok=True)
-    src.write_text("from runtime import metrics\n", encoding="utf-8")
+    src.write_text("from runtime.api.app_layer import metrics\n", encoding="utf-8")
 
     monkeypatch.setattr(lint_import_paths, "REPO_ROOT", tmp_path)
 
@@ -205,3 +205,48 @@ def test_validate_boundary_table_rejects_empty_forbidden_set(monkeypatch) -> Non
     monkeypatch.setattr(lint_import_paths, "LAYER_IMPORT_BOUNDARIES", (("adaad/orchestrator/", ()),))
     with pytest.raises(ValueError, match="empty forbidden-prefix tuple"):
         lint_import_paths._validate_boundary_table()
+
+
+def test_archive_import_is_forbidden() -> None:
+    path = lint_import_paths.REPO_ROOT / "app" / "x.py"
+    tree = _parse("import archives.snapshot\n")
+
+    issues = list(lint_import_paths._iter_issues(path, tree))
+
+    assert any(issue.message == lint_import_paths.ARCHIVE_IMPORT_VIOLATION_MESSAGE for issue in issues)
+
+
+def test_runtime_non_facade_importing_app_is_forbidden() -> None:
+    path = lint_import_paths.REPO_ROOT / "runtime" / "evolution" / "x.py"
+    tree = _parse("from app.main import Orchestrator\n")
+
+    issues = list(lint_import_paths._iter_runtime_app_boundary_issues(path, tree))
+
+    assert any(issue.message == lint_import_paths.RUNTIME_APP_IMPORT_VIOLATION_MESSAGE for issue in issues)
+
+
+def test_runtime_api_importing_app_is_allowed() -> None:
+    path = lint_import_paths.REPO_ROOT / "runtime" / "api" / "x.py"
+    tree = _parse("from app.main import Orchestrator\n")
+
+    issues = list(lint_import_paths._iter_runtime_app_boundary_issues(path, tree))
+
+    assert issues == []
+
+
+def test_app_importing_runtime_internal_is_forbidden() -> None:
+    path = lint_import_paths.REPO_ROOT / "app" / "x.py"
+    tree = _parse("from runtime.evolution import EvolutionRuntime\n")
+
+    issues = list(lint_import_paths._iter_app_runtime_facade_issues(path, tree))
+
+    assert any(issue.message == lint_import_paths.APP_RUNTIME_INTERNAL_VIOLATION_MESSAGE for issue in issues)
+
+
+def test_app_importing_runtime_api_is_allowed() -> None:
+    path = lint_import_paths.REPO_ROOT / "app" / "x.py"
+    tree = _parse("from runtime.api.runtime_services import EvolutionRuntime\n")
+
+    issues = list(lint_import_paths._iter_app_runtime_facade_issues(path, tree))
+
+    assert issues == []

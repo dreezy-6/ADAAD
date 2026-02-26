@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal
 
-from app.agents.mutation_request import MutationTarget
+from runtime.api.agents import MutationTarget
 from runtime.evolution.entropy_discipline import deterministic_context
 from runtime.governance.foundation import RuntimeDeterminismProvider, canonical_json, default_provider, require_replay_safe_provider, sha256_prefixed_digest
 from runtime.timeutils import now_iso

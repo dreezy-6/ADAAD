@@ -19,8 +19,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Set
 
-from app.agents.discovery import agent_path_from_id
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import agent_path_from_id
+from runtime.api.agents import MutationRequest
 
 from adaad.core.agent_contract import DEFAULT_AGENT_SCOPES, validate_agent_contracts
 from adaad.core.tool_contract import DEFAULT_DISCOVERY_SCOPES, validate_tool_contracts

@@ -21,10 +21,16 @@ from typing import Dict, List, Optional
 
 from app.agents.base_agent import stage_offspring
 from app.agents.discovery import agent_path_from_id, iter_agent_dirs, resolve_agent_id
-from runtime import metrics
-from runtime.evolution.entropy_discipline import EntropyBudget, deterministic_context, deterministic_token_with_budget
-from runtime.evolution.fitness import FitnessEvaluator
-from runtime.governance.foundation import RuntimeDeterminismProvider, default_provider, require_replay_safe_provider
+from runtime.api.app_layer import (
+    EntropyBudget,
+    FitnessEvaluator,
+    RuntimeDeterminismProvider,
+    default_provider,
+    deterministic_context,
+    deterministic_token_with_budget,
+    metrics,
+    require_replay_safe_provider,
+)
 from security import cryovant
 
 ELEMENT_ID = "Fire"

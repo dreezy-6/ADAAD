@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 from runtime.evolution.checkpoint import checkpoint_digest
 from runtime.evolution.fitness_regression import FitnessRegressionSignal, RegressionSeverity
 from runtime.evolution.impact import ImpactScorer
