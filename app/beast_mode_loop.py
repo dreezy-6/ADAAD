@@ -29,13 +29,19 @@ import fcntl
 
 from app.agents.base_agent import promote_offspring
 from app.agents.discovery import agent_path_from_id, iter_agent_dirs, resolve_agent_id
-from runtime.autonomy.mutation_scaffold import MutationCandidate, rank_mutation_candidates
-from runtime import fitness, metrics
-from runtime.capability_graph import get_capabilities, register_capability
-from runtime.evolution.promotion_manifest import PromotionManifestWriter, emit_pr_lifecycle_event
-from runtime.evolution.evolution_kernel import EvolutionKernel
-from runtime.governance.foundation import safe_get
-from runtime.manifest.generator import generate_tool_manifest
+from runtime.api.app_layer import (
+    EvolutionKernel,
+    MutationCandidate,
+    PromotionManifestWriter,
+    emit_pr_lifecycle_event,
+    fitness,
+    generate_tool_manifest,
+    get_capabilities,
+    metrics,
+    rank_mutation_candidates,
+    register_capability,
+    safe_get,
+)
 from security import cryovant
 from security.ledger import journal
 

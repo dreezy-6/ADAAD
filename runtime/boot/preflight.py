@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.orchestration.contracts import StatusEnvelope
+from runtime.api.orchestration import StatusEnvelope
 from runtime.invariants import verify_all
 from runtime.preflight import validate_boot_runtime_profile
 from security import cryovant

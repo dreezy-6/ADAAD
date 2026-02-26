@@ -12,8 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Tuple
 
-from runtime.intelligence.llm_provider import LLMProviderClient, load_provider_config
-from runtime.timeutils import now_iso
+from runtime.api.app_layer import LLMProviderClient, load_provider_config, now_iso
 
 
 _CANONICAL_FILE_KEYS = ("file", "filepath", "target")

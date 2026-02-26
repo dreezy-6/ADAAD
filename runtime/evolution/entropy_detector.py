@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 from runtime.evolution.entropy_metadata import EntropyMetadata, estimate_entropy_bits, normalize_sources
 
 

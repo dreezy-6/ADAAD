@@ -16,7 +16,7 @@ Sample agent implementation used for boot health checks.
 """
 
 from app.agents.base_agent import BaseAgent
-from runtime import metrics
+from runtime.api.app_layer import metrics
 
 
 class SampleAgent(BaseAgent):

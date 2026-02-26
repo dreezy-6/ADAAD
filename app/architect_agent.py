@@ -22,10 +22,7 @@ from app.agents.base_agent import validate_agents
 from app.agents.discovery import iter_agent_dirs, resolve_agent_id
 from app.agents.invariants import check_invariants
 from app.agents.mutation_request import MutationRequest, MutationTarget
-from runtime import metrics
-from runtime import ROOT_DIR
-from runtime.timeutils import now_iso
-from runtime.tools.mutation_fs import file_hash
+from runtime.api.app_layer import ROOT_DIR, file_hash, metrics, now_iso
 
 ELEMENT_ID = "Wood"
 

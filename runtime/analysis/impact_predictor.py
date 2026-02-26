@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Set
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 
 
 @dataclass

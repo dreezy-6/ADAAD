@@ -9,30 +9,44 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Sequence
 
-from app.agents.discovery import agent_path_from_id
-from app.agents.mutation_request import MutationRequest, MutationTarget
-from runtime import ROOT_DIR, metrics
-from runtime.analysis.impact_predictor import ImpactPredictor
-from runtime.evolution import EvolutionRuntime
-from runtime.evolution.entropy_discipline import deterministic_context, deterministic_id
-from runtime.evolution.promotion_events import create_promotion_event
-from runtime.evolution.goal_graph import GoalGraph
-from runtime.evolution.promotion_policy import PromotionPolicyEngine
-from runtime.evolution.promotion_state_machine import PromotionState, require_transition
-from runtime.evolution.entropy_detector import detect_entropy_metadata, observed_entropy_from_telemetry
-from runtime.evolution.entropy_policy import EntropyPolicy, enforce_entropy_policy
-from runtime.evolution.fitness_orchestrator import FitnessOrchestrator
-from runtime.governance.foundation import RuntimeDeterminismProvider, default_provider, require_replay_safe_provider
-from runtime.invariants import verify_all
-from runtime.manifest.generator import generate_manifest, write_manifest
-from runtime.mutation_lifecycle import LifecycleTransitionError, MutationLifecycleContext, transition as lifecycle_transition
-from runtime.test_sandbox import TestSandbox, TestSandboxResult, TestSandboxStatus
-from runtime.sandbox.executor import HardenedSandboxExecutor
-from runtime.timeutils import now_iso
+from runtime.api.agents import MutationRequest, MutationTarget, agent_path_from_id
+from runtime.api.mutation_runtime import (
+    EntropyPolicy,
+    EvolutionRuntime,
+    FitnessOrchestrator,
+    GoalGraph,
+    HardenedSandboxExecutor,
+    ImpactPredictor,
+    LifecycleTransitionError,
+    MutationLifecycleContext,
+    MutationTargetError,
+    MutationTransaction,
+    PromotionPolicyEngine,
+    PromotionState,
+    ROOT_DIR,
+    RuntimeDeterminismProvider,
+    TestSandbox,
+    TestSandboxResult,
+    TestSandboxStatus,
+    create_promotion_event,
+    default_provider,
+    detect_entropy_metadata,
+    deterministic_context,
+    deterministic_id,
+    enforce_entropy_policy,
+    generate_manifest,
+    lifecycle_transition,
+    metrics,
+    now_iso,
+    observed_entropy_from_telemetry,
+    require_replay_safe_provider,
+    require_transition,
+    verify_all,
+    write_manifest,
+)
 # bootstrap_tool_registry remains intentionally imported from orchestrator wiring layer
 # so tool adapters are available before execution-cycle startup.
 from adaad.orchestrator.bootstrap import bootstrap_tool_registry
-from runtime.tools.mutation_tx import MutationTargetError, MutationTransaction
 from security.ledger import journal
 
 

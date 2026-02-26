@@ -5,7 +5,7 @@ Minimal test agent for validating mutation pipeline.
 """
 
 from app.agents.base_agent import BaseAgent
-from runtime import metrics
+from runtime.api.app_layer import metrics
 
 
 class TestSubjectAgent(BaseAgent):

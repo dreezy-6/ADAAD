@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-from app.agents.mutation_request import MutationRequest
+from runtime.api.agents import MutationRequest
 from runtime.constitution import Tier, evaluate_mutation
 
 SCHEMA_PATH = Path("schemas/llm_mutation_proposal.v1.json")
