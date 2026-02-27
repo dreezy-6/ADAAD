@@ -23,11 +23,61 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping
 
-import yaml
+import importlib
+import importlib.util
 
-from runtime.api.agents import MutationRequest
+if importlib.util.find_spec("yaml") is not None:
+    yaml = importlib.import_module("yaml")
+else:  # pragma: no cover - optional dependency fallback for hermetic environments
+    class _YamlCompatError(ValueError):
+        """Fallback yaml parse error."""
+
+    class _YamlCompat:
+        YAMLError = _YamlCompatError
+
+        @staticmethod
+        def safe_load(raw: str):
+            text = raw.strip()
+            if not text:
+                return None
+            if text[:1] in {"{", "["}:
+                return json.loads(text)
+
+            result: dict[str, Any] = {}
+            for line in text.splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if ":" not in stripped:
+                    raise _YamlCompatError("invalid_yaml_line")
+                key, value = stripped.split(":", 1)
+                key = key.strip()
+                value = value.strip()
+                if not key:
+                    raise _YamlCompatError("invalid_yaml_key")
+                if not value:
+                    result[key] = ""
+                elif value in {"[]", "[ ]"}:
+                    result[key] = []
+                elif value in {"{}", "{ }"}:
+                    result[key] = {}
+                elif value.lower() in {"true", "false"}:
+                    result[key] = value.lower() == "true"
+                elif value.startswith(('"', "'")) and value.endswith(('"', "'")) and len(value) >= 2:
+                    result[key] = value[1:-1]
+                else:
+                    try:
+                        result[key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        if "[" in value or "]" in value or "{" in value or "}" in value:
+                            raise _YamlCompatError("invalid_yaml_value")
+                        result[key] = value
+            return result
+
+    yaml = _YamlCompat()
+
 from runtime import metrics
 from runtime.governance.debt_ledger import GovernanceDebtLedger
 from runtime.governance.resource_accounting import (
@@ -37,6 +87,7 @@ from runtime.governance.resource_accounting import (
     normalize_resource_usage_snapshot,
 )
 from runtime.platform.android_monitor import AndroidMonitor
+from runtime.governance_surface import canonicalize_governance_details
 from security.ledger import journal
 
 CONSTITUTION_VERSION = "0.2.0"
@@ -1661,7 +1712,7 @@ def evaluate_mutation(request: MutationRequest, tier: Tier) -> Dict[str, Any]:
             "severity": item["severity"],
             "passed": item["passed"],
             "applicable": item["applicable"],
-            "details_hash": _canonical_digest(item.get("details", {})),
+            "details_hash": _canonical_digest(canonicalize_governance_details(item.get("details", {}))),
             "provenance_hash": _canonical_digest(item.get("provenance", {})),
         }
         for item in sorted(verdicts, key=lambda row: str(row.get("rule", "")))

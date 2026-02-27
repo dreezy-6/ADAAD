@@ -4,6 +4,8 @@
   "type": "object",
   "required": [
     "schema_version",
+    "constitution_version",
+    "scoring_algorithm_version",
     "bundle_id",
     "export_scope",
     "replay_proofs",
@@ -322,6 +324,34 @@
               "pattern": "^sha256:[a-f0-9]{64}$"
             }
           }
+        },
+        "environment": {
+          "type": "object",
+          "required": [
+            "dispatcher_version",
+            "digest_algorithm",
+            "runtime_build_hash",
+            "python_version",
+            "container_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "dispatcher_version": {
+              "type": "string"
+            },
+            "digest_algorithm": {
+              "type": "string"
+            },
+            "runtime_build_hash": {
+              "type": "string"
+            },
+            "python_version": {
+              "type": "string"
+            },
+            "container_hash": {
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -354,6 +384,12 @@
         "syscall_allowlist"
       ],
       "additionalProperties": false
+    },
+    "scoring_algorithm_version": {
+      "type": "string"
+    },
+    "constitution_version": {
+      "type": "string"
     }
   }
 }
