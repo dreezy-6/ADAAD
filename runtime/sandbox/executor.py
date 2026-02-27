@@ -12,7 +12,7 @@ from runtime.governance.resource_accounting import coalesce_resource_usage_snaps
 from runtime.governance.validators.resource_bounds import ResourceBoundsExceeded
 from runtime.sandbox.evidence import SandboxEvidenceLedger, build_sandbox_evidence, sign_bundle
 from runtime.sandbox.fs_rules import enforce_write_path_allowlist
-from runtime.sandbox.isolation import IsolationBackend, ProcessIsolationBackend
+from runtime.sandbox.isolation import ContainerIsolationBackend, IsolationBackend, ProcessIsolationBackend
 from runtime.sandbox.manifest import SandboxManifest, validate_manifest
 from runtime.sandbox.network_rules import enforce_network_egress_allowlist
 from runtime.sandbox.policy import SandboxPolicy, default_sandbox_policy, validate_policy
@@ -20,6 +20,29 @@ from runtime.sandbox.preflight import analyze_execution_plan
 from runtime.sandbox.resources import enforce_resource_quotas
 from runtime.sandbox.syscall_filter import enforce_syscall_allowlist_with_fingerprint
 from runtime.test_sandbox import TestSandbox, TestSandboxResult
+
+
+def _is_sandbox_tier() -> bool:
+    tier = str(os.getenv("ADAAD_FORCE_TIER") or "SANDBOX").strip().upper()
+    return tier == "SANDBOX"
+
+
+def _container_rollout_enabled() -> bool:
+    raw = str(os.getenv("ADAAD_SANDBOX_CONTAINER_ROLLOUT") or "").strip().lower()
+    return raw in {"1", "true", "on", "docker"}
+
+
+def _default_isolation_backend() -> IsolationBackend:
+    if _is_sandbox_tier() and _container_rollout_enabled():
+        return ContainerIsolationBackend(
+            runtime_profile_id=str(os.getenv("ADAAD_SANDBOX_CONTAINER_RUNTIME_PROFILE") or ""),
+            seccomp_profile_id=str(os.getenv("ADAAD_SANDBOX_CONTAINER_SECCOMP_PROFILE") or ""),
+            network_profile_id=str(os.getenv("ADAAD_SANDBOX_CONTAINER_NETWORK_PROFILE") or ""),
+            write_path_profile_id=str(os.getenv("ADAAD_SANDBOX_CONTAINER_WRITE_PROFILE") or ""),
+            resource_profile_id=str(os.getenv("ADAAD_SANDBOX_CONTAINER_RESOURCE_PROFILE") or ""),
+            container_image=str(os.getenv("ADAAD_SANDBOX_CONTAINER_IMAGE") or "python:3.11-slim"),
+        )
+    return ProcessIsolationBackend()
 
 
 class HardenedSandboxExecutor:
@@ -34,7 +57,7 @@ class HardenedSandboxExecutor:
         self.test_sandbox = test_sandbox
         self.policy = policy or default_sandbox_policy()
         self.provider = provider or default_provider()
-        self.isolation_backend = isolation_backend or ProcessIsolationBackend()
+        self.isolation_backend = isolation_backend or _default_isolation_backend()
         self.evidence_ledger = SandboxEvidenceLedger()
         self.last_evidence_hash = ""
         self.last_evidence_payload: dict[str, object] = {}
@@ -50,6 +73,7 @@ class HardenedSandboxExecutor:
         enforced_controls: tuple[dict[str, Any], ...],
         preflight: dict[str, Any],
         events: tuple[dict[str, Any], ...],
+        runtime_telemetry: dict[str, Any],
     ) -> None:
         evidence_payload = build_sandbox_evidence(
             manifest=manifest.to_dict(),
@@ -63,6 +87,7 @@ class HardenedSandboxExecutor:
             enforced_controls=enforced_controls,
             preflight=preflight,
             events=events,
+            runtime_telemetry=runtime_telemetry,
         )
         signed_payload = sign_bundle(
             evidence_payload,
@@ -110,6 +135,7 @@ class HardenedSandboxExecutor:
 
         result = self.isolation_backend.run(test_sandbox=self.test_sandbox, manifest=manifest, args=args, retries=retries)
         result_payload = asdict(result)
+        runtime_telemetry = dict(getattr(self.isolation_backend, "last_runtime_telemetry", {}) or {})
 
         max_wall = float(os.getenv("ADAAD_MAX_WALL_SECONDS", str(manifest.timeout_s)))
         max_memory = float(os.getenv("ADAAD_MAX_MEMORY_MB", str(manifest.memory_mb)))
@@ -138,6 +164,7 @@ class HardenedSandboxExecutor:
                         "fail_closed": True,
                     },
                 ),
+                runtime_telemetry=runtime_telemetry,
             )
             raise RuntimeError("sandbox_missing_syscall_telemetry")
 
@@ -161,6 +188,7 @@ class HardenedSandboxExecutor:
                         "fail_closed": True,
                     },
                 ),
+                runtime_telemetry=runtime_telemetry,
             )
             raise RuntimeError(f"sandbox_syscall_violation:{','.join(denied_syscalls)}")
 
@@ -182,6 +210,7 @@ class HardenedSandboxExecutor:
                         "fail_closed": True,
                     },
                 ),
+                runtime_telemetry=runtime_telemetry,
             )
             raise RuntimeError(f"sandbox_write_path_violation:{','.join(write_violations)}")
 
@@ -207,6 +236,7 @@ class HardenedSandboxExecutor:
                         "fail_closed": True,
                     },
                 ),
+                runtime_telemetry=runtime_telemetry,
             )
             raise RuntimeError(f"sandbox_network_violation:{','.join(network_violations)}")
 
@@ -237,6 +267,7 @@ class HardenedSandboxExecutor:
                         "fail_closed": True,
                     },
                 ),
+                runtime_telemetry=runtime_telemetry,
             )
             raise RuntimeError("sandbox_resource_quota_violation")
 
@@ -254,6 +285,7 @@ class HardenedSandboxExecutor:
                     "status": "ok",
                 },
             ),
+            runtime_telemetry=runtime_telemetry,
         )
         return result
 

@@ -65,6 +65,7 @@ def build_sandbox_evidence(
     enforced_controls: tuple[Dict[str, Any], ...] = (),
     preflight: Dict[str, Any] | None = None,
     events: tuple[Dict[str, Any], ...] = (),
+    runtime_telemetry: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Build a canonical sandbox evidence payload for ledger persistence.
 
@@ -79,6 +80,7 @@ def build_sandbox_evidence(
     stderr = str(result.get("stderr", ""))
     trace = tuple(str(item) for item in syscall_trace)
     resource_usage = coalesce_resource_usage_snapshot(observed=result, telemetry=result)
+    deterministic_runtime_telemetry = json.loads(canonical_json(dict(runtime_telemetry or {})))
     payload = {
         "manifest_hash": sha256_prefixed_digest(manifest),
         "policy_hash": policy_hash,
@@ -100,6 +102,8 @@ def build_sandbox_evidence(
         "enforced_controls": [dict(item) for item in enforced_controls],
         "preflight": dict(preflight or {"ok": True, "reason": "not_provided"}),
         "events": [dict(item) for item in events],
+        "runtime_telemetry": deterministic_runtime_telemetry,
+        "runtime_telemetry_hash": sha256_prefixed_digest(deterministic_runtime_telemetry),
     }
     payload["evidence_hash"] = sha256_prefixed_digest(payload)
     return payload

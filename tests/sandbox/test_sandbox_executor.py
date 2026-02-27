@@ -4,6 +4,7 @@ import pytest
 
 from runtime.governance.foundation.determinism import SeededDeterminismProvider
 from runtime.sandbox.executor import HardenedSandboxExecutor
+from runtime.sandbox.isolation import EnforcedControl, IsolationPreparation
 from runtime.test_sandbox import TestSandboxResult, TestSandboxStatus
 
 
@@ -86,4 +87,62 @@ def test_hardened_executor_rejects_observed_network_violation():
 def test_hardened_executor_rejects_missing_syscall_telemetry():
     executor = HardenedSandboxExecutor(_ViolationSandbox(syscalls=()), provider=SeededDeterminismProvider("seed"))
     with pytest.raises(RuntimeError, match="sandbox_missing_syscall_telemetry"):
+        executor.run_tests_with_retry(mutation_id="m1", epoch_id="e1", replay_seed="0000000000000001")
+
+
+class _TelemetryBackend:
+    def __init__(self):
+        self.last_runtime_telemetry = {
+            "backend": "docker",
+            "denied_syscalls": ["clone"],
+            "network_attempts": ["api.example"],
+            "write_attempts": ["/workspace/tmp"],
+            "resource_usage": {"memory_mb": 20.0},
+        }
+
+    def prepare(self, *, manifest, policy):
+        return IsolationPreparation(
+            mode="container",
+            controls=(EnforcedControl("syscall_allowlist", "seccomp.profile", "docker_seccomp", True),),
+        )
+
+    def run(self, *, test_sandbox, manifest, args, retries):
+        del test_sandbox, manifest, args, retries
+        return TestSandboxResult(
+            ok=True,
+            output="ok",
+            returncode=0,
+            duration_s=0.1,
+            timeout_s=60,
+            sandbox_dir="/tmp/x",
+            stdout="ok",
+            stderr="",
+            status=TestSandboxStatus.OK,
+            retries=1,
+            memory_mb=12.5,
+            observed_syscalls=("open", "read"),
+            attempted_write_paths=("reports",),
+            attempted_network_hosts=(),
+        )
+
+
+def test_hardened_executor_records_container_runtime_telemetry():
+    executor = HardenedSandboxExecutor(
+        _FakeSandbox(),
+        provider=SeededDeterminismProvider("seed"),
+        isolation_backend=_TelemetryBackend(),
+    )
+    result = executor.run_tests_with_retry(mutation_id="m1", epoch_id="e1", replay_seed="0000000000000001")
+    assert result.ok
+    assert executor.last_evidence_payload["isolation_mode"] == "container"
+    assert executor.last_evidence_payload["runtime_telemetry"]["backend"] == "docker"
+    assert executor.last_evidence_payload["runtime_telemetry"]["denied_syscalls"] == ["clone"]
+
+
+def test_container_rollout_fail_closed_without_profiles(monkeypatch):
+    monkeypatch.setenv("ADAAD_FORCE_TIER", "SANDBOX")
+    monkeypatch.setenv("ADAAD_SANDBOX_CONTAINER_ROLLOUT", "1")
+    monkeypatch.delenv("ADAAD_SANDBOX_CONTAINER_RUNTIME_PROFILE", raising=False)
+    executor = HardenedSandboxExecutor(_FakeSandbox(), provider=SeededDeterminismProvider("seed"))
+    with pytest.raises(RuntimeError, match="sandbox_policy_unenforceable:container_runtime"):
         executor.run_tests_with_retry(mutation_id="m1", epoch_id="e1", replay_seed="0000000000000001")
