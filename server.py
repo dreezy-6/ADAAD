@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -11,6 +12,8 @@ from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket
+from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from runtime import metrics
@@ -240,6 +243,54 @@ def _load_mock(name: str) -> Any:
         return json.loads(p.read_text(encoding="utf-8"))
     except Exception as e:  # pragma: no cover - defensive guard
         raise HTTPException(status_code=500, detail=f"mock '{name}' parse error: {e}")
+
+
+def _marker(entry: dict[str, Any]) -> str:
+    return json.dumps(entry, ensure_ascii=False, sort_keys=True)
+
+
+def _collect_since(entries: list[dict[str, Any]], last_marker: str | None) -> tuple[list[dict[str, Any]], str | None]:
+    if not entries:
+        return [], last_marker
+    if not last_marker:
+        return entries[-1:], _marker(entries[-1])
+
+    marker_map = {_marker(entry): idx for idx, entry in enumerate(entries)}
+    marker_idx = marker_map.get(last_marker)
+    if marker_idx is None:
+        return entries[-1:], _marker(entries[-1])
+    if marker_idx >= len(entries) - 1:
+        return [], last_marker
+    new_entries = entries[marker_idx + 1 :]
+    return new_entries, _marker(entries[-1])
+
+
+def _event_batch(metrics_marker: str | None, journal_marker: str | None) -> tuple[list[dict[str, Any]], str | None, str | None]:
+    metric_entries = metrics.tail(limit=200)
+    journal_entries = journal.read_entries(limit=200)
+    new_metric_entries, next_metrics_marker = _collect_since(metric_entries, metrics_marker)
+    new_journal_entries, next_journal_marker = _collect_since(journal_entries, journal_marker)
+
+    events: list[dict[str, Any]] = []
+    for entry in new_metric_entries:
+        events.append(
+            {
+                "channel": "metrics",
+                "kind": "governance_mutation",
+                "timestamp": entry.get("timestamp"),
+                "event": entry,
+            }
+        )
+    for entry in new_journal_entries:
+        events.append(
+            {
+                "channel": "journal",
+                "kind": "journal",
+                "timestamp": entry.get("timestamp") or entry.get("ts"),
+                "event": entry,
+            }
+        )
+    return events, next_metrics_marker, next_journal_marker
 
 
 @app.get("/api/health")
