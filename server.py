@@ -10,9 +10,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket
+from pydantic import BaseModel
 from fastapi.websockets import WebSocketDisconnect
 from fastapi.responses import FileResponse
 
@@ -291,6 +290,22 @@ def _event_batch(metrics_marker: str | None, journal_marker: str | None) -> tupl
             }
         )
     return events, next_metrics_marker, next_journal_marker
+
+
+@app.websocket("/ws/events")
+async def ws_events(websocket: WebSocket) -> None:
+    await websocket.accept()
+    await websocket.send_json({"type": "hello", "channels": ["metrics", "journal"], "status": "live"})
+    metrics_marker: str | None = None
+    journal_marker: str | None = None
+    try:
+        while True:
+            events, metrics_marker, journal_marker = _event_batch(metrics_marker, journal_marker)
+            if events:
+                await websocket.send_json({"type": "event_batch", "events": events})
+            await asyncio.sleep(0.35)
+    except WebSocketDisconnect:
+        return
 
 
 @app.get("/api/health")
