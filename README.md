@@ -133,6 +133,29 @@ ADAAD does not:
 - Remove human oversight where required
 - Guarantee semantic correctness beyond governed constraints
 
+## Unified Server Hardening (2026 Update)
+
+Recent improvements to `server.py` and dashboard integration:
+
+- Added first-class real-time WebSocket stream at `/ws/events` with a stable frame contract (`hello` + `event_batch`).
+- Hardened API topology for operators with production endpoints for mutations, epochs, constitution status, and system intelligence.
+- Proposal intake endpoint `/api/mutations/proposals` now delegates to MCP validator + queue for governance-consistent submission.
+- Health payload now includes ADAAD version and runtime profile lock visibility to improve operator confidence.
+- UI mocks are disabled by default and can be enabled only via `ADAAD_UI_MOCKS=1` for local/demo usage.
+
+### Key Unified API Endpoints
+
+- `GET /api/health`
+- `GET /api/mutations`
+- `GET /api/epochs`
+- `GET /api/constitution/status`
+- `GET /api/system/intelligence`
+- `POST /api/mutations/proposals`
+- `GET /api/audit/epochs/{epoch_id}/replay-proof`
+- `GET /api/audit/epochs/{epoch_id}/lineage`
+- `GET /api/audit/bundles/{bundle_id}`
+- `WS /ws/events`
+
 ## Quick Start
 
 - Follow [QUICKSTART.md](QUICKSTART.md) for environment setup and validation.
