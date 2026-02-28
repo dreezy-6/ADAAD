@@ -215,6 +215,8 @@ def test_user_console_uses_external_script_for_csp_compatibility() -> None:
     assert "id=\"controlCapabilities\" class=\"floating-select\" multiple" in html
     assert "id=\"controlAbility\" class=\"floating-select\"" in html
     assert "id=\"controlTask\" class=\"floating-select\"" in html
+    assert "id=\"controlGeneralPrompt\"" in html
+    assert "id=\"controlPromptRun\"" in html
     assert "function ensureSelectOption(selectEl, value)" in script
     assert 'id="actionCardTemplate"' in html
     assert 'id="tasksActions"' in html
@@ -249,6 +251,26 @@ def test_user_console_uses_external_script_for_csp_compatibility() -> None:
     assert "paint('uxSummary', '/ux/summary')" in script
     assert "'/ux/events'" in script
     assert "Expand insight details" in script
+    assert "/control/auth-token" in script
+    assert "X-APONI-Nonce" in script
+    assert "function analyzeCockpitPrompt()" in script
+    assert "/control/cockpit/plan" in script
+
+
+def test_dashboard_script_uses_safe_dom_rendering_primitives() -> None:
+    handler = _handler_class()
+    script = handler._user_console_js()
+
+    assert "function safeText(value)" in script
+    assert "function el(tag, options = {})" in script
+    assert "function clearNode(node)" in script
+    assert "const SAFE_ATTRS = Object.freeze(new Set(" in script
+    assert "const SAFE_TAGS = Object.freeze(new Set(" in script
+    assert "SECURITY: Do not use innerHTML" in script
+    assert "window.trustedTypes?.createPolicy('default'" in script
+    assert "innerHTML =" not in script
+    assert script.count("createElement(") == 1
+    assert "if (typeof tag !== 'string') throw new Error('Invalid tag type');" in script
 
 
 def test_cancel_control_command_writes_cancellation_entry(tmp_path, monkeypatch) -> None:
