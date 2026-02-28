@@ -26,6 +26,7 @@ from hashlib import sha256
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib import error as urlerror, request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
 from app import APP_ROOT
@@ -79,6 +80,9 @@ CONTROL_CAPABILITIES_MAX = 8
 CONTROL_TEXT_FIELD_MAX = 240
 CONTROL_DATA_SCHEMA_VERSION = "1"
 CONTROL_MODES = {"builder", "automation", "analysis", "growth"}
+CONTROL_JWT_TTL_SECONDS = 300
+CONTROL_NONCE_TTL_SECONDS = 300
+CONTROL_NONCE_CACHE_LIMIT = 1024
 UX_EVENT_TYPES = {
     "feature_entry",
     "feature_completion",
@@ -241,6 +245,150 @@ def _load_free_capability_sources() -> Dict[str, Dict[str, object]]:
 
 
 
+
+
+def _allowed_control_origins(host_header: str) -> set[str]:
+    configured = os.environ.get("APONI_ALLOWED_ORIGINS", "")
+    allowed = {item.strip() for item in configured.split(",") if item.strip()}
+    host = host_header.strip()
+    if host:
+        allowed.add(f"http://{host}")
+        allowed.add(f"https://{host}")
+    return allowed
+
+
+def _origin_from_header(value: str) -> str:
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return ""
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return ""
+
+
+def _canonical_agent_id(seed: str) -> str:
+    normalized = re.sub(r"[^a-z0-9_-]+", "_", seed.strip().lower()).strip("_")
+    if len(normalized) < 3:
+        normalized = f"{normalized}_agent" if normalized else "triage_agent"
+    return normalized[:64]
+
+
+def _heuristic_prompt_plan(prompt: str, skill_profiles: Dict[str, Dict[str, object]]) -> Dict[str, object]:
+    text = prompt.strip()
+    lower = text.lower()
+    action = "create_agent" if any(word in lower for word in ("create", "build", "new agent", "spawn")) else "run_task"
+    profile_keys = sorted(skill_profiles.keys())
+    selected_profile = profile_keys[0] if profile_keys else ""
+    for key in profile_keys:
+        if key.lower() in lower:
+            selected_profile = key
+            break
+    profile = skill_profiles.get(selected_profile, {}) if selected_profile else {}
+    domains = profile.get("knowledge_domains") if isinstance(profile, dict) else []
+    abilities = profile.get("abilities") if isinstance(profile, dict) else []
+    capabilities = profile.get("capabilities") if isinstance(profile, dict) else []
+    domain = domains[0] if isinstance(domains, list) and domains else "general"
+    ability = abilities[0] if isinstance(abilities, list) and abilities else "analyze"
+    selected_caps = capabilities[:3] if isinstance(capabilities, list) else []
+    seed_words = re.findall(r"[a-zA-Z0-9_-]{3,}", lower)
+    candidate = next((word for word in seed_words if word.endswith("agent")), "triage_agent")
+    task_text = text if text else "Review current system state and recommend next governed action."
+    return {
+        "provider": "heuristic",
+        "command": {
+            "type": action,
+            "agent_id": _canonical_agent_id(candidate),
+            "governance_profile": "strict",
+            "skill_profile": selected_profile,
+            "knowledge_domain": str(domain),
+            "ability": str(ability),
+            "capabilities": [str(item) for item in selected_caps],
+            "task": task_text,
+            "purpose": task_text,
+        },
+        "rationale": [
+            "Prompt planner inferred command type from intent words.",
+            "Selected skill profile by keyword match (fallback to first profile).",
+            "Filled domain/ability/capabilities from governed profile defaults.",
+        ],
+    }
+
+
+def _extract_json_object(text: str) -> Dict[str, object] | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        value = json.loads(stripped)
+        return value if isinstance(value, dict) else None
+    except json.JSONDecodeError:
+        pass
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            value = json.loads(stripped[start : end + 1])
+            return value if isinstance(value, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _open_llm_prompt_plan(prompt: str, skill_profiles: Dict[str, Dict[str, object]]) -> Dict[str, object]:
+    endpoint = os.environ.get("APONI_OPEN_LLM_URL", "").strip()
+    if not endpoint:
+        raise ValueError("open_llm_not_configured")
+    model = os.environ.get("APONI_OPEN_LLM_MODEL", "open-source")
+    api_key = os.environ.get("APONI_OPEN_LLM_API_KEY", "").strip()
+    schema_hint = {
+        "type": "run_task|create_agent",
+        "agent_id": "lowercase_id",
+        "skill_profile": "one_of_profiles",
+        "knowledge_domain": "string",
+        "ability": "string",
+        "capabilities": ["string"],
+        "task": "string",
+        "purpose": "string"
+    }
+    prompt_payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "Return ONLY JSON object matching schema."},
+            {"role": "user", "content": json.dumps({"prompt": prompt, "skill_profiles": list(skill_profiles.keys()), "schema": schema_hint}, ensure_ascii=False)},
+        ],
+        "temperature": 0.1,
+    }
+    req = urlrequest.Request(endpoint, data=json.dumps(prompt_payload).encode("utf-8"), headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {api_key}"} if api_key else {})}, method="POST")
+    try:
+        with urlrequest.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except (OSError, urlerror.URLError) as exc:
+        raise ValueError(f"open_llm_request_failed:{exc}") from exc
+    parsed = _extract_json_object(raw)
+    if parsed is None:
+        envelope = _extract_json_object(raw) or {}
+        content = ""
+        if isinstance(envelope.get("choices"), list) and envelope["choices"]:
+            first = envelope["choices"][0]
+            if isinstance(first, dict):
+                message = first.get("message")
+                if isinstance(message, dict):
+                    content = str(message.get("content") or "")
+        parsed = _extract_json_object(content)
+    if parsed is None:
+        raise ValueError("open_llm_invalid_response")
+    command = parsed.get("command") if isinstance(parsed.get("command"), dict) else parsed
+    if not isinstance(command, dict):
+        raise ValueError("open_llm_invalid_command")
+    return {"provider": "open_llm", "command": command, "rationale": ["Open LLM planner response accepted."]}
+
+
+def _plan_control_prompt(prompt: str, skill_profiles: Dict[str, Dict[str, object]]) -> Dict[str, object]:
+    try:
+        return _open_llm_prompt_plan(prompt, skill_profiles)
+    except ValueError:
+        return _heuristic_prompt_plan(prompt, skill_profiles)
 def _load_skill_profiles() -> Dict[str, Dict[str, object]]:
     if not SKILL_PROFILES_PATH.exists():
         return {}
@@ -559,6 +707,7 @@ class AponiDashboard:
         lineage_v2 = LineageLedgerV2()
         replay = ReplayEngine(lineage_v2)
         bundle_builder = EvidenceBundleBuilder(ledger=lineage_v2, replay_engine=replay)
+        seen_control_nonces: Dict[str, float] = {}
 
         class Handler(SimpleHTTPRequestHandler):
             _replay_engine = replay
@@ -573,38 +722,97 @@ class AponiDashboard:
                 self.wfile.write(body)
 
 
-            def _decode_jwt_payload(self, token: str) -> Dict[str, Any]:
+            @staticmethod
+            def _b64url(data: bytes) -> str:
                 import base64
+
+                return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
+
+            @staticmethod
+            def _b64url_decode(data: str) -> bytes:
+                import base64
+
+                pad = "=" * (-len(data) % 4)
+                return base64.urlsafe_b64decode((data + pad).encode("utf-8"))
+
+            def _issue_control_jwt(self, *, ttl_seconds: int = CONTROL_JWT_TTL_SECONDS) -> str:
+                import hashlib
+                import hmac
+
+                if not jwt_secret:
+                    raise ValueError("jwt_secret_missing")
+                now = int(time.time())
+                header = self._b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode("utf-8"))
+                payload = self._b64url(json.dumps({"aud": "aponi-control", "iat": now, "exp": now + int(ttl_seconds)}, separators=(",", ":")).encode("utf-8"))
+                message = f"{header}.{payload}".encode("utf-8")
+                sig = self._b64url(hmac.new(jwt_secret.encode("utf-8"), message, hashlib.sha256).digest())
+                return f"{header}.{payload}.{sig}"
+
+            def _decode_jwt_payload(self, token: str) -> Dict[str, Any]:
                 import hashlib
                 import hmac
 
                 header_b64, payload_b64, sig_b64 = token.split(".")
                 message = f"{header_b64}.{payload_b64}".encode("utf-8")
-                expected = base64.urlsafe_b64encode(hmac.new(jwt_secret.encode("utf-8"), message, hashlib.sha256).digest()).decode("utf-8").rstrip("=")
+                expected = self._b64url(hmac.new(jwt_secret.encode("utf-8"), message, hashlib.sha256).digest())
                 if not hmac.compare_digest(expected, sig_b64):
                     raise ValueError("invalid_jwt")
-                pad = "=" * (-len(payload_b64) % 4)
-                return json.loads(base64.urlsafe_b64decode((payload_b64 + pad).encode("utf-8")))
+                return json.loads(self._b64url_decode(payload_b64))
 
             def _require_jwt(self) -> bool:
-                if not serve_mcp:
+                jwt_required = serve_mcp or os.environ.get("APONI_CONTROL_REQUIRE_JWT", "1").strip() == "1"
+                if not jwt_required:
                     return True
                 auth = self.headers.get("Authorization", "")
-                if not auth.startswith("Bearer ") or not jwt_secret:
+                if not auth.startswith("Bearer "):
                     self._send_json({"ok": False, "error": "missing_jwt"}, status_code=401)
+                    return False
+                if not jwt_secret:
+                    self._send_json({"ok": False, "error": "jwt_misconfigured"}, status_code=503)
                     return False
                 token = auth.split(" ", 1)[1].strip()
                 try:
                     payload = self._decode_jwt_payload(token)
+                    if payload.get("aud") != "aponi-control":
+                        self._send_json({"ok": False, "error": "invalid_jwt_audience"}, status_code=401)
+                        return False
                     if int(payload.get("exp", 0) or 0) < int(time.time()):
                         self._send_json({"ok": False, "error": "expired_jwt"}, status_code=401)
                         return False
-                except ValueError:
-                    self._send_json({"ok": False, "error": "invalid_jwt"}, status_code=401)
-                    return False
                 except Exception:
                     self._send_json({"ok": False, "error": "invalid_jwt"}, status_code=401)
                     return False
+                return True
+
+            def _require_control_origin(self) -> bool:
+                allowed = _allowed_control_origins(self.headers.get("Host", ""))
+                origin = _origin_from_header(self.headers.get("Origin", ""))
+                referer_origin = _origin_from_header(self.headers.get("Referer", ""))
+                if origin and origin in allowed:
+                    return True
+                if referer_origin and referer_origin in allowed:
+                    return True
+                self._send_json({"ok": False, "error": "invalid_origin"}, status_code=403)
+                return False
+
+            def _require_control_nonce(self) -> bool:
+                nonce = self.headers.get("X-APONI-Nonce", "").strip()
+                if not nonce:
+                    self._send_json({"ok": False, "error": "missing_nonce"}, status_code=401)
+                    return False
+                now = time.time()
+                stale_cutoff = now - CONTROL_NONCE_TTL_SECONDS
+                for key, ts in list(seen_control_nonces.items()):
+                    if ts < stale_cutoff:
+                        seen_control_nonces.pop(key, None)
+                if nonce in seen_control_nonces:
+                    self._send_json({"ok": False, "error": "replayed_nonce"}, status_code=409)
+                    return False
+                seen_control_nonces[nonce] = now
+                if len(seen_control_nonces) > CONTROL_NONCE_CACHE_LIMIT:
+                    oldest = sorted(seen_control_nonces.items(), key=lambda item: item[1])[: max(1, len(seen_control_nonces) - CONTROL_NONCE_CACHE_LIMIT)]
+                    for key, _ in oldest:
+                        seen_control_nonces.pop(key, None)
                 return True
 
             def _send_schema_violation(self, endpoint: str, violations: List[str]) -> None:
@@ -650,7 +858,7 @@ class AponiDashboard:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+                self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types default")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -799,6 +1007,15 @@ class AponiDashboard:
                     entries = _read_control_queue()
                     self._send_json(_verify_control_queue(entries))
                     return
+                if path.startswith("/control/auth-token"):
+                    if not self._command_surface_enabled():
+                        self._send_json({"ok": False, "error": "command_surface_disabled"})
+                        return
+                    if not jwt_secret:
+                        self._send_json({"ok": False, "error": "jwt_misconfigured"}, status_code=503)
+                        return
+                    self._send_json({"ok": True, "token": self._issue_control_jwt(), "expires_in_seconds": CONTROL_JWT_TTL_SECONDS})
+                    return
                 if path.startswith("/ux/summary"):
                     self._send_json(_ux_summary())
                     return
@@ -819,14 +1036,21 @@ class AponiDashboard:
                     return
                 # Route priority: /ux/events and /control/telemetry are handled before generic
                 # /control/queue validation so observability stays available even when command surface is off.
-                if not (parsed.path.startswith("/control/queue") or parsed.path.startswith("/control/telemetry") or parsed.path.startswith("/ux/events")):
+                if not (parsed.path.startswith("/control/queue") or parsed.path.startswith("/control/telemetry") or parsed.path.startswith("/ux/events") or parsed.path.startswith("/control/cockpit/plan")):
                     self.send_response(404)
                     self.end_headers()
                     return
                 # Observability endpoints remain available even when the command surface is disabled.
-                if parsed.path.startswith("/control/queue") and not self._command_surface_enabled():
+                if (parsed.path.startswith("/control/queue") or parsed.path.startswith("/control/cockpit/plan")) and not self._command_surface_enabled():
                     self._send_json({"ok": False, "error": "command_surface_disabled"})
                     return
+                if parsed.path.startswith("/control/queue") or parsed.path.startswith("/control/cockpit/plan"):
+                    if not self._require_control_origin():
+                        return
+                    if not self._require_jwt():
+                        return
+                    if not self._require_control_nonce():
+                        return
                 content_length = int(self.headers.get("Content-Length", "0") or "0")
                 if content_length <= 0:
                     self._send_json({"ok": False, "error": "empty_body"})
@@ -857,6 +1081,16 @@ class AponiDashboard:
                         event_payload = {}
                     metrics.log(event_type=event_type, payload=event_payload, level="INFO", element_id=ELEMENT_ID)
                     self._send_json({"ok": True})
+                    return
+
+                if parsed.path.startswith("/control/cockpit/plan"):
+                    prompt = _normalized_field(payload, "prompt")
+                    if not prompt:
+                        self._send_json({"ok": False, "error": "missing_prompt"})
+                        return
+                    skill_profiles = _load_skill_profiles()
+                    plan = _plan_control_prompt(prompt, skill_profiles)
+                    self._send_json({"ok": True, "plan": plan})
                     return
 
                 if parsed.path.startswith("/control/queue/cancel"):
@@ -1875,7 +2109,10 @@ class AponiDashboard:
       <select id="controlAbility" class="floating-select"></select>
       <label class="floating-label" for="controlTask">Suggested task / purpose</label>
       <select id="controlTask" class="floating-select"></select>
+      <label class="floating-label" for="controlGeneralPrompt">General cockpit prompt</label>
+      <textarea id="controlGeneralPrompt" class="floating-input" rows="4" placeholder="Describe your intent in natural language. The planner will map it to governed command fields."></textarea>
       <div class="floating-actions">
+        <button id="controlPromptRun" type="button" class="floating-btn">Analyze prompt</button>
         <button id="queueSubmit" type="button" class="floating-btn">Submit action</button>
         <button id="queueRefresh" type="button" class="floating-btn">Refresh status</button>
       </div>
@@ -1917,7 +2154,86 @@ const executionState = {
   lastFingerprint: '',
 };
 
+const controlAuthState = { token: '', expiresAtMs: 0 };
+
 const undoManager = { stack: [], toastTimer: null };
+
+// === Safe DOM Rendering Utilities ===
+// SECURITY: Do not use innerHTML for any API-derived content.
+// All dynamic DOM updates must use el() or textContent.
+const SAFE_ATTRS = Object.freeze(new Set(['id', 'class', 'value', 'type', 'role', 'name', 'for', 'title']));
+const SAFE_TAGS = Object.freeze(new Set(['div', 'span', 'button', 'article', 'details', 'summary', 'pre', 'h3', 'p', 'select', 'option', 'label', 'input', 'textarea']));
+
+function isSafeAttrName(name) {
+  if (typeof name !== 'string' || !name) return false;
+  return SAFE_ATTRS.has(name) || name.startsWith('data-') || name.startsWith('aria-');
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function safeText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch (_) {
+      return '[unserializable object]';
+    }
+  }
+  return String(value);
+}
+
+function el(tag, options = {}) {
+  if (typeof tag !== 'string') throw new Error('Invalid tag type');
+  const normalizedTag = tag.toLowerCase();
+  if (!SAFE_TAGS.has(normalizedTag)) throw new Error(`Unsafe tag type: ${normalizedTag}`);
+  const element = document.createElement(normalizedTag);
+  if (options.className) element.className = options.className;
+  if (options.id) element.id = options.id;
+  if (options.text !== undefined) element.textContent = safeText(options.text);
+  if (options.attrs && typeof options.attrs === 'object' && !Array.isArray(options.attrs)) {
+    for (const [k, v] of Object.entries(options.attrs)) {
+      if (!isSafeAttrName(k)) continue;
+      element.setAttribute(k, safeText(v));
+    }
+  }
+  if (Array.isArray(options.children)) {
+    for (const child of options.children) {
+      if (child instanceof Node) element.appendChild(child);
+    }
+  }
+  return element;
+}
+
+function clearNode(node) {
+  if (!node) return;
+  while (node.firstChild) node.removeChild(node.firstChild);
+}
+
+window.trustedTypes?.createPolicy('default', {
+  createHTML: () => {
+    throw new Error('Dynamic HTML creation blocked.');
+  },
+});
+
+async function ensureControlAuthToken() {
+  const now = Date.now();
+  if (controlAuthState.token && controlAuthState.expiresAtMs > now + 5000) return controlAuthState.token;
+  const response = await fetch('/control/auth-token', { cache: 'no-store' });
+  const payload = await response.json();
+  if (!response.ok || !payload.ok || !payload.token) throw new Error('control_auth_unavailable');
+  controlAuthState.token = String(payload.token);
+  controlAuthState.expiresAtMs = now + (Number(payload.expires_in_seconds || 0) * 1000);
+  return controlAuthState.token;
+}
+
+async function controlAuthHeaders(extraHeaders = {}) {
+  const token = await ensureControlAuthToken();
+  const nonce = `nonce-${Date.now()}-${Math.random().toString(16).slice(2, 12)}`;
+  return { ...extraHeaders, Authorization: `Bearer ${token}`, 'X-APONI-Nonce': nonce };
+}
 
 async function postTelemetry(eventType, payload) {
   try {
@@ -1932,32 +2248,27 @@ async function postTelemetry(eventType, payload) {
 }
 
 function ensureUndoToast() {
-  let el = document.getElementById('undoToast');
-  if (el) return el;
-  el = document.createElement('div');
-  el.id = 'undoToast';
-  el.style.position = 'fixed';
-  el.style.left = '20px';
-  el.style.bottom = '20px';
-  el.style.background = 'rgba(20, 25, 40, 0.95)';
-  el.style.border = '1px solid #406db3';
-  el.style.borderRadius = '8px';
-  el.style.padding = '10px 12px';
-  el.style.color = '#d6e7ff';
-  el.style.zIndex = '1000';
-  el.style.display = 'none';
-  const label = document.createElement('span');
-  label.id = 'undoToastLabel';
-  const undoBtn = document.createElement('button');
-  undoBtn.type = 'button';
-  undoBtn.className = 'floating-btn';
+  let toastNode = document.getElementById('undoToast');
+  if (toastNode) return toastNode;
+  toastNode = el('div', { attrs: { id: 'undoToast' } });
+  toastNode.style.position = 'fixed';
+  toastNode.style.left = '20px';
+  toastNode.style.bottom = '20px';
+  toastNode.style.background = 'rgba(20, 25, 40, 0.95)';
+  toastNode.style.border = '1px solid #406db3';
+  toastNode.style.borderRadius = '8px';
+  toastNode.style.padding = '10px 12px';
+  toastNode.style.color = '#d6e7ff';
+  toastNode.style.zIndex = '1000';
+  toastNode.style.display = 'none';
+  const label = el('span', { attrs: { id: 'undoToastLabel' } });
+  const undoBtn = el('button', { className: 'floating-btn', text: 'Undo', attrs: { type: 'button' } });
   undoBtn.style.marginLeft = '10px';
-  undoBtn.textContent = 'Undo';
   undoBtn.addEventListener('click', () => undoLatestAction('toast'));
-  el.appendChild(label);
-  el.appendChild(undoBtn);
-  document.body.appendChild(el);
-  return el;
+  toastNode.appendChild(label);
+  toastNode.appendChild(undoBtn);
+  document.body.appendChild(toastNode);
+  return toastNode;
 }
 
 function showUndoToast(action) {
@@ -2065,7 +2376,23 @@ function renderControlGuidance(extra = {}) {
     `Safety: ${safety}`,
   ];
   if (typeof extra.capabilityCount === 'number') pills.push(`Capabilities: ${extra.capabilityCount}`);
-  host.innerHTML = pills.map((text) => `<span class="guidance-pill">${text}</span>`).join('');
+  clearNode(host);
+  pills.forEach((text) => host.appendChild(el('span', { className: 'guidance-pill', text })));
+}
+
+function replaceSelectOptions(selectNode, values, { selectedValues = null, emptyLabel = '' } = {}) {
+  if (!selectNode) return;
+  clearNode(selectNode);
+  const selectedSet = selectedValues instanceof Set ? selectedValues : null;
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const normalized = safeText(value);
+    const option = el('option', { text: normalized, attrs: { value: normalized } });
+    if (selectedSet && selectedSet.has(normalized)) option.selected = true;
+    selectNode.appendChild(option);
+  });
+  if (!selectNode.options.length && emptyLabel) {
+    selectNode.appendChild(el('option', { text: emptyLabel, attrs: { value: '' } }));
+  }
 }
 
 function bindComposerPersistence() {
@@ -2087,10 +2414,7 @@ function ensureSelectOption(selectEl, value) {
   if (!normalized) return;
   const exists = Array.from(selectEl.options || []).some((opt) => opt.value === normalized);
   if (!exists) {
-    const option = document.createElement('option');
-    option.value = normalized;
-    option.textContent = normalized;
-    selectEl.appendChild(option);
+    selectEl.appendChild(el('option', { text: normalized, attrs: { value: normalized } }));
   }
   selectEl.value = normalized;
 }
@@ -2298,26 +2622,25 @@ async function refreshSkillProfiles() {
       if (status) status.textContent = 'No governed skill profiles were returned by /control/capability-matrix.';
       return;
     }
-    profileSelect.innerHTML = keys.map((key) => `<option value="${key}">${key}</option>`).join('');
+    replaceSelectOptions(profileSelect, keys);
 
     const applyProfile = () => {
       const selected = profileSelect.value;
       const selectedType = (typeSelect && typeSelect.value) || 'run_task';
       const profile = matrix[selected] || {};
-      const domains = Array.isArray(profile.knowledge_domains) ? profile.knowledge_domains : [];
-      const abilities = Array.isArray(profile.abilities) ? profile.abilities : [];
-      const capabilities = Array.isArray(profile.capabilities) ? profile.capabilities : [];
+      const domains = safeArray(profile.knowledge_domains);
+      const abilities = safeArray(profile.abilities);
+      const capabilities = safeArray(profile.capabilities);
       const template = (templates[selected] && templates[selected][selectedType]) || {};
       const taskOptions = [];
       if (typeof template.task === 'string' && template.task.trim()) taskOptions.push(template.task.trim());
       if (typeof template.purpose === 'string' && template.purpose.trim()) taskOptions.push(template.purpose.trim());
       if (!taskOptions.length && abilities.length && domains.length) taskOptions.push(`${abilities[0]} ${domains[0]} updates`);
 
-      domainSelect.innerHTML = domains.map((item) => `<option value="${item}">${item}</option>`).join('');
-      abilityInput.innerHTML = abilities.map((item) => `<option value="${item}">${item}</option>`).join('');
-      capabilityInput.innerHTML = capabilities.map((item) => `<option value="${item}" selected>${item}</option>`).join('');
-      taskSelect.innerHTML = taskOptions.map((item) => `<option value="${item}">${item}</option>`).join('');
-      if (!taskOptions.length) taskSelect.innerHTML = '<option value="">No task presets available</option>';
+      replaceSelectOptions(domainSelect, domains);
+      replaceSelectOptions(abilityInput, abilities);
+      replaceSelectOptions(capabilityInput, capabilities, { selectedValues: new Set(capabilities.map((item) => safeText(item))) });
+      replaceSelectOptions(taskSelect, taskOptions, { emptyLabel: 'No task presets available' });
       renderControlGuidance({ capabilityCount: capabilities.length });
     };
 
@@ -2469,7 +2792,7 @@ function semanticGroupFor(entry) {
 
 function groupHistoryEvents(entries) {
   const grouped = new Map();
-  const normalized = entries.filter((entry) => entry && typeof entry === 'object').map((entry) => {
+  const normalized = safeArray(entries).filter((entry) => entry && typeof entry === 'object').map((entry) => {
     const ts = eventTimestamp(entry);
     const tsMs = ts ? ts.getTime() : 0;
     return { entry, eventType: eventTypeOf(entry) || 'unknown', tsMs, semanticType: semanticGroupFor(entry) };
@@ -2492,10 +2815,6 @@ function withinDateFilter(group, fromDate, toDate) {
   if (fromDate && group.latestTsMs < fromDate.getTime()) return false;
   if (toDate && group.latestTsMs > toDate.getTime()) return false;
   return true;
-}
-
-function safeJSON(value) {
-  return JSON.stringify(value, null, 2).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 function rerunHistoryItem(group) {
@@ -2526,35 +2845,49 @@ function renderHistory(groups) {
   const allEventTypes = new Set();
   for (const group of groups) for (const eventType of group.eventTypes) allEventTypes.add(eventType);
   const existingValue = typeFilter.value || 'all';
-  typeFilter.innerHTML = '<option value="all">All event types</option>' + Array.from(allEventTypes).sort().map((eventType) => `<option value="${eventType}">${eventType}</option>`).join('');
-  if (existingValue && Array.from(allEventTypes).includes(existingValue)) typeFilter.value = existingValue;
+  const sortedTypes = Array.from(allEventTypes).sort();
+  const nextValue = existingValue && sortedTypes.includes(existingValue) ? existingValue : 'all';
+  replaceSelectOptions(typeFilter, ['all', ...sortedTypes]);
+  typeFilter.value = nextValue;
 
   const selectedType = typeFilter.value;
   const fromDate = fromInput.value ? new Date(fromInput.value) : null;
   const toDate = toInput.value ? new Date(toInput.value) : null;
   const filtered = groups.filter((group) => (selectedType === 'all' || group.eventTypes.includes(selectedType)) && withinDateFilter(group, fromDate, toDate));
 
-  if (!filtered.length) { list.innerHTML = '<div class="history-item">No matching history items.</div>'; return; }
+  clearNode(list);
+  if (!filtered.length) {
+    list.appendChild(el('div', { className: 'history-item', text: 'No matching history items.' }));
+    return;
+  }
 
-  list.innerHTML = filtered.map((group) => {
+  filtered.forEach((group) => {
     const summary = `${group.count} event${group.count === 1 ? '' : 's'} · ${group.latestIso || 'unknown time'}`;
-    const raw = safeJSON(group.items);
-    return `<article class="history-item" data-history-id="${group.id}"><div class="history-item-header"><div><div class="history-item-title">${group.label}</div><div class="history-item-meta">${summary}</div><div class="history-item-meta">Types: ${group.eventTypes.join(', ') || 'unknown'}</div></div><div class="history-item-actions"><button type="button" data-action="rerun">Rerun</button><button type="button" data-action="fork">Fork</button></div></div><details><summary>Show raw JSON</summary><pre>${raw}</pre></details></article>`;
-  }).join('');
+    const article = el('article', { className: 'history-item', attrs: { 'data-history-id': group.id } });
+    const header = el('div', { className: 'history-item-header' });
+    const textBlock = el('div');
+    textBlock.appendChild(el('div', { className: 'history-item-title', text: group.label }));
+    textBlock.appendChild(el('div', { className: 'history-item-meta', text: summary }));
+    textBlock.appendChild(el('div', { className: 'history-item-meta', text: `Types: ${group.eventTypes.join(', ') || 'unknown'}` }));
 
-  list.querySelectorAll('[data-action="rerun"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.closest('[data-history-id]')?.getAttribute('data-history-id');
-      const group = filtered.find((candidate) => candidate.id === id);
-      if (group) rerunHistoryItem(group);
-    });
-  });
-  list.querySelectorAll('[data-action="fork"]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.closest('[data-history-id]')?.getAttribute('data-history-id');
-      const group = filtered.find((candidate) => candidate.id === id);
-      if (group) forkHistoryItem(group);
-    });
+    const actions = el('div', { className: 'history-item-actions' });
+    // data-action="rerun" and data-action="fork" are intentionally preserved for compatibility tests.
+    const rerunBtn = el('button', { text: 'Rerun', attrs: { type: 'button', 'data-action': 'rerun' } });
+    rerunBtn.addEventListener('click', () => rerunHistoryItem(group));
+    const forkBtn = el('button', { text: 'Fork', attrs: { type: 'button', 'data-action': 'fork' } });
+    forkBtn.addEventListener('click', () => forkHistoryItem(group));
+    actions.appendChild(rerunBtn);
+    actions.appendChild(forkBtn);
+
+    header.appendChild(textBlock);
+    header.appendChild(actions);
+    article.appendChild(header);
+
+    const details = el('details');
+    details.appendChild(el('summary', { text: 'Show raw JSON' }));
+    details.appendChild(el('pre', { text: JSON.stringify(group.items, null, 2) }));
+    article.appendChild(details);
+    list.appendChild(article);
   });
 }
 
@@ -2797,7 +3130,7 @@ function toCardModelFromHistoryRerun(entry) {
 
 function createActionCard(card) {
   const tpl = document.getElementById('actionCardTemplate');
-  if (!tpl || !tpl.content) return document.createElement('div');
+  if (!tpl || !tpl.content) return el('div');
   const node = tpl.content.firstElementChild.cloneNode(true);
   node.dataset.source = card.source || '';
   node.dataset.kind = card.kind || '';
@@ -2807,16 +3140,13 @@ function createActionCard(card) {
   node.querySelector('.action-estimate').textContent = card.estimate || 'Estimated output: queued command.';
   const inputList = node.querySelector('.action-input-list');
   (card.inlineInputs || []).forEach((input) => {
-    const wrap = document.createElement('label');
-    wrap.className = 'action-field';
-    const label = document.createElement('span');
-    label.textContent = input.label || input.key || 'Input';
+    const wrap = el('label', { className: 'action-field' });
+    const label = el('span', { text: input.label || input.key || 'Input' });
     wrap.appendChild(label);
-    const el = input.type === 'textarea' ? document.createElement('textarea') : document.createElement('input');
-    if (input.type !== 'textarea') el.type = 'text';
-    el.value = input.value || '';
-    el.dataset.key = input.key || '';
-    wrap.appendChild(el);
+    const inputNode = input.type === 'textarea' ? el('textarea') : el('input', { attrs: { type: 'text' } });
+    inputNode.value = input.value || '';
+    inputNode.dataset.key = input.key || '';
+    wrap.appendChild(inputNode);
     inputList.appendChild(wrap);
   });
   return node;
@@ -2849,7 +3179,7 @@ async function runActionCard(cardElement) {
   try {
     const response = await fetch('/control/queue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await controlAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload),
     });
     const result = await response.json();
@@ -2912,12 +3242,12 @@ async function refreshActionCards() {
       .slice(-2)
       .forEach((entry) => insightCards.push(toCardModelFromHistoryRerun(entry)));
 
-    tasksEl.innerHTML = '';
+    clearNode(tasksEl);
     taskCards.forEach((card) => tasksEl.appendChild(createActionCard(card)));
     if (!taskCards.length) tasksEl.textContent = 'No task templates available.';
     bindActionCards(tasksEl);
 
-    insightsEl.innerHTML = '';
+    clearNode(insightsEl);
     insightCards.forEach((card) => insightsEl.appendChild(createActionCard(card)));
     if (!insightCards.length) insightsEl.textContent = 'No insight actions currently recommended.';
     bindActionCards(insightsEl);
@@ -2974,23 +3304,18 @@ function normalizeInsights(payload) {
 function renderInsights(items) {
   const container = document.getElementById('insights');
   if (!container) return;
-  container.innerHTML = '';
+  clearNode(container);
   if (!Array.isArray(items) || !items.length) {
     container.textContent = 'No insight details available.';
     return;
   }
   items.forEach((item, idx) => {
-    const card = document.createElement('article');
-    card.className = 'insight-card';
-    const title = document.createElement('h3');
-    title.textContent = item.title || `Insight ${idx + 1}`;
-    const summary = document.createElement('p');
-    summary.textContent = item.summary || item.description || 'No summary provided.';
-    const details = document.createElement('details');
-    const detailsSummary = document.createElement('summary');
-    detailsSummary.textContent = 'Expand insight details';
-    const pre = document.createElement('pre');
-    pre.textContent = JSON.stringify(item, null, 2);
+    const card = el('article', { className: 'insight-card' });
+    const title = el('h3', { text: item && item.title ? item.title : `Insight ${idx + 1}` });
+    const summary = el('p', { text: (item && (item.summary || item.description)) || 'No summary provided.' });
+    const details = el('details');
+    const detailsSummary = el('summary', { text: 'Expand insight details' });
+    const pre = el('pre', { text: JSON.stringify(item, null, 2) });
     details.appendChild(detailsSummary);
     details.appendChild(pre);
     card.appendChild(title);
@@ -3014,6 +3339,31 @@ function setupModeTracking() {
     });
     previous = current;
   });
+}
+
+async function analyzeCockpitPrompt() {
+  const promptInput = document.getElementById('controlGeneralPrompt');
+  const status = document.getElementById('controlStatus');
+  if (!promptInput) return;
+  const prompt = String(promptInput.value || '').trim();
+  if (!prompt) { if (status) status.textContent = 'Enter a prompt before analysis.'; return; }
+  if (status) status.textContent = 'Analyzing prompt with cockpit planner...';
+  try {
+    const headers = await controlAuthHeaders({ 'Content-Type': 'application/json' });
+    const response = await fetch('/control/cockpit/plan', { method: 'POST', headers, body: JSON.stringify({ prompt }) });
+    const result = await response.json();
+    if (!response.ok || !result.ok || !result.plan || typeof result.plan !== 'object') {
+      if (status) status.textContent = 'Prompt planning failed: ' + JSON.stringify(result);
+      return;
+    }
+    const command = result.plan.command && typeof result.plan.command === 'object' ? result.plan.command : {};
+    paintDraft(command);
+    renderControlGuidance({ capabilityCount: Array.isArray(command.capabilities) ? command.capabilities.length : 0 });
+    persistDraft(readCommandPayload());
+    if (status) status.textContent = `Prompt analyzed (${result.plan.provider || 'planner'}). Review fields and submit.`;
+  } catch (err) {
+    if (status) status.textContent = 'Failed to analyze prompt: ' + err;
+  }
 }
 
 async function queueIntent() {
@@ -3044,7 +3394,7 @@ async function queueIntent() {
   try {
     const response = await fetch('/control/queue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await controlAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(commandPayload),
     });
     const payload = await response.json();
@@ -3066,7 +3416,7 @@ async function queueIntent() {
           undo: async () => {
             const cancelResponse = await fetch('/control/queue/cancel', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: await controlAuthHeaders({ 'Content-Type': 'application/json' }),
               body: JSON.stringify({ command_id: entry.command_id }),
             });
             const cancelPayload = await cancelResponse.json();
@@ -3182,26 +3532,6 @@ function wireExecutionActions() {
     hydrateForkDraft(executionState.activeEntry);
   });
 }
-
-function normalizeInsights(payload) {
-  if (!payload) return [];
-  if (Array.isArray(payload.insights)) return payload.insights;
-  if (Array.isArray(payload.recommendations)) return payload.recommendations.map((r) => ({ title: 'Recommendation', summary: String(r) }));
-  return [];
-}
-
-function renderInsights(items) {
-  const container = document.getElementById('insights');
-  if (!container) return;
-  container.innerHTML = '';
-  (items || []).forEach((item) => {
-    const node = document.createElement('div');
-    node.className = 'insight-card';
-    node.textContent = item.title || 'Insight';
-    container.appendChild(node);
-  });
-}
-
 function refreshActionCards() { return Promise.resolve(); }
 function refreshHistory() { return Promise.resolve(); }
 function routeFromHash() {
@@ -3403,13 +3733,9 @@ function renderHome(state, intelligence, risk) {
 
   const container = document.getElementById('homeQuickActions');
   if (!container) return;
-  container.innerHTML = '';
+  clearNode(container);
   quickActions.forEach((action) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'quick-action';
-    button.textContent = action.cta;
-    button.title = action.headline;
+    const button = el('button', { className: 'quick-action', text: action.cta, attrs: { type: 'button', title: action.headline } });
     button.addEventListener('click', action.onClick);
     container.appendChild(button);
   });
@@ -3426,6 +3752,7 @@ wireExecutionActions();
 window.aponiControlMachine = createControlStateMachine();
 document.getElementById('queueSubmit')?.addEventListener('click', () => { markInteraction('queue_submit_click'); queueIntent(); });
 document.getElementById('queueRefresh')?.addEventListener('click', () => { markInteraction('queue_refresh_click'); refreshControlQueue(); });
+document.getElementById('controlPromptRun')?.addEventListener('click', () => { markInteraction('prompt_plan_click'); analyzeCockpitPrompt(); });
 document.getElementById('historyTypeFilter')?.addEventListener('change', refreshHistory);
 document.getElementById('historyDateFrom')?.addEventListener('change', refreshHistory);
 document.getElementById('historyDateTo')?.addEventListener('change', refreshHistory);
