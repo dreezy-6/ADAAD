@@ -40,3 +40,11 @@ __pycache__/
 # Never commit private keys
 security/keys/*
 !security/keys/.gitkeep
+venv/
+reports/
+data/work/
+data/logs/
+security/ledger/*.lock
+*.lock
+runtime/evolution/state/
+app/agents/
