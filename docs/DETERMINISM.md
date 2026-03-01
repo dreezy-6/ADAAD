@@ -42,6 +42,17 @@ Replay is invalidated when any covered deterministic input diverges, including:
 - non-deterministic telemetry fields not covered by replay contract,
 - non-authoritative local environment metadata outside lock boundaries.
 
+## Replay version-policy validation
+
+`runtime.evolution.replay.ReplayVersionValidator` enforces three deterministic policy modes for replayed scoring payloads:
+- `strict`: requires both normalized version and payload value equality.
+- `audit`: records version/value divergence metadata but does not hard-fail replay.
+- `migration`: attempts historical rescoring via `runtime.evolution.scoring_algorithm_<version_tag>` and tolerates missing historical modules by recording divergence metadata instead of hard failure.
+
+Before any version or value comparison, ephemeral runtime fields (for example `timestamp`/`ts`) are stripped so governance invariants are evaluated only on deterministic payload content.
+
+Validator report contract includes deterministic top-level fields: `mode`, `ok`, `decision`, and `details` (with explicit missing-required field reporting for fail-closed behavior).
+
 ## Divergence detection
 
 Divergence is detected by contract-level hash and schema validation against the recorded baseline, then surfaced as a fail-closed governance outcome.

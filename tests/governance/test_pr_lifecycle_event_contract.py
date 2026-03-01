@@ -51,6 +51,34 @@ def test_duplicate_emission_semantics() -> None:
     assert classify_retry(first, distinct) == "distinct"
 
 
+def test_duplicate_emission_ignores_ephemeral_payload_fields() -> None:
+    first = {
+        "event_type": "replay_verified",
+        "pr_number": 17,
+        "commit_sha": "b" * 40,
+        "idempotency_key": derive_idempotency_key(pr_number=17, commit_sha="b" * 40, event_type="replay_verified"),
+        "payload": {
+            "replay_digest": "sha256:" + ("c" * 64),
+            "verification_result": "pass",
+            "nonce": "nonce-1",
+            "generated_at": "2026-02-01T00:00:01Z",
+            "run_id": "run-a",
+        },
+    }
+    retried = {
+        **first,
+        "payload": {
+            "replay_digest": "sha256:" + ("c" * 64),
+            "verification_result": "pass",
+            "nonce": "nonce-2",
+            "generated_at": "2026-02-01T00:00:02Z",
+            "run_id": "run-b",
+        },
+    }
+
+    assert classify_retry(first, retried) == "duplicate_ack"
+
+
 def test_schema_version_compatibility_policy() -> None:
     assert is_schema_version_compatible("1.0")
     assert is_schema_version_compatible("1.7")

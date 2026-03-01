@@ -76,6 +76,7 @@ from runtime.api.runtime_services import (
 from adaad.orchestrator.bootstrap import bootstrap_tool_registry
 from adaad.orchestrator.dispatcher import dispatch, dispatch_result_or_raise
 from security import cryovant
+from security.key_rotation_attestation import validate_rotation_record
 from security.ledger import journal
 from security.ledger.journal import JournalIntegrityError
 from ui.aponi_dashboard import AponiDashboard
@@ -532,16 +533,28 @@ class Orchestrator:
         keys_dir = cryovant.KEYS_DIR
         if not keys_dir.exists():
             return False, "keys_dir_missing"
+        rotation_path = keys_dir / "rotation.json"
+        if rotation_path.exists():
+            try:
+                record = json.loads(rotation_path.read_text(encoding="utf-8"))
+            except Exception:
+                return False, "rotation_attestation_unreadable"
+            if not isinstance(record, dict):
+                return False, "rotation_attestation_invalid:expected_object"
+            result = validate_rotation_record(record)
+            if not result.ok:
+                return False, f"rotation_attestation_invalid:{result.reason}"
+            return True, "attestation_ok"
         key_files = [path for path in keys_dir.iterdir() if path.is_file() and path.name != ".gitkeep"]
         if not key_files:
             if cryovant.dev_signature_allowed("cryovant-dev-probe"):
                 return True, "dev_signature_mode"
             return False, "no_signing_keys"
-        max_age_days = int(os.getenv("ADAAD_KEY_ROTATION_MAX_AGE_DAYS", "90"))
+        max_age_days = int(os.getenv("ADAAD_KEY_ROTATION_MAX_AGE_DAYS", "90") or "90")
         newest_mtime = max(path.stat().st_mtime for path in key_files)
         age_days = (default_provider().now_utc().timestamp() - newest_mtime) / 86400
         if age_days > max_age_days:
-            return False, f"keys_stale:{age_days:.1f}d>{max_age_days}d"
+            return False, f"keys_stale:{age_days:.1f}>{max_age_days}"
         return True, "ok"
 
     def _check_ledger_integrity(self) -> tuple[bool, str]:

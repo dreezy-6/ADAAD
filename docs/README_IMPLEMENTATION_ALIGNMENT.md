@@ -142,10 +142,10 @@ Expected status in this repository branch: governance/intelligence/dispatcher ta
 
 ## PR-08 Implementation Checklist (Evidence bundle provenance)
 
-- [x] `schemas/evidence_bundle.v1.json` requires `scoring_algorithm_version` and `constitution_version`.
-- [x] `runtime/evolution/evidence_bundle.py` populates both fields from runtime constants for newly built bundles.
+- [x] `schemas/evidence_bundle.v1.json` requires `scoring_algorithm_version`, `constitution_version`, `governor_version`, `fitness_weights_hash`, and `goal_graph_hash`.
+- [x] `runtime/evolution/evidence_bundle.py` populates all five provenance fields for newly built bundles (with deterministic sentinel hashes where upstream artifacts are unavailable).
 - [x] `_validate_schema_subset` enforcement remains fail-closed for missing required keys on new bundles.
-- [x] Legacy validation path is explicit (`validate_bundle(..., allow_legacy=True)`) and only backfills newly required provenance fields.
+- [x] Legacy validation path is explicit (`validate_bundle(..., allow_legacy=True)`) and only backfills newly required provenance fields (`scoring_algorithm_version`, `constitution_version`, `governor_version`, `fitness_weights_hash`, `goal_graph_hash`).
 
 ## PR Milestone Reconciliation (PR-1 .. PR-6 + PR-3H)
 

@@ -63,6 +63,12 @@ def test_export_bundle_conforms_to_schema_and_is_immutable(tmp_path: Path) -> No
     assert json.loads(export_path.read_text(encoding="utf-8")) == bundle
     assert bundle["scoring_algorithm_version"]
     assert bundle["constitution_version"]
+    assert bundle["governor_version"]
+    assert bundle["fitness_weights_hash"]
+    assert bundle["goal_graph_hash"]
+    assert bundle["governor_version"]
+    assert bundle["fitness_weights_hash"].startswith("sha256:")
+    assert bundle["goal_graph_hash"].startswith("sha256:")
     assert bundle["export_metadata"]["retention_days"] >= 1
     assert bundle["export_metadata"]["access_scope"]
     assert bundle["export_metadata"]["signer"]["signed_digest"] == bundle["export_metadata"]["digest"]
@@ -96,6 +102,24 @@ def test_export_bundle_digest_is_reproducible_for_unchanged_ledger(tmp_path: Pat
     assert first["bundle_id"] == second["bundle_id"]
     assert canonical_json(first) == canonical_json(second)
     assert first["export_metadata"]["digest"] == sha256_prefixed_digest({k: v for k, v in first.items() if k not in {"bundle_id", "export_metadata"}})
+
+
+def test_validate_bundle_allow_legacy_accepts_missing_provenance_fields(tmp_path: Path) -> None:
+    ledger = LineageLedgerV2(ledger_path=tmp_path / "lineage_v2.jsonl")
+    ledger.append_event("EpochStartEvent", {"epoch_id": "epoch-1", "state": {"a": 1}})
+    builder = EvidenceBundleBuilder(
+        ledger=ledger,
+        sandbox_evidence_path=tmp_path / "sandbox_evidence.jsonl",
+        export_dir=tmp_path / "exports",
+        schema_path=Path("schemas/evidence_bundle.v1.json"),
+    )
+    bundle = builder.build_bundle(epoch_start="epoch-1", persist=False)
+    legacy_bundle = dict(bundle)
+    legacy_bundle.pop("governor_version", None)
+    legacy_bundle.pop("fitness_weights_hash", None)
+    legacy_bundle.pop("goal_graph_hash", None)
+
+    assert builder.validate_bundle(legacy_bundle, allow_legacy=True) == []
 
 
 def test_export_bundle_rejects_invalid_sandbox_jsonl(tmp_path: Path) -> None:
@@ -170,9 +194,15 @@ def test_validate_bundle_legacy_mode_backfills_new_required_fields(tmp_path: Pat
     legacy_bundle = dict(bundle)
     legacy_bundle.pop("scoring_algorithm_version")
     legacy_bundle.pop("constitution_version")
+    legacy_bundle.pop("governor_version")
+    legacy_bundle.pop("fitness_weights_hash")
+    legacy_bundle.pop("goal_graph_hash")
 
     strict_errors = builder.validate_bundle(legacy_bundle)
     assert "$.scoring_algorithm_version:missing_required" in strict_errors
     assert "$.constitution_version:missing_required" in strict_errors
+    assert "$.governor_version:missing_required" in strict_errors
+    assert "$.fitness_weights_hash:missing_required" in strict_errors
+    assert "$.goal_graph_hash:missing_required" in strict_errors
 
     assert builder.validate_bundle(legacy_bundle, allow_legacy=True) == []

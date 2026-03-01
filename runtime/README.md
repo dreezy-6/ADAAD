@@ -58,7 +58,7 @@ Deterministic replay-sensitive entry points now consume a shared provider abstra
 - Canonical governance event taxonomy/normalization: `runtime/governance/event_taxonomy.py`.
 - Constitution resource governance + shared accounting: `runtime/governance/constitution.yaml`, `runtime/governance/resource_accounting.py`.
 - Replay attestation bundles: `runtime/evolution/replay_attestation.py` (signed replay-proof exports + offline verification helpers).
-- Forensic evidence bundles: `runtime/evolution/evidence_bundle.py` (`schemas/evidence_bundle.v1.json`).
+- Forensic evidence bundles: `runtime/evolution/evidence_bundle.py` (`schemas/evidence_bundle.v1.json`), including pre-digest `governor_version`, `fitness_weights_hash`, and `goal_graph_hash` provenance anchors.
 - Governance signing and operations guides: `docs/governance/POLICY_ARTIFACT_SIGNING_GUIDE.md`, `docs/governance/FORENSIC_BUNDLE_LIFECYCLE.md`, `docs/governance/FEDERATION_CONFLICT_RUNBOOK.md`, and founders-law model docs.
 
 </details>
@@ -84,5 +84,6 @@ Deterministic replay-sensitive entry points now consume a shared provider abstra
 This runtime layer guarantees:
 
 - Stable governance envelope hashing over canonical detail surfaces
+- Replay/version validation comparisons strip ephemeral runtime fields via `runtime/governance_surface.py::strip_version_comparison_ephemerals` to prevent false divergence (e.g., `nonce`, `generated_at`, `run_id`).
 - Replay-stable constitution loading with hermetic fallback behavior
 - Environment-configurable and ledger-visible dispatcher latency configuration

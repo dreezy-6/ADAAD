@@ -32,3 +32,8 @@ These constraints are enforced by `tools/lint_import_paths.py` (rule id: `layer_
 Relative imports that resolve to forbidden modules are also blocked.
 
 Legitimate exceptions require updating both `tools/lint_import_paths.py` and `docs/ARCHITECTURE_CONTRACT.md` in the same PR with rationale.
+
+## Key-rotation boot gate behavior
+
+- `Orchestrator._check_key_rotation_status()` now validates `security/keys/rotation.json` via the key-rotation attestation path when the attestation file exists.
+- Environments without rotation attestations keep the existing mtime-based key freshness fallback for migration compatibility.

@@ -6,6 +6,9 @@
     "schema_version",
     "constitution_version",
     "scoring_algorithm_version",
+    "governor_version",
+    "fitness_weights_hash",
+    "goal_graph_hash",
     "bundle_id",
     "export_scope",
     "replay_proofs",
@@ -386,6 +389,15 @@
       "additionalProperties": false
     },
     "scoring_algorithm_version": {
+      "type": "string"
+    },
+    "governor_version": {
+      "type": "string"
+    },
+    "fitness_weights_hash": {
+      "type": "string"
+    },
+    "goal_graph_hash": {
       "type": "string"
     },
     "constitution_version": {

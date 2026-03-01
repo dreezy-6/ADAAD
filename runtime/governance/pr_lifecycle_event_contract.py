@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 from runtime.governance.foundation.canonical import canonical_json_bytes
 from runtime.governance.foundation.hashing import ZERO_HASH, sha256_prefixed_digest
+from runtime.governance_surface import strip_version_comparison_ephemerals
 
 REQUIRED_PR_LIFECYCLE_EVENT_TYPES: tuple[str, ...] = (
     "pr_merged",
@@ -80,13 +81,13 @@ def classify_retry(existing_event: Mapping[str, Any], incoming_event: Mapping[st
         "event_type": existing_event["event_type"],
         "pr_number": existing_event["pr_number"],
         "commit_sha": existing_event["commit_sha"],
-        "payload": existing_event["payload"],
+        "payload": strip_version_comparison_ephemerals(existing_event["payload"]),
     }
     incoming_material = {
         "event_type": incoming_event["event_type"],
         "pr_number": incoming_event["pr_number"],
         "commit_sha": incoming_event["commit_sha"],
-        "payload": incoming_event["payload"],
+        "payload": strip_version_comparison_ephemerals(incoming_event["payload"]),
     }
     return "duplicate_ack" if existing_material == incoming_material else "duplicate_conflict"
 
