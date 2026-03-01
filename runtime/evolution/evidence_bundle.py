@@ -27,6 +27,7 @@ DEFAULT_EXPORT_SIGNING_ALGORITHM = "hmac-sha256"
 DEFAULT_RETENTION_DAYS = 365
 DEFAULT_ACCESS_SCOPE = "governance_audit"
 DEFAULT_CONSTITUTION_VERSION = os.getenv("ADAAD_CONSTITUTION_VERSION", "0.2.0").strip() or "0.2.0"
+DEFAULT_GOVERNOR_VERSION = os.getenv("ADAAD_GOVERNOR_VERSION", "3.0.0").strip() or "3.0.0"
 
 
 class EvidenceBundleError(RuntimeError):
@@ -265,6 +266,9 @@ class EvidenceBundleBuilder:
             "schema_version": EVIDENCE_BUNDLE_SCHEMA_VERSION,
             "scoring_algorithm_version": ALGORITHM_VERSION,
             "constitution_version": DEFAULT_CONSTITUTION_VERSION,
+            "governor_version": DEFAULT_GOVERNOR_VERSION,
+            "fitness_weights_hash": ZERO_HASH,
+            "goal_graph_hash": ZERO_HASH,
             "export_scope": {
                 "epoch_start": epoch_ids[0],
                 "epoch_end": epoch_ids[-1],
@@ -339,6 +343,9 @@ class EvidenceBundleBuilder:
         coerced = dict(bundle)
         coerced.setdefault("scoring_algorithm_version", ALGORITHM_VERSION)
         coerced.setdefault("constitution_version", DEFAULT_CONSTITUTION_VERSION)
+        coerced.setdefault("governor_version", "legacy")
+        coerced.setdefault("fitness_weights_hash", ZERO_HASH)
+        coerced.setdefault("goal_graph_hash", ZERO_HASH)
         return coerced
 
     def validate_bundle(self, bundle: Dict[str, Any], *, allow_legacy: bool = False) -> List[str]:
@@ -356,6 +363,9 @@ class EvidenceBundleBuilder:
         legacy_missing = {
             "$.scoring_algorithm_version:missing_required",
             "$.constitution_version:missing_required",
+            "$.governor_version:missing_required",
+            "$.fitness_weights_hash:missing_required",
+            "$.goal_graph_hash:missing_required",
         }
         if errors and set(errors).issubset(legacy_missing):
             coerced_legacy = self._coerce_legacy_bundle(bundle)
