@@ -377,4 +377,4 @@ PR milestone reconciliation: **PR-1 through PR-6 all implemented.** PR-3H (harde
 
 ## CI Gating
 
-Review the CI gating policy: [`docs/governance/ci-gating.md`](../docs/governance/ci-gating.md).
+Review the CI gating policy: [`docs/governance/ci-gating.md`](docs/governance/ci-gating.md).

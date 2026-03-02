@@ -59,4 +59,4 @@ If any criterion fails, the decision is **No-Go** until remediated.
 
 ---
 
-Related docs: [Repository README](../../README.md) · [Documentation index](../README.md)
+Related docs: [Repository README](../../README.md) · [Documentation index](../README.md) · [Release audit evidence verification checklist](../releases/RELEASE_AUDIT_CHECKLIST.md)

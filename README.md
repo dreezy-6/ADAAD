@@ -77,7 +77,7 @@ ADAAD is designed to be technically strict **and** operator-friendly.
 | 🧪 First-time evaluator | [QUICKSTART.md](QUICKSTART.md) | Get a governed run in minutes. |
 | 👩‍💻 Contributor | [docs/ARCHITECTURE_CONTRACT.md](docs/ARCHITECTURE_CONTRACT.md) + [docs/README.md](docs/README.md) | Change code without breaking governance boundaries. |
 | 🔐 Security reviewer | [docs/SECURITY.md](docs/SECURITY.md) + [docs/governance/SECURITY_INVARIANTS_MATRIX.md](docs/governance/SECURITY_INVARIANTS_MATRIX.md) | Validate auth/signing and fail-closed controls. |
-| 🧾 Auditor / release owner | [docs/releases/RELEASE_AUDIT_CHECKLIST.md](docs/releases/RELEASE_AUDIT_CHECKLIST.md) + [docs/RELEASE_EVIDENCE_MATRIX.md](docs/RELEASE_EVIDENCE_MATRIX.md) | Verify evidence completeness and release readiness. |
+| 🧾 Auditor / release owner | [docs/release/release_checklist.md](docs/release/release_checklist.md) *(canonical operator preflight)* + [docs/releases/RELEASE_AUDIT_CHECKLIST.md](docs/releases/RELEASE_AUDIT_CHECKLIST.md) *(audit evidence verification)* + [docs/RELEASE_EVIDENCE_MATRIX.md](docs/RELEASE_EVIDENCE_MATRIX.md) | Verify release go/no-go readiness and audit evidence completeness. |
 
 ### Operator promises
 
@@ -242,7 +242,8 @@ should still validate third-party dependency license obligations per release.
 
 ### Release and Compliance
 - [Release evidence matrix](docs/RELEASE_EVIDENCE_MATRIX.md)
-- [Release audit checklist](docs/releases/RELEASE_AUDIT_CHECKLIST.md)
+- [Release checklist (canonical operator preflight)](docs/release/release_checklist.md)
+- [Release audit checklist (evidence verification)](docs/releases/RELEASE_AUDIT_CHECKLIST.md)
 
 ## Project Status
 
