@@ -53,6 +53,28 @@ def capability_drop_supported() -> tuple[bool, str]:
     return True, "ok"
 
 
+def runtime_hardening_capabilities(*, container_rollout_enabled: bool) -> dict[str, dict[str, bool | str]]:
+    """Return runtime capability check snapshot for release-claim validation."""
+
+    return {
+        "telemetry_syscall_validation": {
+            "implemented": True,
+            "enforced_in_kernel": False,
+            "status": "implemented",
+        },
+        "kernel_seccomp_filter_enforcement": {
+            "implemented": container_rollout_enabled,
+            "enforced_in_kernel": container_rollout_enabled,
+            "status": "enabled" if container_rollout_enabled else "not_fully_implemented",
+        },
+        "namespace_cgroup_hard_isolation": {
+            "implemented": container_rollout_enabled,
+            "enforced_in_kernel": container_rollout_enabled,
+            "status": "enabled" if container_rollout_enabled else "best_effort_only",
+        },
+    }
+
+
 class IsolationBackend(Protocol):
     """Execution backend that can enforce sandbox policy controls."""
 
@@ -292,6 +314,7 @@ class ContainerIsolationBackend:
 
 __all__ = [
     "capability_drop_supported",
+    "runtime_hardening_capabilities",
     "ContainerIsolationBackend",
     "EnforcedControl",
     "IsolationBackend",

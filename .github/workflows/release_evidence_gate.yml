@@ -36,6 +36,14 @@ jobs:
             python tools/verify_replay_bundle.py "$f"
           done
 
+
+      - name: Validate release evidence matrix and links
+        run: |
+          python scripts/validate_release_evidence.py --require-complete
+
+      - name: Validate hardening claims against runtime capability checks
+        run: |
+          python scripts/validate_release_hardening_claims.py
       - name: Run Governance Tests
         run: |
           PYTHONPATH=. pytest tests/ -k governance -q
