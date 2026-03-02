@@ -19,6 +19,38 @@ SANDBOX_EVIDENCE_PATH = ROOT_DIR / "security" / "ledger" / "sandbox_evidence.jso
 _DEFAULT_DEV_SIGNING_KEY = "adaad-dev-evidence-signing-key"
 
 
+def _control_capability_flags(control: Mapping[str, Any]) -> Dict[str, bool | str]:
+    mechanism = str(control.get("mechanism") or "")
+    simulated = bool(control.get("simulated"))
+    enforced = bool(control.get("enforced"))
+
+    enforced_in_kernel = mechanism in {
+        "docker_seccomp",
+        "docker_cgroup_limits",
+        "docker_network",
+        "docker_readonly_mounts",
+    }
+    observed_only = simulated or mechanism == "seccomp"
+    best_effort = enforced and not enforced_in_kernel and not observed_only
+
+    mode = "simulated/observed-only" if observed_only else ("enforced_in-kernel" if enforced_in_kernel else "best-effort")
+    return {
+        "enforced_in_kernel": enforced_in_kernel,
+        "best_effort": best_effort,
+        "simulated_or_observed_only": observed_only,
+        "mode": mode,
+    }
+
+
+def _augment_controls_with_capabilities(enforced_controls: tuple[Dict[str, Any], ...]) -> list[Dict[str, Any]]:
+    controls: list[Dict[str, Any]] = []
+    for raw in enforced_controls:
+        item = dict(raw)
+        item["capability_flags"] = _control_capability_flags(item)
+        controls.append(item)
+    return controls
+
+
 def _signing_key_bytes() -> bytes:
     return str(os.getenv("ADAAD_EVIDENCE_BUNDLE_SIGNING_KEY") or _DEFAULT_DEV_SIGNING_KEY).encode("utf-8")
 
@@ -99,7 +131,7 @@ def build_sandbox_evidence(
         "timestamp": provider_ts,
         "manifest": dict(manifest),
         "isolation_mode": isolation_mode,
-        "enforced_controls": [dict(item) for item in enforced_controls],
+        "enforced_controls": _augment_controls_with_capabilities(enforced_controls),
         "preflight": dict(preflight or {"ok": True, "reason": "not_provided"}),
         "events": [dict(item) for item in events],
         "runtime_telemetry": deterministic_runtime_telemetry,

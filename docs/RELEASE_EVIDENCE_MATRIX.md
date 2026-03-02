@@ -15,3 +15,10 @@
 - Runtime verification: `tools/verify_replay_bundle.py` against `security/ledger/replay_proofs/*.json`.
 - Test validation: governance and sandbox suites executed with `PYTHONPATH=.` to match CI import behavior.
 | PR-2 core constitutional rules enabled (lineage/resource/complexity/coverage/mutation rate) | `pytest tests/ -k "lineage or resource_bounds or complexity or mutation_rate" -q` | Constitutional policy v0.2.0 + validator/test evidence |
+
+## Sandbox control-state semantics
+
+- Telemetry syscall validation is implemented and fail-closed in executor evidence checks.
+- In-kernel seccomp filtering is currently guaranteed only for container backend paths with configured Docker seccomp profiles.
+- Namespace/cgroup hard isolation is currently reported as enabled only for container backend paths; process backend remains best-effort.
+- Evidence bundles expose per-control capability flags (`enforced_in_kernel`, `best_effort`, `simulated_or_observed_only`) to prevent claim drift.

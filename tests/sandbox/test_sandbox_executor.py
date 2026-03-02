@@ -139,6 +139,42 @@ def test_hardened_executor_records_container_runtime_telemetry():
     assert executor.last_evidence_payload["runtime_telemetry"]["denied_syscalls"] == ["clone"]
 
 
+
+
+def test_hardened_executor_reports_process_control_capability_flags_truthfully():
+    executor = HardenedSandboxExecutor(_FakeSandbox(), provider=SeededDeterminismProvider("seed"))
+    executor.run_tests_with_retry(mutation_id="m1", epoch_id="e1", replay_seed="0000000000000001")
+
+    controls = {item["control"]: item for item in executor.last_evidence_payload["enforced_controls"]}
+    syscall = controls["syscall_allowlist"]["capability_flags"]
+    assert syscall["simulated_or_observed_only"] is True
+    assert syscall["enforced_in_kernel"] is False
+    assert syscall["mode"] == "simulated/observed-only"
+
+    quota = controls["resource_quotas"]["capability_flags"]
+    assert quota["best_effort"] is True
+    assert quota["enforced_in_kernel"] is False
+
+
+def test_hardened_executor_reports_container_control_capability_flags_truthfully():
+    executor = HardenedSandboxExecutor(
+        _FakeSandbox(),
+        provider=SeededDeterminismProvider("seed"),
+        isolation_backend=_TelemetryBackend(),
+    )
+    executor.run_tests_with_retry(mutation_id="m1", epoch_id="e1", replay_seed="0000000000000001")
+
+    controls = {item["control"]: item for item in executor.last_evidence_payload["enforced_controls"]}
+    syscall = controls["syscall_allowlist"]["capability_flags"]
+    assert syscall["enforced_in_kernel"] is True
+    assert syscall["simulated_or_observed_only"] is False
+    assert syscall["mode"] == "enforced_in-kernel"
+
+    telemetry = executor.last_evidence_payload["runtime_telemetry"]
+    assert telemetry["syscall_validation"] == "telemetry_allowlist"
+    assert telemetry["syscall_validation_enforced_in_kernel"] is False
+    assert telemetry["hard_isolation"] is True
+
 def test_container_rollout_fail_closed_without_profiles(monkeypatch):
     monkeypatch.setenv("ADAAD_FORCE_TIER", "SANDBOX")
     monkeypatch.setenv("ADAAD_SANDBOX_CONTAINER_ROLLOUT", "1")

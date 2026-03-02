@@ -338,6 +338,8 @@ jobs:
           python-version: "3.11.9"
       - name: Validate claims evidence matrix links
         run: python scripts/validate_release_evidence.py
+      - name: Validate release hardening claims against runtime capability checks
+        run: python scripts/validate_release_hardening_claims.py
 
   ci-gating-summary:
     runs-on: ubuntu-latest

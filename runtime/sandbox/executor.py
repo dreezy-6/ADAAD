@@ -136,6 +136,11 @@ class HardenedSandboxExecutor:
         result = self.isolation_backend.run(test_sandbox=self.test_sandbox, manifest=manifest, args=args, retries=retries)
         result_payload = asdict(result)
         runtime_telemetry = dict(getattr(self.isolation_backend, "last_runtime_telemetry", {}) or {})
+        runtime_telemetry.setdefault("syscall_validation", "telemetry_allowlist")
+        runtime_telemetry.setdefault("syscall_validation_enforced_in_kernel", False)
+        runtime_telemetry.setdefault("hard_isolation", isolation_preparation.mode == "container")
+        runtime_telemetry.setdefault("hard_isolation_namespaces", isolation_preparation.mode == "container")
+        runtime_telemetry.setdefault("hard_isolation_cgroups", isolation_preparation.mode == "container")
 
         max_wall = float(os.getenv("ADAAD_MAX_WALL_SECONDS", str(manifest.timeout_s)))
         max_memory = float(os.getenv("ADAAD_MAX_MEMORY_MB", str(manifest.memory_mb)))
