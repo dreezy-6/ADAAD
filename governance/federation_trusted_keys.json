@@ -1,0 +1,8 @@
+{
+  "trusted_keys": [
+    {
+      "key_id": "federation-root-1",
+      "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=\n-----END PUBLIC KEY-----"
+    }
+  ]
+}

@@ -25,12 +25,12 @@
     "signature": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["algorithm", "key_id", "public_key", "value"],
+      "required": ["algorithm", "key_id", "signature"],
       "properties": {
         "algorithm": {"type": "string", "const": "ed25519"},
         "key_id": {"type": "string", "minLength": 1},
         "public_key": {"type": "string", "minLength": 1},
-        "value": {"type": "string", "minLength": 1}
+        "signature": {"type": "string", "minLength": 1}
       }
     }
   }

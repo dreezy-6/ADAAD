@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 from runtime import ROOT_DIR
 from runtime.governance.deterministic_filesystem import read_file_deterministic
+from runtime.governance.federation.key_registry import get_trusted_public_key
 
 _TRANSPORT_SCHEMA = "federation_transport_contract.v1.json"
 _CANONICAL_MESSAGE_SCHEMAS = {
@@ -161,35 +162,47 @@ def verify_message_digest(message: dict[str, Any]) -> None:
         raise FederationTransportContractError("$.digest:mismatch")
 
 
-def verify_message_signature(message: dict[str, Any]) -> None:
+def _verify_signature_with_public_key(*, message_payload: bytes, signature_bytes: bytes, public_key_pem: str) -> None:
     try:
         from cryptography.exceptions import InvalidSignature
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        from cryptography.hazmat.primitives.serialization import load_pem_public_key
     except ModuleNotFoundError as exc:
         raise FederationTransportContractError("$.signature:verification_backend_missing") from exc
 
+    try:
+        verifier = load_pem_public_key(public_key_pem.encode("utf-8"))
+        verifier.verify(signature_bytes, message_payload)
+    except (TypeError, ValueError, InvalidSignature) as exc:
+        raise FederationTransportContractError("$.signature:invalid") from exc
+
+
+def verify_message_signature(message: dict[str, Any]) -> None:
     signature = message.get("signature")
     if not isinstance(signature, dict):
         raise FederationTransportContractError("$.signature:expected_object")
+
     if signature.get("algorithm") != "ed25519":
         raise FederationTransportContractError("$.signature.algorithm:unsupported")
 
-    public_key_b64 = signature.get("public_key")
-    signature_b64 = signature.get("value")
-    if not isinstance(public_key_b64, str) or not isinstance(signature_b64, str):
-        raise FederationTransportContractError("$.signature:missing_material")
+    key_id = signature.get("key_id")
+    if not isinstance(key_id, str) or not key_id.strip():
+        raise FederationTransportContractError("$.signature.key_id:missing")
+
+    signature_b64 = signature.get("signature")
+    if not isinstance(signature_b64, str) or not signature_b64.strip():
+        raise FederationTransportContractError("$.signature.signature:missing")
 
     try:
-        public_key_raw = base64.b64decode(public_key_b64, validate=True)
         signature_raw = base64.b64decode(signature_b64, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise FederationTransportContractError("$.signature:invalid_base64") from exc
 
-    try:
-        verifier = Ed25519PublicKey.from_public_bytes(public_key_raw)
-        verifier.verify(signature_raw, compute_message_digest(message).encode("utf-8"))
-    except (TypeError, ValueError, InvalidSignature) as exc:
-        raise FederationTransportContractError("$.signature:invalid") from exc
+    trusted_pem = get_trusted_public_key(key_id)
+    _verify_signature_with_public_key(
+        message_payload=compute_message_digest(message).encode("utf-8"),
+        signature_bytes=signature_raw,
+        public_key_pem=trusted_pem,
+    )
 
 
 def validate_canonical_federation_message(message: dict[str, Any]) -> dict[str, Any]:
