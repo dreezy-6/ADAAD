@@ -37,6 +37,8 @@ ROTATION_METADATA_PATH = KEYS_DIR / "rotation.json"
 DEFAULT_ROTATION_INTERVAL_SECONDS = 60 * 60 * 24 * 30
 
 _HMAC_SIGNATURE_PREFIX = "sha256:"
+_STRICT_ENVS = frozenset({"staging", "production", "prod"})
+_KNOWN_ENVS = frozenset({"dev", "test", "staging", "production", "prod"})
 _ARTIFACT_HMAC_CONFIG: Dict[str, Dict[str, str]] = {
     "replay_proof": {
         "specific_env_prefix": "ADAAD_REPLAY_PROOF_KEY_",
@@ -252,25 +254,60 @@ def verify_payload_signature(
         return False
 
 
+class GovernanceTokenError(ValueError):
+    """Raised when governance token/session validation is rejected."""
+
+
 def verify_session(token: str) -> bool:
-    """Validate a Cryovant session token.
+    """Legacy session verification path.
 
-    Deprecated: production session verification is not yet implemented. This
-    helper only supports explicit development token override via
-    ``CRYOVANT_DEV_TOKEN`` and returns ``False`` otherwise.
+    Deprecated: this method fails closed outside explicit dev-mode contexts.
+    Callers must migrate to :func:`verify_governance_token`.
     """
-    import warnings
 
-    warnings.warn(
-        "verify_session is not production-ready and always returns False "
-        "unless CRYOVANT_DEV_TOKEN is set. Do not use for access control.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    dev_token = os.environ.get("CRYOVANT_DEV_TOKEN", "").strip()
-    if dev_token and token == dev_token:
-        return True
-    return False
+    env = (os.getenv("ADAAD_ENV") or "").strip().lower()
+
+    if env not in _KNOWN_ENVS:
+        raise GovernanceTokenError("verify_session_invalid_environment")
+
+    if env in _STRICT_ENVS:
+        raise GovernanceTokenError("verify_session_legacy_disabled_strict_env")
+
+    if env == "dev" and dev_mode():
+        metrics.log(
+            event_type="verify_session_legacy_path_used",
+            payload={"env": env},
+            level="WARNING",
+            element_id=ELEMENT_ID,
+        )
+        _assert_dev_token_not_expired(token)
+        return _accept_dev_token(token)
+
+    raise GovernanceTokenError("verify_session_legacy_rejected_non_dev_context")
+
+
+def _assert_dev_token_not_expired(token: str) -> None:
+    """Ensure optional dev-token expiry has not elapsed."""
+
+    _ = token
+    expires_at_raw = (os.getenv("CRYOVANT_DEV_TOKEN_EXPIRES_AT") or "").strip()
+    if not expires_at_raw:
+        return
+    try:
+        expires_at = int(expires_at_raw)
+    except ValueError as exc:
+        raise GovernanceTokenError("verify_session_invalid_dev_token_expiry") from exc
+    if expires_at <= int(time.time()):
+        raise GovernanceTokenError("verify_session_dev_token_expired")
+
+
+def _accept_dev_token(token: str) -> bool:
+    """Accept only the configured legacy development token."""
+
+    dev_token = (os.getenv("CRYOVANT_DEV_TOKEN") or "").strip()
+    if not dev_token or token != dev_token:
+        raise GovernanceTokenError("verify_session_invalid_dev_token")
+    return True
 
 
 
