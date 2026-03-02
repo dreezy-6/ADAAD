@@ -2,6 +2,8 @@
 
 Use this checklist before approving any governed release state transition.
 
+Canonical operator preflight checklist: [`docs/release/release_checklist.md`](../release/release_checklist.md).
+
 - [ ] Deterministic replay confirmed
 - [ ] CI governance gates passed
 - [ ] Mutation lineage attached

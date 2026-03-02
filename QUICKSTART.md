@@ -347,7 +347,8 @@ python -m http.server 8081 --directory ui/enhanced
 
 - [Walk through the single-agent loop example](examples/single-agent-loop/README.md)
 - [Review security and key handling guidance](docs/SECURITY.md)
-- [Use the release checklist for governed delivery](docs/release/release_checklist.md)
+- [Use the canonical operator preflight release checklist](docs/release/release_checklist.md)
+- [Use the release audit checklist for evidence verification](docs/releases/RELEASE_AUDIT_CHECKLIST.md)
 
 ## Start here next
 
