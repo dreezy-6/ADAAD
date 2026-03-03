@@ -31,6 +31,13 @@ jobs:
               core.setFailed('required_status_checks missing');
               return;
             }
+            const hasSecretScan = checks.contexts.some((ctx) =>
+              String(ctx).toLowerCase().includes('secret-scan')
+            );
+            if (!hasSecretScan) {
+              core.setFailed('required_status_checks must include the secret-scan workflow check');
+              return;
+            }
             if (!protection.data.enforce_admins || protection.data.enforce_admins.enabled !== true) {
               core.setFailed('enforce_admins is not true');
               return;

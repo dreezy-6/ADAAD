@@ -70,7 +70,7 @@ Security and release evidence is expected in the following locations:
 
 ---
 
-Related docs: [Repository README](../README.md) · [Documentation index](README.md)
+Related docs: [Repository README](../README.md) · [Documentation index](README.md) · [Environment variables](ENVIRONMENT_VARIABLES.md)
 
 
 ## Weak-Point Hardening Policy

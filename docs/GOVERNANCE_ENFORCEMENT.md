@@ -20,13 +20,14 @@ Required CI checks:
 - `pytest tests/ -q`
 - Determinism lint (`python tools/lint_determinism.py ...`) when the lint file is present.
 - Governance suite (`pytest tests/ -k governance -q`)
+- Secret scanning (`Secret Scan / secret-scan` from `.github/workflows/secret_scan.yml`) as a required branch-protection check.
 - Branch protection validation workflow.
 
 - `Branch Protection Check` workflow validates required branch settings via GitHub API.
 
 - Branch protection check requires `GITHUB_TOKEN` permission `administration: read` (granted by org admin).
 - Branch protection check enforces `required_pull_request_reviews.required_approving_review_count >= 2`.
-- Release evidence gate executes governance/sandbox tests with `PYTHONPATH=.` on Python 3.11.9 for parity with CI.
+- Governance strict release gate (`.github/workflows/governance_strict_release_gate.yml`) executes determinism lint, entropy discipline checks, governance strict-mode validation, strict replay verification, and constitution fingerprint stability on Python 3.11.9.
 
 
 ## Implementation status alignment (v0.70.0)
@@ -34,7 +35,7 @@ Required CI checks:
 - CI enforces full suite, governance suite, and required determinism lint checks.
 - Determinism lint required-scope enforcement includes federation transport/coordination/protocol/manifest modules and fails closed when any required governance file is missing.
 - Branch protection verification checks `required_status_checks`, `enforce_admins`, and a minimum of 2 required approvals.
-- Release evidence gate runs replay-proof verification and governance/sandbox suites with `PYTHONPATH=.` on Python 3.11.9.
+- Governance strict release gate runs fail-closed release protection via the terminal `release-gate` job, which blocks when any required upstream governance check fails, is cancelled, or is skipped.
 - Lineage continuity helper is wired conservatively: enforced when lineage_v2 chain resolves for the request agent; genesis/journal invariants remain authoritative fallback.
 
 
@@ -53,11 +54,11 @@ The repository no longer fits a "No CI" classification. Active workflows cover c
 | `.github/workflows/redteam_nightly.yml` | Nightly cron, manual dispatch | Deterministic red-team corpus run |
 | `.github/workflows/determinism_lint.yml` | `pull_request` (critical paths) | Determinism lint lane |
 | `.github/workflows/entropy_health.yml` | Daily cron, manual dispatch | Entropy health monitoring |
+| `.github/workflows/secret_scan.yml` | `push`/`pull_request` on `main` | Secret scanning over repository contents and commit history |
 
 ### Remaining automation gaps
 
-- No dedicated secret-scanning workflow lane is present under `.github/workflows/`.
-- `.github/dependabot.yml` is not present, so automated dependency update PRs are not configured.
+- `.github/dependabot.yml` is configured for root Python dependencies, archive backend dependencies, and GitHub Actions; maintain grouped patch/minor update posture and review discipline.
 
 ### Audit freshness
 

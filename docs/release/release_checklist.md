@@ -18,13 +18,24 @@ Use this checklist for any release candidate, with strict enforcement for govern
 | Release notes | `docs/releases/<version>.md` | Canonical summary of scope, changes, and operator impact. |
 | Claims/evidence matrix | `docs/comms/claims_evidence_matrix.md` | Tracks objective evidence for externally stated claims. |
 | Evidence validator | `scripts/validate_release_evidence.py` | Enforces evidence completeness checks in CI and pre-release review. |
-| Release evidence gate workflow | `.github/workflows/release_evidence_gate.yml` | Hard gate for governance/public-readiness tagging controls. |
+| Strict governance release gate workflow | `.github/workflows/governance_strict_release_gate.yml` | Hard gate for governance/public-readiness tagging controls and release block enforcement. |
 
 ## Build and quality gates
 
 - [ ] CI required checks are green for the release commit.
 - [ ] Determinism and governance test suites passed on the release commit.
 - [ ] CodeQL workflow is green for the release commit/PR.
+
+## Dependabot PR triage workflow
+
+- [ ] Confirm Dependabot PR scope matches one configured ecosystem (`/` for `requirements.server.txt`, `/archives/backend` for archive mirror dependencies, or GitHub Actions).
+- [ ] Verify CI is green and dependency diffs are limited to expected files for the ecosystem.
+- [ ] For security updates, prioritize merge after checks pass.
+- [ ] For patch/minor grouped updates, review upstream changelogs for regression or policy-impact risk.
+- [ ] For any update that impacts auth, cryptography, policy, or sandbox-critical paths, request maintainer escalation before merge.
+- [ ] Preserve dependency tracking labels (`dependencies`, `security`) and link the PR to release notes/evidence updates when applicable.
+
+Reference: `docs/DEPENDABOT_REVIEW_POLICY.md`.
 
 ## Evidence completeness gate (announcement blocker)
 
@@ -44,7 +55,9 @@ Use this checklist for any release candidate, with strict enforcement for govern
 
 ## Tagging controls for governance/public-readiness releases
 
-- [ ] For milestone tags (for example `vX.Y.Z-governance-*` or `vX.Y.Z-public-readiness-*`), confirm `.github/workflows/release_evidence_gate.yml` passed.
+- [ ] For milestone tags (for example `vX.Y.Z-governance-*` or `vX.Y.Z-public-readiness-*`), confirm `.github/workflows/governance_strict_release_gate.yml` passed (including terminal `release-gate`).
+- [ ] For `v1.1-GA` tagging, complete and record a mandatory verification that `GateCertifier.passed` requires `token_ok` in `runtime/governance/gate_certifier.py` and no production caller depends on deprecated `verify_session(...)` in `security/cryovant.py`.
+- [ ] Attach CI green status evidence (run URL or artifact) for the exact release commit before creating the `v1.1-GA` tag.
 - [ ] Only create/publish the tag after evidence gate checks pass.
 
 ## Go/No-Go criteria
