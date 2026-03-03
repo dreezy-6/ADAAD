@@ -51,3 +51,6 @@ sudo systemctl enable --now adaad-forensic-retention.timer
 ```
 
 The service invokes `ops/systemd/run_forensic_retention.sh`, which resolves `ADAAD_ROOT` (default: repo root when run directly, `/opt/adaad` when run via the service), passes an explicit epoch timestamp to the deterministic retention script, and appends disposition logs.
+
+
+See also: [Environment variable catalog](../ENVIRONMENT_VARIABLES.md) for `ADAAD_ROOT` and related operational controls.

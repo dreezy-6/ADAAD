@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # Primary runtime dependency set (requirements.server.txt at repository root)
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -23,6 +24,7 @@ updates:
         update-types:
           - "version-update:semver-major"
 
+  # Archive mirror dependency set (archives/backend/requirements.txt)
   - package-ecosystem: "pip"
     directory: "/archives/backend"
     schedule:

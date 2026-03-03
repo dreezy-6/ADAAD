@@ -136,6 +136,8 @@ export ADAAD_DISABLE_MUTABLE_FS=1
 export ADAAD_DISABLE_NETWORK=1
 ```
 
+Need the full `ADAAD_*` environment reference (defaults, accepted formats, and scope by subsystem)? See [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVIRONMENT_VARIABLES.md).
+
 ## 4) Initialize ADAAD workspace
 
 ```bash

@@ -55,6 +55,15 @@ Every run emits a `CI gating summary` in the workflow summary page with:
 This provides audit-ready traceability for CI escalation decisions.
 
 
+## Secret scanning gate (required)
+
+A dedicated workflow, `.github/workflows/secret_scan.yml`, runs on `pull_request` and `push` to `main` and is configured to fail on findings. It scans both:
+
+- repository contents (`gitleaks dir --source .`)
+- commit history (`gitleaks git`), including PR diff ranges via `base.sha..head.sha` when available
+
+`Secret Scan / secret-scan` must be configured as a **required status check** in branch protection for `main`. This prevents secret-scan failures (or removal from required checks) from being bypassed silently.
+
 ## Governance-impact override guidance
 
 CI workflow edits that change **gate logic** (for example, conditions controlling strict replay, evidence suites, promotion suites, or release evidence checks) must be treated as governance-impact changes even when file-path tiering alone would classify them below Tier-0.
