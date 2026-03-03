@@ -16,6 +16,7 @@
 
 ### Added
 - MCP schemas for proposal request/response and mutation analysis response under `schemas/mcp/`.
+- Added ADAAD-9 foundation pieces: deterministic `MutationLintingBridge` for editor preflight annotations and authenticated read-only evidence endpoint `GET /evidence/{bundle_id}` for Aponi evidence viewers.
 - MCP test coverage for tools parity, proposal validation, mutation analysis, rejection explanation, candidate ranking, and server route/auth contracts.
 
 ### Fixed

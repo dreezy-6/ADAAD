@@ -173,6 +173,38 @@ def test_bundle_response_schema(monkeypatch, tmp_path) -> None:
     assert "signature" not in payload["data"]["bundle"]["export_metadata"]["signer"]
 
 
+def test_evidence_endpoint_is_auth_gated_and_schema_aligned(monkeypatch, tmp_path) -> None:
+    forensics = tmp_path / "forensics"
+    forensics.mkdir()
+    bundle = {
+        "bundle_id": "bundle-789",
+        "export_metadata": {"signer": {"key_id": "k", "signature": "sig"}},
+    }
+    (forensics / "bundle-789.json").write_text(json.dumps(bundle), encoding="utf-8")
+
+    class _FakeBuilder:
+        def __init__(self, export_dir):
+            self.export_dir = export_dir
+
+        def validate_bundle(self, loaded_bundle):
+            assert loaded_bundle["bundle_id"] == "bundle-789"
+            return []
+
+    monkeypatch.setattr(server, "FORENSIC_EXPORT_DIR", forensics)
+    monkeypatch.setattr(server, "EvidenceBundleBuilder", _FakeBuilder)
+    monkeypatch.setenv("ADAAD_AUDIT_TOKENS", json.dumps({"audit-token": ["audit:read"]}))
+
+    with TestClient(server.app) as client:
+        unauthorized = client.get("/evidence/bundle-789")
+        assert unauthorized.status_code == 401
+        authorized = client.get("/evidence/bundle-789", headers=_auth_header())
+
+    assert authorized.status_code == 200
+    payload = authorized.json()
+    assert payload["authn"]["scope"] == "audit:read"
+    assert payload["data"]["bundle_id"] == "bundle-789"
+
+
 
 def test_review_quality_metrics_endpoint(monkeypatch) -> None:
     monkeypatch.setattr(

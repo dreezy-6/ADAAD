@@ -520,6 +520,19 @@ def api_audit_bundle(
     return _audit_envelope(data=payload, auth_ctx=auth_ctx, redaction=redaction)
 
 
+@app.get("/evidence/{bundle_id}")
+def api_evidence_bundle(
+    bundle_id: str,
+    redaction: Literal["none", "sensitive", "strict"] = Query(default="sensitive"),
+    auth_ctx: dict[str, Any] = Depends(_authenticate_audit_request),
+) -> dict[str, Any]:
+    """Aponi evidence viewer endpoint.
+
+    This endpoint is intentionally read-only and authentication-gated.
+    """
+    return api_audit_bundle(bundle_id=bundle_id, redaction=redaction, auth_ctx=auth_ctx)
+
+
 MOCK_ENDPOINTS = ["status", "agents", "tree", "kpis", "changes", "suggestions"]
 
 for endpoint_name in MOCK_ENDPOINTS:

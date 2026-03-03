@@ -17,6 +17,7 @@ This page is the standard entry point for users and renders live data from read-
 - `/evolution/timeline`
 - `/replay/divergence`
 - `/replay/diff?epoch_id=...`
+- `/evidence/{bundle_id}` (bearer-auth gated evidence bundle envelope)
 
 ## Incremental Aponi V2 path
 
@@ -130,3 +131,5 @@ Aponi governance intelligence responses are validated against draft-2020-12 sche
 - Aponi URL is derived from runtime constants (`runtime/constants.py`).
 - Hardcoded dashboard/sync port defaults are not allowed.
 - Federation support in this UI layer remains baseline and is not presented as hardened multi-node transport.
+
+For ADAAD-9 editor preflight, lint previews should be generated through `runtime/mcp/linting_bridge.py` so annotations remain deterministic and aligned with governed MCP analysis semantics.
