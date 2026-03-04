@@ -103,3 +103,48 @@ Previous wording that described ADAAD as having "missing CI/CD" is no longer acc
 - **Assessment baseline commit SHA:** `0df3d3f7a3befe91faf6b327505a8f3e9ae31d49`
 - **Baseline commit date:** `2026-03-02T07:34:19-06:00`
 - **Workflow inventory source:** `.github/workflows/*.yml` at the baseline commit above.
+
+## 8. Dependency-safe merge sequence
+
+This section is the canonical workflow reference for selecting and staging the next PR when `ADAAD` is invoked without an explicit PR target.
+
+### Ordered PR list
+
+Process PRs in this exact order unless an explicit, documented governance exception is approved by lane ownership:
+
+1. `PR-CI-01` — Unify Python version pin
+2. `PR-CI-02` — SPDX header enforcement
+3. `PR-LINT-01` — Determinism lint: `adaad/orchestrator/`
+4. `PR-HARDEN-01` — Boot env validation + signing key assertion
+5. `PR-SECURITY-01` — Federation key pinning registry
+6. `PR-PERF-01` — Streaming lineage ledger
+7. `PR-OPS-01` — Snapshot atomicity + sequence ordering
+8. `PR-DOCS-01` — Federation key registry governance doc
+
+### Dependency rules
+
+- Never skip a PR in the ordered list above.
+- A PR is eligible only when all listed prerequisites are merged.
+- `PR-SECURITY-01` requires transport.py audit completion before implementation starts.
+- `PR-DOCS-01` requires `PR-SECURITY-01` merged.
+- Out-of-sequence changes on security or determinism surfaces are rejected unless lane-owner sign-off is explicitly recorded in the PR description.
+
+### Criteria for “next unmerged PR”
+
+Select the next PR using all criteria below:
+
+1. Start at the top of the ordered PR list and scan downward.
+2. Ignore PRs already merged.
+3. For the first unmerged PR encountered, verify each dependency is merged and any special prerequisite (for example transport audit completion) is satisfied.
+4. If all prerequisites are satisfied, that PR is the **next unmerged PR** and becomes the active target.
+5. If prerequisites are not satisfied, do not advance to lower PRs; treat as blocked.
+
+### Handling blocked dependencies (`[ADAAD WAITING]`)
+
+When the first unmerged PR has unmet prerequisites:
+
+- Emit status prefix exactly as: `[ADAAD WAITING]`
+- Report the blocked PR ID/title and enumerate each unmet dependency.
+- Stop progression immediately (no code writes, no PR staging, no next-PR advancement).
+- Persist block context in `.adaad_agent_state.json` (`blocked_reason`, `blocked_at_gate`, `blocked_at_tier` as applicable).
+- Resume only after operator remediation confirms all prerequisite dependencies are merged/satisfied.

@@ -8,6 +8,12 @@ import re
 from pathlib import Path
 
 MATRIX_PATH = Path("docs/comms/claims_evidence_matrix.md")
+GOVERNANCE_DOCS_ROOT = Path("docs/governance")
+STALE_EVIDENCE_MATRIX_PATHS = (
+    "docs/RELEASE_EVIDENCE_MATRIX.md",
+    "../RELEASE_EVIDENCE_MATRIX.md",
+    "RELEASE_EVIDENCE_MATRIX.md",
+)
 REQUIRED_CLAIM_IDS = {
     "ci-status-requirements",
     "replay-proof-outputs",
@@ -72,6 +78,17 @@ def main() -> int:
     missing_claims = REQUIRED_CLAIM_IDS - rows.keys()
     if missing_claims:
         errors.append(f"missing required claims: {', '.join(sorted(missing_claims))}")
+
+    if GOVERNANCE_DOCS_ROOT.exists():
+        for governance_doc in sorted(GOVERNANCE_DOCS_ROOT.rglob("*.md")):
+            text = governance_doc.read_text(encoding="utf-8")
+            stale_matches = [path for path in STALE_EVIDENCE_MATRIX_PATHS if path in text]
+            if stale_matches:
+                stale_csv = ", ".join(sorted(stale_matches))
+                errors.append(
+                    f"{governance_doc.as_posix()}: stale evidence matrix path reference(s): {stale_csv}; "
+                    f"use {MATRIX_PATH.as_posix()}"
+                )
 
     repo_root = Path.cwd().resolve()
     matrix_dir = MATRIX_PATH.parent.resolve()
