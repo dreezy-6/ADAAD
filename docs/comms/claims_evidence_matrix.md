@@ -17,6 +17,7 @@ This matrix maps major external/public claims to objective, versioned repository
 | `federation-precedence-local-runtime` | "Federation coordination and precedence resolution are policy-gated in local runtime flows." | [Federation coordination runtime](../../runtime/governance/federation/coordination.py); [federation coordination tests](../../tests/governance/test_federation_coordination.py) | Complete |
 | `cryovant-agent-cert-hmac` | "Agent certificate verification is payload-bound (HMAC/signature) with audited migration fallback." | [Cryovant certificate verifier](../../security/cryovant.py); [Cryovant signature tests](../../tests/test_cryovant_dev_signatures.py) | Complete |
 | `codex-governed-build-alignment` | "Codex governed-build behavior is discoverable, gate-tiered, and aligned with ADAAD v1.1 governance docs." | [Agent contract](../../AGENTS.md); [Codex setup runbook](../governance/CODEX_SETUP.md); [CI tier classifier](../governance/ci-gating.md) | Complete |
+| `architecture-snapshot-build-hygiene` | "Architecture snapshot metadata remains structurally valid and report-version aligned in the build lane before implementation edits proceed." | [Architecture snapshot validator](../../scripts/validate_architecture_snapshot.py); [Implementation alignment snapshot target](../README_IMPLEMENTATION_ALIGNMENT.md); [Codex setup remediation runbook](../governance/CODEX_SETUP.md) | Complete |
 
 ## Completion standard
 

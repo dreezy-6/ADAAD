@@ -43,7 +43,7 @@ Reference: `docs/DEPENDABOT_REVIEW_POLICY.md`.
 - [ ] All required claim rows are marked `Complete` with objective evidence links.
 - [ ] `python scripts/validate_release_evidence.py --require-complete` passes.
 - [ ] `python scripts/validate_release_hardening_claims.py` passes (release notes do not over-claim unavailable hardened sandbox modes).
-- [ ] `python scripts/validate_architecture_snapshot.py` passes (architecture deep-dive metadata matches current branch/tag/short SHA).
+- [ ] `python scripts/validate_architecture_snapshot.py` passes (architecture deep-dive metadata block is structurally valid and report version aligned).
 
 > **Hard block:** Do not publish public release notes, governance milestone updates, roadmap posts, or social announcements until every evidence entry above is complete and validated.
 

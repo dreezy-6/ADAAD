@@ -54,6 +54,28 @@ Run this checklist whenever `AGENTS.md` workflow semantics change.
 - [ ] Required scripts/commands are documented with deterministic invocation examples.
 - [ ] Canonical-path guidance remains consistent with `docs/ARCHITECTURE_CONTRACT.md`.
 
+## Architecture snapshot drift remediation (builder workflow)
+
+If Tier 0 preflight fails at `python scripts/validate_architecture_snapshot.py`
+with `architecture snapshot metadata drift detected`, treat it as a **build-state
+alignment issue** (not product behavior drift).
+
+Required remediation sequence:
+
+1. Refresh metadata in-place:
+
+   ```bash
+   python scripts/validate_architecture_snapshot.py --write
+   ```
+
+2. Stage the regenerated `docs/README_IMPLEMENTATION_ALIGNMENT.md` change in the
+   same commit window **only when the script rewrites the file**.
+3. Re-run Tier 0 preflight to confirm the repository is clean before any
+   implementation file is touched.
+
+Prevent recurrence by keeping the metadata block structure intact and re-running
+`--write` only when report-version or metadata schema expectations change.
+
 ## Operator note
 
 Changes to trigger contracts, gate order, workflow semantics, or tier taxonomy in
