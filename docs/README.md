@@ -22,6 +22,7 @@ Welcome to the central navigation page for ADAAD docs.
 | 🧠 Understand architecture boundaries | [Architecture Contract](ARCHITECTURE_CONTRACT.md) |
 | 🛡️ Validate governance and security posture | [Security](SECURITY.md) + [Constitution](CONSTITUTION.md) |
 | 📦 Ship with release discipline | [Release checklist](release/release_checklist.md) |
+| 🧱 Review build strategy | [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) |
 
 ## 🧭 Core references
 
@@ -31,6 +32,10 @@ Welcome to the central navigation page for ADAAD docs.
 - [Threat model](THREAT_MODEL.md)
 - [Release evidence matrix](RELEASE_EVIDENCE_MATRIX.md)
 - [Diagram ownership](DIAGRAM_OWNERSHIP.md)
+- [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md)
+- [GA closure tracker](governance/ADAAD_7_GA_CLOSURE_TRACKER.md)
+- [Lane ownership register](governance/LANE_OWNERSHIP.md)
+- [Codex setup runbook](governance/CODEX_SETUP.md)
 
 ### Governance
 
@@ -75,6 +80,13 @@ python scripts/validate_docs_integrity.py --format json
 - [Constitution and governance boundaries](CONSTITUTION.md)
 - [Governance policy artifact](../governance/governance_policy_v1.json)
 - [Release evidence matrix](RELEASE_EVIDENCE_MATRIX.md)
+
+### Lane owner / CI maintainer
+- [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) — lane model, gate order, merge sequencing
+- [Lane ownership register](governance/LANE_OWNERSHIP.md) — which lanes you own
+- [Codex setup runbook](governance/CODEX_SETUP.md) — operator installation and discovery path
+- [GA closure tracker](governance/ADAAD_7_GA_CLOSURE_TRACKER.md) — pending GA blockers
+- Outcome: know which gates you own, what a gate failure requires, and the dependency-safe merge order for concurrent hardening PRs.
 
 ## 🔎 Deep references
 

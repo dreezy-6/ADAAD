@@ -34,3 +34,11 @@ Diagrams are normative representations of governance and architecture boundaries
 ## Version tracking
 
 When a diagram semantic meaning changes, append a short note to the owning PR and update this file with a date stamp in the PR description (for audit traceability).
+
+
+## Build-agent state ownership
+
+| Artifact | Owner | Notes |
+| --- | --- | --- |
+| `.adaad_agent_state.json` | build-agent | Gitignored continuity state for governed `ADAAD` invocation sequencing. |
+

@@ -49,7 +49,7 @@ Reference: `docs/DEPENDABOT_REVIEW_POLICY.md`.
 
 ## Versioned documentation and release notes
 
-- [ ] Release notes file exists at `docs/releases/<version>.md` (for this milestone: `docs/releases/1.0.0.md`) and reflects scope.
+- [ ] Release notes file exists at `docs/releases/<version>.md` and reflects scope (`VERSION` currently `1.0.0`, baseline notes: `docs/releases/1.0.0.md`).
 - [ ] Governance/spec deltas are reflected in versioned docs.
 - [ ] Any externally referenced docs/spec links are immutable/versioned.
 
@@ -57,6 +57,10 @@ Reference: `docs/DEPENDABOT_REVIEW_POLICY.md`.
 
 - [ ] For milestone tags (for example `vX.Y.Z-governance-*` or `vX.Y.Z-public-readiness-*`), confirm `.github/workflows/governance_strict_release_gate.yml` passed (including terminal `release-gate`).
 - [ ] For `v1.1-GA` tagging, complete and record a mandatory verification that `GateCertifier.passed` requires `token_ok` in `runtime/governance/gate_certifier.py` and no production caller depends on deprecated `verify_session(...)` in `security/cryovant.py`.
+- [ ] Patent filing readiness artifact reviewed by IP counsel before creating `v1.1-GA` tag.
+- [ ] `docs/governance/LANE_OWNERSHIP.md` exists and all lanes have identified owners.
+- [ ] All pending claims-evidence rows from `ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md §Evidence Lane Output Contract` are `Complete` in `docs/comms/claims_evidence_matrix.md`.
+- [ ] Federation HMAC key rotation runbook exists for `ADAAD_FEDERATION_MANIFEST_HMAC_KEY`, validated by security owner, before creating `v1.1-GA` tag.
 - [ ] Attach CI green status evidence (run URL or artifact) for the exact release commit before creating the `v1.1-GA` tag.
 - [ ] Only create/publish the tag after evidence gate checks pass.
 
@@ -68,9 +72,11 @@ Proceed with release only when all conditions below are true:
 - [ ] Required artifact paths exist and point to release-accurate content.
 - [ ] Evidence validator and CI gates pass on the exact release commit/tag target.
 - [ ] Rollback and communication owners are identified for release day.
+- [ ] No 🔴 critical or 🟠 high audit findings remain open without accepted risk-acceptance record.
+- [ ] Dependency-safe merge sequence was followed for all security/determinism-surface PRs in this release window.
 
 If any criterion fails, the decision is **No-Go** until remediated.
 
 ---
 
-Related docs: [Repository README](../../README.md) · [Documentation index](../README.md) · [Release audit evidence verification checklist](../releases/RELEASE_AUDIT_CHECKLIST.md)
+Related docs: [Repository README](../../README.md) · [Documentation index](../README.md) · [Strategic build suggestions](../ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) · [GA closure tracker](../governance/ADAAD_7_GA_CLOSURE_TRACKER.md) · [Release audit evidence verification checklist](../releases/RELEASE_AUDIT_CHECKLIST.md)

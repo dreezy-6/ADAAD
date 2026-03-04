@@ -64,6 +64,7 @@ Discover candidate → Simulate safely → Replay-verify outcomes → Enforce co
 - ⚡ First run in minutes: [QUICKSTART.md](QUICKSTART.md)
 - 🧪 End-to-end sample: [examples/single-agent-loop/README.md](examples/single-agent-loop/README.md)
 - 📚 Canonical docs hub: [docs/README.md](docs/README.md)
+- 🧱 Strategic build guidance: [docs/ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md](docs/ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md)
 - 🛡️ Security + disclosure: [docs/SECURITY.md](docs/SECURITY.md)
 
 </details>
