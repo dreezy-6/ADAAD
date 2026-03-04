@@ -185,7 +185,7 @@ To close governance gaps before `v1.1-GA`, execution and release controls are no
 
 - `ADAAD_7_EXECUTION_PLAN.md` (ordered 4-phase operating plan)
 - `docs/governance/ADAAD_7_GA_CLOSURE_TRACKER.md` (control-by-control acceptance tracker)
-- `docs/RELEASE_EVIDENCE_MATRIX.md` (strict-gate evidence mapping including key-rotation closure)
+- `docs/comms/claims_evidence_matrix.md` (strict-gate evidence mapping including key-rotation closure)
 
 This preserves separation between:
 

@@ -3,7 +3,7 @@
 This tracker converts the ADAAD-7 execution plan into auditable release controls. It is designed for governance sign-off and strict replay verification.
 
 Primary execution plan: [`ADAAD_7_EXECUTION_PLAN.md`](../../ADAAD_7_EXECUTION_PLAN.md)
-Release evidence matrix: [`docs/RELEASE_EVIDENCE_MATRIX.md`](../RELEASE_EVIDENCE_MATRIX.md)
+Release evidence matrix: [`docs/comms/claims_evidence_matrix.md`](../comms/claims_evidence_matrix.md)
 
 ## Phase 1 Control Gate (must be 100% complete)
 

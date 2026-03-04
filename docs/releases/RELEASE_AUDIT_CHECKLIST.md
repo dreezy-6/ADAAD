@@ -30,7 +30,7 @@ Canonical operator preflight checklist: [`docs/release/release_checklist.md`](..
 ## Evidence pointers
 
 - Replay and determinism: [`docs/DETERMINISM.md`](../DETERMINISM.md)
-- Release evidence matrix: [`docs/RELEASE_EVIDENCE_MATRIX.md`](../RELEASE_EVIDENCE_MATRIX.md)
+- Release evidence matrix: [`docs/comms/claims_evidence_matrix.md`](../comms/claims_evidence_matrix.md)
 - v1.1-GA closure tracker: [`docs/governance/ADAAD_7_GA_CLOSURE_TRACKER.md`](../governance/ADAAD_7_GA_CLOSURE_TRACKER.md)
 - Mutation evidence schema: [`schemas/evidence_bundle.v1.json`](../../schemas/evidence_bundle.v1.json)
 - Constitution contract: [`docs/CONSTITUTION.md`](../CONSTITUTION.md)

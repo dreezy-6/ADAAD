@@ -36,6 +36,7 @@ entry point and must document:
 - [ ] `AGENTS.md` is present at repository root and matches v1.1.0 contract semantics.
 - [ ] Codex has read access to the full ADAAD repository tree.
 - [ ] `.adaad_agent_state.json` is ignored via `.gitignore`.
+- [ ] `python scripts/validate_adaad_agent_state.py` passes before session actions.
 - [ ] `.adaad_agent_state.json` is registered in `docs/DIAGRAM_OWNERSHIP.md` (owner: build-agent).
 - [ ] `CONTRIBUTING.md` references `AGENTS.md` for governed build contributions.
 - [ ] `.adaad_operator_contacts.json` (if used) is local-only and never committed.
@@ -52,6 +53,7 @@ Run this checklist whenever `AGENTS.md` workflow semantics change.
 - [ ] Tier 0/1/2/3 gate definitions remain consistent with `AGENTS.md`.
 - [ ] `docs/comms/claims_evidence_matrix.md` includes or updates a claim row for agent/governance-operability assertions.
 - [ ] Required scripts/commands are documented with deterministic invocation examples.
+- [ ] Session-start guard `python scripts/validate_adaad_agent_state.py` is included in local preflight.
 - [ ] Canonical-path guidance remains consistent with `docs/ARCHITECTURE_CONTRACT.md`.
 
 ## Architecture snapshot drift remediation (builder workflow)

@@ -144,3 +144,34 @@ def test_require_complete_allows_external_links_with_opt_in(tmp_path: Path) -> N
     result = _run_validator(repo, "--require-complete", "--allow-external-links")
 
     assert result.returncode == 0
+
+
+
+def test_governance_docs_reject_stale_evidence_matrix_links(tmp_path: Path) -> None:
+    repo = tmp_path
+    (repo / "scripts").mkdir(parents=True, exist_ok=True)
+    src = Path(__file__).resolve().parents[1] / "scripts" / "validate_release_evidence.py"
+    (repo / "scripts" / "validate_release_evidence.py").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    _seed_links(repo)
+
+    stale_doc = repo / "docs" / "governance" / "ADAAD_7_GA_CLOSURE_TRACKER.md"
+    stale_doc.write_text("Release evidence matrix: ../RELEASE_EVIDENCE_MATRIX.md\n", encoding="utf-8")
+
+    _write_matrix(
+        repo,
+        """
+| Claim ID | External claim | Objective evidence artifacts (must resolve in-repo) | Status |
+| --- | --- | --- | --- |
+| `ci-status-requirements` | x | [ci](../../.github/workflows/ci.yml) | Complete |
+| `replay-proof-outputs` | x | [det](../../tests/determinism) | Complete |
+| `forensic-bundle-examples` | x | [for](../governance/FORENSIC_BUNDLE_LIFECYCLE.md) | Complete |
+| `codeql-status` | x | [codeql](../../.github/workflows/codeql.yml) | Complete |
+| `versioned-docs-spec-links` | x | [spec](../governance/schema_versioning_and_migration.md) | Complete |
+""".strip()
+        + "\n",
+    )
+
+    result = _run_validator(repo)
+
+    assert result.returncode == 1
+    assert "stale evidence matrix path reference" in result.stdout

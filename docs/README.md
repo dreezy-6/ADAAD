@@ -30,7 +30,7 @@ Welcome to the central navigation page for ADAAD docs.
 - [Security](SECURITY.md)
 - [Architecture Contract](ARCHITECTURE_CONTRACT.md)
 - [Threat model](THREAT_MODEL.md)
-- [Release evidence matrix](RELEASE_EVIDENCE_MATRIX.md)
+- [Release evidence matrix](comms/claims_evidence_matrix.md)
 - [Diagram ownership](DIAGRAM_OWNERSHIP.md)
 - [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md)
 - [GA closure tracker](governance/ADAAD_7_GA_CLOSURE_TRACKER.md)
@@ -79,7 +79,7 @@ python scripts/validate_docs_integrity.py --format json
 ### Governance/audit reviewer
 - [Constitution and governance boundaries](CONSTITUTION.md)
 - [Governance policy artifact](../governance/governance_policy_v1.json)
-- [Release evidence matrix](RELEASE_EVIDENCE_MATRIX.md)
+- [Release evidence matrix](comms/claims_evidence_matrix.md)
 
 ### Lane owner / CI maintainer
 - [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) — lane model, gate order, merge sequencing
@@ -94,7 +94,7 @@ python scripts/validate_docs_integrity.py --format json
 <summary><strong>Need deeper governance references?</strong></summary>
 
 - [Governance mutation lifecycle](governance/mutation_lifecycle.md)
-- [Release evidence matrix](RELEASE_EVIDENCE_MATRIX.md)
+- [Release evidence matrix](comms/claims_evidence_matrix.md)
 - [Diagram ownership contract](DIAGRAM_OWNERSHIP.md)
 
 </details>
