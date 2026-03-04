@@ -18,6 +18,11 @@ Use descriptive topic branches:
 - `feat/<short-description>`
 - `governance/<short-description>`
 
+## Governed build-agent contract
+
+Contributor-facing governed automation behavior is defined in [`AGENTS.md`](AGENTS.md).
+Review it before opening governance-impacting PRs so lane expectations, fail-closed behavior, and evidence requirements are applied consistently.
+
 ## Governance-impact labeling
 
 If your change touches governance-critical surfaces (policy, replay, ledger, cryovant, mutation authorization), include `governance-impact` in your PR labels and describe risk in the PR body.

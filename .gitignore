@@ -56,3 +56,7 @@ security/ledger/*.lock
 *.lock
 runtime/evolution/state/
 app/agents/
+
+# ADAAD governed build agent state
+.adaad_agent_state.json
+.adaad_operator_contacts.json
