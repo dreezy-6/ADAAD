@@ -238,7 +238,7 @@ def nexus_protocol() -> Dict[str, Any]:
 
 @app.get("/api/nexus/agents")
 def nexus_agents() -> Dict[str, Any]:
-    gate = _assert_gate_open()
+    _assert_gate_open()
     agents_dir = ROOT / "app" / "agents"
     agents: List[Dict[str, Any]] = []
     if agents_dir.exists():
