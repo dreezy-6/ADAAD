@@ -4,6 +4,7 @@
 
 ### ADAAD-10 — Live Market Signal Adapters (v1.4)
 
+- **PR-10-02 — MarketFitnessIntegrator + FitnessOrchestrator live wiring:** `runtime/market/market_fitness_integrator.py` — confidence-weighted composite from FeedRegistry injected into FitnessOrchestrator scoring context as `simulated_market_score`. Lineage digest + signal source propagated. Fail-closed: broken registry yields synthetic fallback. Journal event `market_fitness_signal_enriched.v1`. 12 tests in `tests/market/test_market_fitness_integrator.py` including end-to-end orchestrator integration.
 - **PR-10-01 — FeedRegistry + concrete adapters + schema:** `runtime/market/feed_registry.py` — deterministic adapter ordering, TTL caching, fail-closed stale guard, confidence-weighted composite score. `runtime/market/adapters/live_adapters.py` — `VolatilityIndexAdapter` (inverted market stress), `ResourcePriceAdapter` (normalised compute cost), `DemandSignalAdapter` (DAU/WAU/retention composite). `schemas/market_signal_reading.v1.json` — validated signal reading schema. 19 tests in `tests/market/test_feed_registry.py`.
 
 ### ADAAD-9 — Developer Experience (v1.3)
