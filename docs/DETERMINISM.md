@@ -70,3 +70,18 @@ Divergence is detected by contract-level hash and schema validation against the 
 - Determinism does not imply semantic perfection of a mutation.
 - Determinism does not replace required human review policies.
 - Determinism scope is limited to declared contract boundaries.
+
+## Determinism provider enforcement
+
+`runtime.governance.foundation.determinism.default_provider()` now enforces strict replay semantics:
+
+- `ADAAD_FORCE_DETERMINISTIC_PROVIDER=1` always selects `SeededDeterminismProvider`.
+- `ADAAD_REPLAY_MODE=strict` also selects `SeededDeterminismProvider`, but only when `ADAAD_DETERMINISTIC_SEED` is set.
+- Missing `ADAAD_DETERMINISTIC_SEED` in strict replay mode is a hard failure (`RuntimeError`) so replay does not silently degrade to live entropy.
+
+`runtime.evolution.agm_event.create_event_envelope()` enforces `require_replay_safe_provider(...)` before any ID/timestamp generation so strict replay cannot emit non-deterministic ledger evidence.
+
+Event envelope validation now requires:
+
+- `event_id` to match 32 lowercase hex chars (`^[0-9a-f]{32}$`).
+- `emitted_at` to match `YYYY-MM-DDTHH:MM:SSZ` and parse successfully.

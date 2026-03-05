@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
+import os
 import re
 from typing import Any
-from uuid import uuid4
+
+from runtime.governance.foundation.determinism import RuntimeDeterminismProvider, default_provider, require_replay_safe_provider
 
 
 _COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_EVENT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_EMITTED_AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 class AGMEventValidationError(ValueError):
@@ -73,13 +77,24 @@ class DeploymentGatingEvent:
 TypedLedgerEvent = ScoringEvent | DeploymentGatingEvent
 
 
-def create_event_envelope(event: TypedLedgerEvent) -> AGMEventEnvelope:
+def create_event_envelope(
+    event: TypedLedgerEvent,
+    *,
+    provider: RuntimeDeterminismProvider | None = None,
+) -> AGMEventEnvelope:
+    resolved_provider = provider or default_provider()
+    require_replay_safe_provider(
+        resolved_provider,
+        replay_mode=os.getenv("ADAAD_REPLAY_MODE", "off"),
+        recovery_tier=os.getenv("ADAAD_RECOVERY_TIER"),
+    )
+
     event_type = "scoring_event" if isinstance(event, ScoringEvent) else "deployment_gating_event"
     envelope = AGMEventEnvelope(
         schema_version="1.0",
-        event_id=str(uuid4()),
+        event_id=resolved_provider.next_id(label=f"agm-event:{event_type}", length=32),
         event_type=event_type,
-        emitted_at=datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        emitted_at=resolved_provider.iso_now(),
         payload=event.to_payload(),
         signature="",
         signing_key_id="",
@@ -94,10 +109,16 @@ def validate_event_envelope(envelope: AGMEventEnvelope, *, require_signature: bo
         raise AGMEventValidationError("invalid:schema_version")
     if not envelope.event_id.strip():
         raise AGMEventValidationError("missing:event_id")
+    if not _EVENT_ID_RE.fullmatch(envelope.event_id):
+        raise AGMEventValidationError("invalid:event_id_format")
     if envelope.event_type not in {"scoring_event", "deployment_gating_event"}:
         raise AGMEventValidationError("invalid:event_type")
-    if not envelope.emitted_at.endswith("Z"):
+    if not _EMITTED_AT_RE.fullmatch(envelope.emitted_at):
         raise AGMEventValidationError("invalid:emitted_at")
+    try:
+        datetime.strptime(envelope.emitted_at, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise AGMEventValidationError("invalid:emitted_at") from exc
     if not isinstance(envelope.payload, dict):
         raise AGMEventValidationError("invalid:payload")
     if require_signature:
