@@ -33,7 +33,7 @@
 > **Deterministic, policy-governed autonomous code evolution.**
 > ADAAD enforces constitutional mutation gates, deterministic replay verification, and fail-closed execution across every governed workflow.
 
-**Last reviewed:** 2026-03-05 · **Constitution:** v0.3.0 · **Milestone:** ADAAD-7 complete
+**Last reviewed:** 2026-03-05 · **Constitution:** v0.3.0 · **Milestones:** ADAAD-7 ✅ · ADAAD-8 ✅ · ADAAD-9 next
 
 > ℹ️ Visual conventions follow [docs/DOCS_VISUAL_STYLE_GUIDE.md](docs/DOCS_VISUAL_STYLE_GUIDE.md).
 
@@ -64,6 +64,8 @@ Every step is ledger-anchored. Every decision is deterministic. Every failure is
 | 🧾 **Ledger-anchored evidence** | Every governed step traces to durable, verifiable artifacts |
 | 🚦 **Release evidence gates** | Milestone tags require objective evidence before any release |
 | 👥 **Reviewer reputation engine** | Calibrates reviewer panel size by epoch-scoped reputation score |
+| 🧪 **Policy simulation mode** | Replay historical epochs under hypothetical constraints — zero live governance side effects |
+| 📦 **Governance profile export** | Deterministic simulation artifacts with schema-enforced `simulation: true` and SHA-256 digest |
 | 🔒 **Fail-closed boot hardening** | Boot rejects unknown `ADAAD_ENV`, dev-mode in strict envs, missing signing keys |
 | 🛡️ **Federation key pinning** | Messages accepted only from registered key IDs; caller-supplied substitution rejected |
 | 🧹 **Sandbox injection hardening** | Preflight blocks shell metacharacters, IFS bypass, `eval`/`exec`/`source`, null-byte injection |
@@ -120,6 +122,47 @@ Every step is ledger-anchored. Every decision is deterministic. Every failure is
 | Silent drift | Fail-closed enforcement |
 
 ADAAD treats mutation as a **governed, evidence-bound lifecycle** — not a blind rewrite.
+
+
+---
+
+## ADAAD-8 · Policy Simulation Mode
+
+> v1.2.0 · Merged 2026-03-05
+
+The policy simulation mode allows operators to express hypothetical governance constraints, replay them against historical epochs, and measure tradeoffs before any live policy is amended.
+
+**Foundational insight:** ADAAD already possesses everything simulation needs — an append-only ledger, a constitutional evaluation engine, and epoch-level fitness scores. The simulation layer is a governed evaluation skin over existing infrastructure, not a parallel execution engine.
+
+### Isolation invariant
+
+`SimulationPolicy.simulation = True` is checked at the `GovernanceGate` boundary before any state-affecting operation. No simulated constraint can reach a live governance surface. Zero ledger writes, zero constitution state transitions, zero mutation executor calls.
+
+### Simulation API
+
+| Endpoint | Description |
+|---|---|
+| `POST /simulation/run` | Run a DSL policy block against epoch range |
+| `GET /simulation/results/{run_id}` | Retrieve a completed simulation run |
+
+### DSL constraint types (10 core, v1.3-locked)
+
+| Constraint | Example |
+|---|---|
+| Approval threshold | `require_approvals(tier=PRODUCTION, count=3)` |
+| Risk ceiling | `max_risk_score(threshold=0.4)` |
+| Mutation rate ceiling | `max_mutations_per_epoch(count=10)` |
+| Complexity delta ceiling | `max_complexity_delta(delta=0.15)` |
+| Tier lockdown | `freeze_tier(tier=PRODUCTION)` |
+| Rule assertion | `require_rule(rule_id=lineage_continuity, severity=BLOCKING)` |
+| Coverage floor | `min_test_coverage(threshold=0.80)` |
+| Entropy cap | `max_entropy_per_epoch(ceiling=0.30)` |
+| Reviewer escalation | `escalate_reviewers_on_risk(threshold=0.6, count=2)` |
+| Lineage depth | `require_lineage_depth(min=3)` |
+
+### GovernanceProfile export
+
+Simulation runs export as self-contained `GovernanceProfile` artifacts. `simulation: true` is schema-enforced in every export. Determinism guarantee: identical ledger slice + identical `SimulationPolicy` + identical epoch-scoped scoring versions → identical `profile_digest`.
 
 ---
 
@@ -264,8 +307,8 @@ See [docs/releases/1.1.0.md](docs/releases/1.1.0.md) for full release notes.
 
 | Aspect | Status |
 |---|---|
-| Maturity | Stable · v1.1 |
-| Active milestone | ADAAD-8 (Policy Simulation Mode) |
+| Maturity | Stable · v1.2 |
+| Completed milestones | ADAAD-6 ✅ · ADAAD-7 ✅ · ADAAD-8 ✅ |
 | Constitution | v0.3.0 · 14 rules active |
 | Replay mode | Audit + strict governance-ready |
 | Mutation execution | Fail-closed, policy-gated |
