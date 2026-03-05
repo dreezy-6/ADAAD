@@ -126,8 +126,10 @@ Process PRs in this exact order unless an explicit, documented governance except
 - Never skip a PR in the ordered list above.
 - A PR is eligible only when all listed prerequisites are merged.
 - `PR-SECURITY-01` requires transport.py audit completion before implementation starts.
-- `PR-DOCS-01` requires `PR-SECURITY-01` merged.
+- `PR-DOCS-01` prerequisite: `PR-OPS-01` must be merged (strict serial dependency model).
+- Sequence is flexible here only for docs lane: **disabled** under current policy; `PR-DOCS-01` does not run in parallel and remains gated behind the serial sequence.
 - Out-of-sequence changes on security or determinism surfaces are rejected unless lane-owner sign-off is explicitly recorded in the PR description.
+- Agent MUST emit `[ADAAD WAITING]` unless `PR-OPS-01` is merged and CI-green on merge SHA.
 
 ### Criteria for “next unmerged PR”
 
