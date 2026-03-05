@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### CI / Governance
+- **PR-CI-01 — H-01 closure:** Unified Python version pin at `3.11.9` across all
+  `.github/workflows/*.yml` files. `scripts/check_workflow_python_version.py` enforces
+  the pin and is wired as a fail-closed CI guard. GA-1.1..GA-1.6 and GA-KR.1 controls
+  confirmed complete in `docs/governance/ADAAD_7_GA_CLOSURE_TRACKER.md`.
+
 ### Fixed
 - Mutation fitness simulation now uses a deterministic structural DNA clone with `deepcopy` fallback, bounded LRU stable-hash score caching, agent-scoped cache keys within a shared bounded LRU cache, tuple-marker hash hardening, and a fail-closed simulation budget guard (resolved once at orchestrator boot); simulation fails closed when required DNA lineage is missing.
 - Governance certifier now binds `token_ok` in pass/fail decisions and emits explicit `forbidden_token_detected` violations when token scan checks fail.
