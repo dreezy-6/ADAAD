@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### ADAAD-14 — Cross-Track Convergence (v1.8)
+
+- **PR-14-01 — FederatedSignalBroker: market × federation convergence:** `runtime/market/federated_signal_broker.py` — `FederatedSignalBroker` bridges `FeedRegistry` live composite readings into `GossipProtocol` broadcasts; `FederationMarketGossip` serialises `MarketSignalReading` ↔ `GossipEvent` (`market_signal_broadcast.v1`); `PeerReading` dataclass with freshness guard (60 s TTL, zero-confidence filter, stale-flag). `cluster_composite()` produces confidence-weighted aggregate across all alive nodes with graceful fallback to local reading on peer absence/failure. Authority invariant: broker never calls GovernanceGate. 24 tests in `tests/market/test_federated_signal_broker.py`.
+
 ### ADAAD-10 — Live Market Signal Adapters (v1.4)
 
 - **PR-10-02 — POST /market/signal webhook endpoint + integration tests:** `server.py` gains `POST /market/signal` bearer-auth-gated endpoint routing raw payloads through `LiveSignalRouter` → lineage-stamped `MarketSignalReading` → fitness advisory injection; journal event `market_signal_ingested.v1`. `tests/test_market_fitness_integrator.py`: 11 tests covering integrator bridging (live, synthetic fallback, lineage propagation, journal), `FitnessOrchestrator.inject_live_signal()` override (score override, no-override passthrough, clamping, bad epoch silent drop). ADAAD-10 Track A complete.
