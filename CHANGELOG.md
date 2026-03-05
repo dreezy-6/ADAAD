@@ -11,6 +11,7 @@
 
 ### CI / Governance
 
+- **PR-HARDEN-01 — C-01/H-02 closure:** Boot env validation and signing key assertion hardened in `app/main.py` and `security/cryovant.py`. `ADAAD_GOVERNANCE_SESSION_SIGNING_KEY` presence is asserted at orchestrator boot in strict environments (`staging`, `production`, `prod`) with fail-closed `CRITICAL` log emission. `BootPreflightService.validate_cryovant()` wires `security.cryovant.validate_environment()` as a typed `StatusEnvelope` gate. C-01 and H-02 findings closed.
 - **PR-LINT-01 — H-05 closure:** Determinism lint extended to `adaad/orchestrator/` (dispatcher, registry, bootstrap). `tools/lint_determinism.py` `TARGET_DIRS` and `ENTROPY_ENFORCED_PREFIXES` now include `adaad/orchestrator/`; `REQUIRED_GOVERNANCE_FILES` declares the four orchestrator modules. `determinism-lint` job in `.github/workflows/ci.yml` scans `adaad/orchestrator/` on every push/PR. `determinism_lint.yml` standalone workflow triggers on orchestrator path changes. H-05 finding closed.
 - **PR-CI-01 — H-01 closure:** Unified Python version pin at `3.11.9` across all
   `.github/workflows/*.yml` files. `scripts/check_workflow_python_version.py` enforces
