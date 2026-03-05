@@ -3,7 +3,7 @@
 ![Status: Stable](https://img.shields.io/badge/Status-Stable-2ea043)
 ![Milestone: ADAAD-8 Complete](https://img.shields.io/badge/Milestone-ADAAD--8_Complete-2ea043)
 ![Milestone: ADAAD-8 Complete](https://img.shields.io/badge/Milestone-ADAAD--8_Complete-2ea043)
-![Next: ADAAD-9](https://img.shields.io/badge/Next-ADAAD--9-0ea5e9)
+![Active: ADAAD-9](https://img.shields.io/badge/Active-ADAAD--9-0ea5e9)
 
 > Governance-grade milestone plan · `innovative-ai/adaad` · Authoritative baseline: `1.1.0 (Stable)`
 
@@ -36,7 +36,7 @@ ADAAD-8 · Policy Simulation Mode (v1.2)     ✅ COMPLETE — 2026-03-05
     │  Aponi simulation mode · exportable governance profiles
     │
     ▼
-ADAAD-9 · Developer Experience (v1.3)       ⬜ NEXT
+ADAAD-9 · Developer Experience (v1.3)       🔵 IN PROGRESS
             ↑ consumes ADAAD-8 simulation panel (Phase 5)
 
          Aponi-as-IDE
@@ -121,17 +121,17 @@ ADAAD-9 · Developer Experience (v1.3)       ⬜ NEXT
 
 ## ADAAD-9 · Developer Experience
 
-**Version:** 1.3.0 · **Status:** ⬜ Next · **Prerequisite:** ADAAD-8 merged ✅
+**Version:** 1.3.0 · **Status:** 🔵 In Progress · **Prerequisite:** ADAAD-8 merged ✅
 
 ### Scope
 
-| PR | Title | CI tier | Deps |
-|---|---|---|---|
-| PR-14 | Mutation Proposal Editor (Aponi Phase 1) | critical | ADAAD-7 ✅ |
-| PR-15 | Inline Constitutional Linter | critical | PR-14 |
-| PR-16 | Evidence Viewer + Endpoint | standard | PR-15 |
-| PR-17 | Replay Inspector UI | standard | PR-16 |
-| PR-18 | Simulation Panel Integration | standard | PR-12 |
+| PR | Title | CI tier | Deps | Status |
+|---|---|---|---|---|
+| PR-14 | Mutation Proposal Editor (Aponi Phase 1) | critical | ADAAD-7 ✅ | ✅ Complete |
+| PR-15 | Inline Constitutional Linter | critical | PR-14 | ✅ Complete |
+| PR-16 | Evidence Viewer + Endpoint | standard | PR-15 | ✅ Complete — `ui/aponi/evidence_viewer.js` · 17 tests |
+| PR-17 | Replay Inspector UI | standard | PR-16 | 🔵 In Progress |
+| PR-18 | Simulation Panel Integration | standard | PR-12 | ⬜ Next |
 
 ### Authority invariant
 
