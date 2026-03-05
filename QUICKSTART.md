@@ -1,66 +1,36 @@
-# ADAAD Quick Start (5 Minutes) ![Stable](https://img.shields.io/badge/Status-Stable-2ea043)
+# ADAAD Quick Start
 
+![Status: Stable](https://img.shields.io/badge/Status-Stable-2ea043)
 ![Governance: Fail-Closed](https://img.shields.io/badge/Governance-Fail--Closed-critical)
 ![Replay: Deterministic](https://img.shields.io/badge/Replay-Deterministic-0ea5e9)
 
-> Deterministic, governance-first path for a first local ADAAD run.
+> Fastest path to a working, governed ADAAD run — validated, reproducible, fail-closed.
 
 **Last reviewed:** 2026-03-05
 
-> 🎥 Prefer video? A walkthrough is not published yet; this guide is the canonical setup path today.
-
-This guide gives you the fastest path to a working ADAAD run, plus a clean reset path if state drifts.
-
-> ADAAD quickstart bootstraps deterministic replay-safe setup, validates governance readiness,
-> and gives you a first dry-run mutation result without modifying repository state.
-> Follow this sequence for local operator onboarding and contributor sanity checks.
-
-> **Doc metadata:** Audience: Operator / Contributor · Last validated release: `v1.0.0`
-
-> ✅ **Do this:** Execute the numbered flow in order, then run `./quickstart.sh` as your first confidence check.
+> ✅ **Do this:** Execute the numbered steps in order. Run `./quickstart.sh` as your first confidence check.
 >
 > ⚠️ **Caveat:** Strict replay checks may fail on first-time local state until replay artifacts stabilize.
 >
 > 🚫 **Out of scope:** This guide does not cover unattended production deployment hardening.
 
-## Table of Contents
+---
 
-- [What success looks like in under 2 minutes](#what-success-looks-like-in-under-2-minutes)
-- [Prerequisites](#prerequisites)
-- [1) Clone and enter the repo](#1-clone-and-enter-the-repo)
-- [2) Create and activate a virtual environment](#2-create-and-activate-a-virtual-environment)
-- [3) Install dependencies](#3-install-dependencies)
-- [4) Initialize ADAAD workspace](#4-initialize-adaad-workspace)
-- [Governance boot-critical artifacts](#governance-boot-critical-artifacts)
-- [5) Verify boot works (recommended)](#5-verify-boot-works-recommended)
-- [6) Optional replay verification-only mode](#6-optional-replay-verification-only-mode)
-- [7) Optional dry-run mutation evaluation](#7-optional-dry-run-mutation-evaluation)
-- [Launch the dashboard quickly](#launch-the-dashboard-quickly)
-- [Quick health checks](#quick-health-checks)
-- [Clean reset (if behavior looks inconsistent)](#clean-reset-if-behavior-looks-inconsistent)
-- [Troubleshooting](#troubleshooting)
-- [Next steps](#next-steps)
-- [Optional UX-first first run](#optional-ux-first-first-run)
-
-## What success looks like in under 2 minutes
-
-If you only run one command after setup, run this:
+## What success looks like
 
 ```bash
 ./quickstart.sh
 ```
 
-This validates schemas, runs a deterministic simulation sample, checks founders-law/federation tests, and prints the dashboard start command. If the founders-law compatibility module is unavailable, quickstart logs a warning and skips federation compatibility tests.
+Validates schemas, runs a deterministic simulation sample, checks founders-law/federation tests, and prints the dashboard start command.
 
-Then run the governed mutation dry-run:
+Then run the governed dry-run:
 
 ```bash
 python -m app.main --dry-run --replay audit --verbose
 ```
 
-In this mode ADAAD should boot, evaluate governance/replay state, and print mutation-cycle status without writing file changes.
-
-Illustrative output:
+Expected output signals:
 
 ```text
 [ADAAD] Starting governance spine initialization
@@ -70,71 +40,86 @@ Illustrative output:
 [MUTATION] dry-run only, no files modified
 ```
 
+---
+
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - `pip`
 - `git`
 
-Verify tooling:
-
 ```bash
-python --version
-pip --version
-git --version
+python --version && pip --version && git --version
 ```
 
-## 1) Clone and enter the repo
+---
+
+## Setup Steps
+
+### 1 — Clone
 
 ```bash
 git clone https://github.com/InnovativeAI-adaad/ADAAD.git
 cd ADAAD
 ```
 
-## 2) Create and activate a virtual environment
+### 2 — Virtual environment
 
-macOS/Linux:
-
+macOS / Linux:
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 ```
 
 Windows (PowerShell):
-
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+python -m venv .venv && .\.venv\Scripts\Activate.ps1
 ```
 
-## 3) Install dependencies
+### 3 — Install dependencies
 
 ```bash
 pip install -r requirements.server.txt
-
-# Sanity-check active environment packages
-pip freeze | rg -i "adaad|aponi|cryovant"
 ```
 
-### Lightweight / constrained environments
-
-If dependency installation fails in constrained environments, retry without pip cache:
-
+Constrained environment:
 ```bash
 pip install -r requirements.server.txt --no-cache-dir
 ```
 
-ADAAD currently expects a full Python environment; Linux/WSL remains the recommended runtime target.
+### 4 — Initialize workspace
 
-### Hermetic runtime profile (required for audit/strict replay)
+```bash
+python nexus_setup.py
+python nexus_setup.py --validate-only        # read-only preflight
+python nexus_setup.py --validate-only --json # machine-readable output
+```
 
-Boot-time governance checks read `governance_runtime_profile.lock.json` and fail closed when:
+### 5 — Verify boot
 
-- dependency fingerprint does not match `requirements.server.txt`;
-- deterministic provider is not enabled;
-- mutable filesystem/network are neither disabled nor explicitly allowlisted.
+```bash
+python -m app.main --replay audit --verbose
+```
 
-Recommended environment for governance-critical replay:
+| Signal | Meaning |
+|---|---|
+| Boot + replay present, mutation disabled | Environment healthy; no eligible staged work |
+| Boot + replay present, mutation enabled | System ready for governed mutation flow |
+| Replay divergence or policy rejection | Expected fail-closed behavior; inspect logs |
+
+---
+
+## Governance boot-critical artifacts
+
+These files must exist and parse cleanly before ADAAD can boot:
+
+- `runtime/governance/constitution.yaml`
+- `governance/rule_applicability.yaml`
+
+Missing or malformed → ADAAD halts with a constitutional initialization error.
+
+---
+
+## Hermetic runtime (audit / strict replay)
 
 ```bash
 export ADAAD_FORCE_DETERMINISTIC_PROVIDER=1
@@ -143,108 +128,37 @@ export ADAAD_DISABLE_MUTABLE_FS=1
 export ADAAD_DISABLE_NETWORK=1
 ```
 
-Need the full `ADAAD_*` environment reference (defaults, accepted formats, and scope by subsystem)? See [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVIRONMENT_VARIABLES.md).
+Full variable reference: [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md)
 
-## 4) Initialize ADAAD workspace
+---
 
-```bash
-python nexus_setup.py
-python nexus_setup.py --validate-only        # read-only preflight (required checks + optional local port probe)
-python nexus_setup.py --validate-only --json # machine-readable preflight report (no workspace writes)
-```
-
-## Governance boot-critical artifacts
-
-The following files are required for fail-closed constitutional boot and must exist/parse cleanly:
-
-- `runtime/governance/constitution.yaml`
-- `governance/rule_applicability.yaml`
-
-If either file is missing or malformed, ADAAD intentionally halts boot with a constitutional initialization error.
-
-## 5) Verify boot works (recommended)
-
-Run with verbose diagnostics:
+## Optional: strict replay mode
 
 ```bash
-python -m app.main --replay audit --verbose
-```
-
-`--verbose` prints boot stages (gatekeeper, replay decision, mutation status, dashboard start), which helps diagnose clean exits.
-
-### Expected output signals
-
-You should see output that includes lines similar to:
-
-```text
-[ADAAD] Starting governance spine initialization
-[ADAAD] Gatekeeper preflight passed
-[ADAAD] Runtime invariants passed
-[ADAAD] Cryovant validation passed
-[ADAAD] Replay decision: ...
-[ADAAD] Mutation cycle status: enabled|disabled
-[ADAAD] Aponi dashboard started
-```
-
-If you see these signals, your installation is functioning.
-
-## 5.1) Interpret the result quickly
-
-- **Boot + replay signals present, mutation disabled:** environment is healthy; no eligible staged work discovered.
-- **Boot + replay signals present, mutation enabled:** system is ready to evaluate governed mutation flow.
-- **Replay divergence or policy rejection:** expected fail-closed behavior; inspect logs before retrying.
-
-## 6) Optional replay verification-only mode
-
-For CI-equivalent strict replay behavior, use the deterministic provider + seed used in CI:
-
-```bash
-ADAAD_ENV=dev CRYOVANT_DEV_MODE=1 ADAAD_FORCE_DETERMINISTIC_PROVIDER=1 ADAAD_DETERMINISTIC_SEED=ci-strict-replay \
+ADAAD_ENV=dev CRYOVANT_DEV_MODE=1 \
+ADAAD_FORCE_DETERMINISTIC_PROVIDER=1 \
+ADAAD_DETERMINISTIC_SEED=ci-strict-replay \
   python -m app.main --verify-replay --replay strict --verbose
 ```
 
-On first-time setup, run audit mode first to establish a baseline signal:
+On first-time setup: run audit mode first to establish a baseline before switching to strict.
 
-```bash
-python -m app.main --replay audit --verbose
-ADAAD_ENV=dev CRYOVANT_DEV_MODE=1 ADAAD_FORCE_DETERMINISTIC_PROVIDER=1 ADAAD_DETERMINISTIC_SEED=ci-strict-replay \
-  python -m app.main --verify-replay --replay strict --verbose
-```
+---
 
-Depending on local state, the first strict replay check can fail until replay artifacts are stabilized.
-
-## 7) Optional dry-run mutation evaluation
-
-```bash
-python -m app.main --dry-run --replay audit --verbose
-```
-
-## Launch the dashboard quickly
-
-Start the unified API + dashboard server directly:
+## Launch the dashboard
 
 ```bash
 scripts/run_dashboard.sh
-```
-
-Equivalent explicit command:
-
-```bash
+# or
 python server.py --host 0.0.0.0 --port 8000 --reload
 ```
 
-Then open:
+- Dashboard UI: `http://127.0.0.1:8000/`
+- API health: `http://127.0.0.1:8000/api/health`
 
-- `http://127.0.0.1:8000/` for the dashboard UI
-- `http://127.0.0.1:8000/api/health` for API health (`0.0.0.0` bind still answers on `127.0.0.1`)
+UI resolution order: `ui/aponi/index.html` → `ui/enhanced/enhanced_dashboard.html` → auto-generated placeholder.
 
-UI preload/fallback behavior:
-
-- Preferred: `ui/aponi/index.html`
-- Fallback: `ui/enhanced/enhanced_dashboard.html`
-- If neither exists, `python server.py` auto-creates `ui/aponi/index.html` placeholder so first launch still works
-
-`python server.py ...` and `uvicorn server:app ...` share the same startup UI resolution behavior.
+---
 
 ## Quick health checks
 
@@ -252,113 +166,70 @@ UI preload/fallback behavior:
 # Recent telemetry
 python - <<'PY'
 from pathlib import Path
-p=Path('reports/metrics.jsonl')
+p = Path('reports/metrics.jsonl')
 print('metrics_exists=', p.exists())
 if p.exists():
     print('\n'.join(p.read_text(encoding='utf-8').splitlines()[-3:]))
 PY
 
-# Replay audit verification
+# Replay audit
 python -m app.main --verify-replay --replay audit --verbose
 
-# Dashboard reachability check (defaults to localhost:8000)
+# Dashboard reachability
 curl -sS http://127.0.0.1:8000/state | python -m json.tool
 ```
 
-## Clean reset (if behavior looks inconsistent)
+---
 
-macOS/Linux:
+## Clean reset
 
+macOS / Linux:
 ```bash
 rm -rf reports security/ledger security/replay_manifests
-python nexus_setup.py                          # re-initialize workspace
-python nexus_setup.py --validate-only          # confirm all checks pass
-python nexus_setup.py --validate-only --json   # machine-readable output for scripting
+python nexus_setup.py
+python nexus_setup.py --validate-only
 ```
 
 Windows (PowerShell):
-
 ```powershell
 Remove-Item -Recurse -Force reports, security\ledger, security\replay_manifests
-python nexus_setup.py                          # re-initialize workspace
-python nexus_setup.py --validate-only          # confirm all checks pass
-python nexus_setup.py --validate-only --json   # machine-readable output for scripting
+python nexus_setup.py
+python nexus_setup.py --validate-only
 ```
 
-## Troubleshooting ![Internal](https://img.shields.io/badge/Guide-Internal-blue)
+---
 
-### `ModuleNotFoundError` during startup
+## Troubleshooting
 
-Re-activate your virtual environment and reinstall dependencies:
+| Symptom | Resolution |
+|---|---|
+| `ModuleNotFoundError` | Re-activate venv: `source .venv/bin/activate && pip install -r requirements.server.txt` |
+| Strict replay fails | Run audit mode first to establish baseline: `python -m app.main --replay audit --verbose` |
+| Policy rejection appears | Expected fail-closed behavior. Re-run with `--verbose` and review rejection reason. |
+| Dashboard unreachable | Confirm server started: `curl -sS http://127.0.0.1:8000/state` |
+| Boot exits quickly | Use `--verbose` to see stage-by-stage completion |
 
-```bash
-source .venv/bin/activate
-pip install -r requirements.server.txt
-```
-
-### Replay strict fails
-
-Inspect divergences first:
-
-```bash
-python -m app.main --replay audit --verbose
-```
-
-### Policy rejection appears
-
-This is expected fail-closed behavior. Re-run with verbose output and review the rejection reason before changing policy:
-
-```bash
-python -m app.main --dry-run --replay audit --verbose
-```
-
-### Dashboard does not open
-
-Confirm the process started and the endpoint is reachable:
-
-```bash
-python -m app.main --replay audit --verbose
-curl -sS http://127.0.0.1:8000/state
-```
-
-### Boot appears to exit quickly
-
-Run with verbose mode to confirm stage-by-stage completion:
-
-```bash
-python -m app.main --replay audit --verbose
-```
+---
 
 ## Next steps
 
-- Repository overview: [README.md](README.md)
-- Minimal runnable example: [examples/single-agent-loop/README.md](examples/single-agent-loop/README.md)
-- Governance model: [docs/CONSTITUTION.md](docs/CONSTITUTION.md)
+- [Repository overview](README.md)
+- [Single-agent example](examples/single-agent-loop/README.md)
+- [Governance model](docs/CONSTITUTION.md)
+- [Security and key handling](docs/SECURITY.md)
+- [Release checklist](docs/release/release_checklist.md)
 
-## Optional UX-first first run
+---
+
+## Optional: UX-first first run
 
 ```bash
 python tools/interactive_onboarding.py
 python tools/enhanced_cli.py --replay audit --verbose
 ```
 
-The enhanced CLI streams orchestrator output and maps key boot/governance lines to live stage updates.
-
-To view the enhanced dashboard:
-
+Enhanced dashboard:
 ```bash
 python -m http.server 8081 --directory ui/enhanced
 # open http://localhost:8081/enhanced_dashboard.html
 ```
-
-
-## After first successful run
-
-- [Walk through the single-agent loop example](examples/single-agent-loop/README.md)
-- [Review security and key handling guidance](docs/SECURITY.md)
-- [Use the canonical operator preflight release checklist](docs/release/release_checklist.md)
-- [Use the release audit checklist for evidence verification](docs/releases/RELEASE_AUDIT_CHECKLIST.md)
-
-## Start here next
-
-See role-based paths in [docs/README.md](docs/README.md).

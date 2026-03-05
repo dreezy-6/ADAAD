@@ -1,43 +1,59 @@
-# Contributing
+# Contributing to ADAAD
 
-By submitting a contribution, you agree that your work is licensed under the Apache License, Version 2.0 (see `LICENSE`). No trademark rights are granted or implied; see `TRADEMARKS.md` and `BRAND_LICENSE.md`.
+![Governance: Fail-Closed](https://img.shields.io/badge/Governance-Fail--Closed-critical)
+![Replay: Deterministic](https://img.shields.io/badge/Replay-Deterministic-0ea5e9)
+
+> Governance-first contribution guide — read before opening any governance-impacting PR.
+
+**Last reviewed:** 2026-03-05
+
+By submitting a contribution, you agree that your work is licensed under the MIT License (see `LICENSE`). No trademark rights are granted or implied; see `TRADEMARKS.md` and `BRAND_LICENSE.md`.
+
+---
 
 ## Development setup
 
-1. Create and activate a virtual environment.
-2. Install dependencies from `requirements.server.txt`.
-3. Initialize local workspace with `python nexus_setup.py` and run `python nexus_setup.py --validate-only` (or `--validate-only --json` for machine-readable output).
-4. Verify boot diagnostics with `python -m app.main --replay audit --verbose`.
+```bash
+# 1. Create and activate virtual environment
+python -m venv .venv && source .venv/bin/activate
+
+# 2. Install dependencies
+pip install -r requirements.server.txt
+
+# 3. Initialize workspace
+python nexus_setup.py
+python nexus_setup.py --validate-only
+
+# 4. Verify boot
+python -m app.main --replay audit --verbose
+```
+
+---
 
 ## Branch naming
 
-Use descriptive topic branches:
+| Type | Pattern |
+|---|---|
+| Feature | `feat/<short-description>` |
+| Fix | `fix/<short-description>` |
+| Docs | `docs/<short-description>` |
+| Governance | `governance/<short-description>` |
 
-- `docs/<short-description>`
-- `fix/<short-description>`
-- `feat/<short-description>`
-- `governance/<short-description>`
+---
 
-## §6 · Commit Message Convention
+## Commit message convention
 
-Commit messages for governed PR work should include structured trailers so reviewers
-can audit intent and gate evidence quickly.
+Commits for governed PR work must include structured trailers for audit traceability.
 
-Required trailers:
+**Required trailers:**
 
 - `PR-ID: <id>`
 - `CI tier: <docs|low|standard|critical>`
 - `Replay proof: <value>`
 
-`Replay proof` is always required, but valid values depend on the `CI tier` field:
-
-- `critical` tier: must include the strict replay output artifact hash
-  (example format: `Replay proof: sha256:<hash>`).
-- non-critical tiers (`docs`, `low`, `standard`): must be exactly
-  `Replay proof: not-required`.
-
-Reviewers should validate `Replay proof` against `CI tier` using
-`docs/governance/ci-gating.md`.
+`Replay proof` rules:
+- `critical` tier → must include strict replay output artifact hash: `Replay proof: sha256:<hash>`
+- All other tiers → must be exactly: `Replay proof: not-required`
 
 Examples:
 
@@ -57,16 +73,19 @@ CI tier: docs
 Replay proof: not-required
 ```
 
+---
+
 ## Governed build-agent contract
 
-Contributor-facing governed automation behavior is defined in [`AGENTS.md`](AGENTS.md).
-Review it before opening governance-impacting PRs so lane expectations, fail-closed behavior, and evidence requirements are applied consistently.
+Read [`AGENTS.md`](AGENTS.md) before opening governance-impacting PRs. It defines lane expectations, fail-closed behavior, and evidence requirements.
+
+---
 
 ## Governance-impact labeling
 
-If your change touches governance-critical surfaces (policy, replay, ledger, cryovant, mutation authorization), include `governance-impact` in your PR labels and describe risk in the PR body.
+If your change touches governance-critical surfaces, include `governance-impact` in your PR labels.
 
-Governance-critical paths include (non-exhaustive):
+Governance-critical paths include:
 
 - `runtime/constitution*`
 - `runtime/evolution/*`
@@ -75,63 +94,72 @@ Governance-critical paths include (non-exhaustive):
 - `app/mutation_executor.py`
 - `app/main.py`
 
-## Replay requirements for PR validation
+---
 
-At minimum for affected areas:
+## Replay requirements
 
-- Run replay audit mode during local validation.
-- Governance-impact PRs must pass strict replay verification locally before submission.
-
-Recommended commands:
+| Scenario | Requirement |
+|---|---|
+| All PRs | Run `--replay audit` during local validation |
+| Governance-impact PRs | Must pass strict replay locally before submission |
 
 ```bash
 python -m app.main --replay audit --verbose
 python -m app.main --verify-replay --replay strict --verbose
 ```
 
+---
+
 ## Test requirements
 
-- Add tests for functional changes.
+- Add tests for all functional changes.
 - Run targeted pytest suites for impacted modules.
-- Do not merge changes with failing tests.
-
-Example:
+- Do not merge with failing tests.
+- Do not remove, skip, or mark xfail on any failing test to make a gate pass.
 
 ```bash
 python -m pytest -q tests/test_preflight_import_smoke.py
 ```
 
-
-## Canonical agent runtime namespace
-
-`adaad.agents` is the canonical runtime namespace for agent implementation code.
-
-- Import agent modules from `adaad.agents.*` in new code.
-- `app.agents.*` exists only as a temporary compatibility shim during migration.
-- CI import-lint gates reject newly introduced `app.agents.*` imports outside the shim package.
+---
 
 ## Code expectations
 
-- Follow existing code style and keep SPDX headers in source files.
-- Keep dependencies documented and compatible with existing tooling.
+- Follow existing code style.
+- Keep SPDX headers in all source files: `# SPDX-License-Identifier: Apache-2.0`
+- Keep dependencies documented and pinned.
 - Avoid introducing nondeterministic behavior in governance paths.
+
+**Never introduce in governance-critical paths:**
+- `random` without a fixed seed
+- `datetime.now()` or time-based scoring
+- Environment-dependent policy evaluation
+- `uuid4()` without a deterministic provider
+
+---
+
+## Canonical agent runtime namespace
+
+`adaad.agents` is the canonical runtime namespace.
+
+- Import from `adaad.agents.*` in all new code.
+- `app.agents.*` is a temporary compatibility shim only.
+- CI import-lint gates reject newly introduced `app.agents.*` imports outside the shim.
+
+---
 
 ## Security and telemetry hygiene
 
-- Do **not** log secrets, credentials, tokens, or raw command lines containing sensitive values.
+- Do **not** log secrets, credentials, tokens, or sensitive command lines.
 - Use allowlisted, minimal fields in metrics payloads.
-- Keep JSONL entries single-line UTF-8 records for parseability.
+- Keep JSONL entries as single-line UTF-8 records.
+
+---
 
 ## Starter example
 
-- Run minimal single-agent loop: `python examples/single-agent-loop/run.py`.
-- Read walkthrough: `examples/single-agent-loop/README.md`.
+```bash
+python examples/single-agent-loop/run.py
+```
 
-
-## Determinism guardrails
-
-Do not introduce in governance-critical paths:
-
-- random behavior without fixed seed
-- time-based scoring or policy decisions
-- environment-dependent policy evaluation
+Walkthrough: [examples/single-agent-loop/README.md](examples/single-agent-loop/README.md)

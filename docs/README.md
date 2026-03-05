@@ -1,134 +1,116 @@
-# 📚 ADAAD Documentation Hub
+# ADAAD Documentation Hub
 
 ![Status: Stable](https://img.shields.io/badge/Status-Stable-2ea043)
 ![Governance: Fail-Closed](https://img.shields.io/badge/Governance-Fail--Closed-critical)
 ![Replay: Deterministic](https://img.shields.io/badge/Replay-Deterministic-0ea5e9)
 
-Welcome to the central navigation page for ADAAD docs.
+> Central navigation for all canonical ADAAD references — governance, architecture, security, and release.
 
-> Deterministic, governance-first entrypoint for canonical ADAAD references.
-
-**Last reviewed:** 2026-03-04
+**Last reviewed:** 2026-03-05
 
 <p align="center">
-  <img src="assets/governance-flow.svg" width="760" alt="ADAAD governance flow from proposal to replay verification and evidence archival">
+  <img src="assets/governance-flow.svg" width="760" alt="ADAAD governance flow from proposal through replay verification and evidence archival">
 </p>
 
-## 🚀 Quick paths
+---
 
-| I want to... | Go here |
-| --- | --- |
-| 🚀 Launch a governed run fast | [Quickstart](../QUICKSTART.md) |
-| 🧠 Understand architecture boundaries | [Architecture Contract](ARCHITECTURE_CONTRACT.md) |
-| 🛡️ Validate governance and security posture | [Security](SECURITY.md) + [Constitution](CONSTITUTION.md) |
+## Quick paths
+
+| I want to… | Go here |
+|---|---|
+| 🚀 Launch a governed run | [Quickstart](../QUICKSTART.md) |
+| 🧠 Understand architecture | [Architecture Contract](ARCHITECTURE_CONTRACT.md) |
+| 🛡️ Validate governance posture | [Security](SECURITY.md) · [Constitution](CONSTITUTION.md) |
 | 📦 Ship with release discipline | [Release checklist](release/release_checklist.md) |
 | 🧱 Review build strategy | [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) |
+| 👥 Understand reviewer calibration | [Reviewer Reputation Epic](../EPIC_1_Reviewer_Reputation.md) |
 
-## 🧭 Core references
+---
 
-- [Constitution](CONSTITUTION.md)
-- [Security](SECURITY.md)
-- [Architecture Contract](ARCHITECTURE_CONTRACT.md)
-- [Threat model](THREAT_MODEL.md)
-- [Release evidence matrix](comms/claims_evidence_matrix.md)
-- [Diagram ownership](DIAGRAM_OWNERSHIP.md)
-- [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md)
-- [GA closure tracker](governance/ADAAD_7_GA_CLOSURE_TRACKER.md)
-- [Lane ownership register](governance/LANE_OWNERSHIP.md)
-- [Codex setup runbook](governance/CODEX_SETUP.md)
-
-### Governance
-
-- [Security Invariants Matrix](governance/SECURITY_INVARIANTS_MATRIX.md)
-- [Determinism Contract Specification](governance/DETERMINISM_CONTRACT_SPEC.md)
-- [Governance State Machine Normalization](governance/GOVERNANCE_STATE_MACHINE_NORMALIZATION.md)
-- [Production Auth Contract Design](governance/PRODUCTION_AUTH_CONTRACT_DESIGN.md)
-- [Red-Team Threat Model — Next Phase Plan](governance/RED_TEAM_THREAT_MODEL_NEXT_PHASE.md)
-- [Governance mutation lifecycle](governance/mutation_lifecycle.md)
-
-## 👥 Audience-based routes
+## Audience-based routes
 
 ### New user
-- [Quickstart](../QUICKSTART.md)
-- [Single-agent runnable example](../examples/single-agent-loop/README.md)
+- [Quickstart](../QUICKSTART.md) — first governed run in under 5 minutes
+- [Single-agent example](../examples/single-agent-loop/README.md) — minimal runnable loop
 - [Security and key handling](SECURITY.md)
 
 ### Contributor
 - [Contribution guide](../CONTRIBUTING.md)
+- [Architecture contract](ARCHITECTURE_CONTRACT.md) — interface and boundary invariants
 - [Repository README](../README.md)
 - [Governance policy artifact](../governance/governance_policy_v1.json)
 
-## ✅ Documentation validators
-
-CI now runs both documentation validators as fail-closed checks with machine-readable JSON output:
-
-- `python scripts/validate_readme_alignment.py --format json`
-  - Enforces strict contract snippets across key README/release files.
-- `python scripts/validate_docs_integrity.py --format json`
-  - Scans all `.md` files, validates local markdown links/image targets, and flags missing image alt text for both markdown image syntax and HTML `<img>` tags.
-
-### Local run commands
-
-Run both validators exactly as CI does:
-
-```bash
-python scripts/validate_readme_alignment.py --format json
-python scripts/validate_docs_integrity.py --format json
-```
-
-### Governance/audit reviewer
-- [Constitution and governance boundaries](CONSTITUTION.md)
+### Governance / audit reviewer
+- [Constitution](CONSTITUTION.md) — hard constraints and tier definitions
+- [Security invariants matrix](governance/SECURITY_INVARIANTS_MATRIX.md)
 - [Governance policy artifact](../governance/governance_policy_v1.json)
 - [Release evidence matrix](comms/claims_evidence_matrix.md)
 
 ### Lane owner / CI maintainer
 - [Strategic build suggestions](ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) — lane model, gate order, merge sequencing
 - [Lane ownership register](governance/LANE_OWNERSHIP.md) — which lanes you own
-- [Codex setup runbook](governance/CODEX_SETUP.md) — operator installation and discovery path
-- [GA closure tracker](governance/ADAAD_7_GA_CLOSURE_TRACKER.md) — pending GA blockers
-- Outcome: know which gates you own, what a gate failure requires, and the dependency-safe merge order for concurrent hardening PRs.
+- [CI gating](governance/ci-gating.md) — tier classification and gate triggers
+- [Codex setup runbook](governance/CODEX_SETUP.md)
+- [GA closure tracker](governance/ADAAD_7_GA_CLOSURE_TRACKER.md)
 
-## 🔎 Deep references
+---
 
-<details>
-<summary><strong>Need deeper governance references?</strong></summary>
+## Core references
 
-- [Governance mutation lifecycle](governance/mutation_lifecycle.md)
-- [Release evidence matrix](comms/claims_evidence_matrix.md)
-- [Diagram ownership contract](DIAGRAM_OWNERSHIP.md)
+| Document | Purpose |
+|---|---|
+| [Constitution](CONSTITUTION.md) | Hard governance constraints; 14 rules; cannot be overridden |
+| [Architecture Contract](ARCHITECTURE_CONTRACT.md) | Interface and boundary contracts |
+| [Security](SECURITY.md) | Auth, signing, fail-closed controls |
+| [Threat model](THREAT_MODEL.md) | Attack surfaces and mitigations |
+| [Determinism contract](DETERMINISM.md) | Replay and determinism invariants |
+| [Release evidence matrix](comms/claims_evidence_matrix.md) | Claims-to-evidence mapping |
+| [Diagram ownership](DIAGRAM_OWNERSHIP.md) | Visual asset governance |
 
-</details>
+---
 
+## Governance references
 
-## Brand visual usage in docs and releases
+| Document | Purpose |
+|---|---|
+| [Security Invariants Matrix](governance/SECURITY_INVARIANTS_MATRIX.md) | All enforced security invariants |
+| [Determinism Contract Spec](governance/DETERMINISM_CONTRACT_SPEC.md) | Determinism and replay contract detail |
+| [Governance State Machine](governance/GOVERNANCE_STATE_MACHINE_NORMALIZATION.md) | State machine normalization |
+| [Production Auth Contract](governance/PRODUCTION_AUTH_CONTRACT_DESIGN.md) | Auth design and token contracts |
+| [Red-Team Threat Model](governance/RED_TEAM_THREAT_MODEL_NEXT_PHASE.md) | Next-phase red-team plan |
+| [Mutation Lifecycle](governance/mutation_lifecycle.md) | End-to-end mutation governance lifecycle |
+| [Federation Key Registry](governance/FEDERATION_KEY_REGISTRY.md) | Key lifecycle and rotation runbook |
 
-ADAAD visual assets in `docs/assets/` may be used for repository documentation and project release artifacts, subject to trademark and branding constraints.
+---
 
-- For provenance and per-file usage notes, see [`assets/IMAGE_PROVENANCE.md`](assets/IMAGE_PROVENANCE.md).
-- `assets/adaad-banner.svg` is treated as a brand-restricted visual and requires owner approval for external packaging/marketing redistribution.
-- Use of ADAAD names/logos does not grant trademark rights; follow `../BRAND_LICENSE.md` for any non-routine usage.
+## Release references
 
-## License and Compliance Baseline
+| Document | Purpose |
+|---|---|
+| [Release checklist](release/release_checklist.md) | Canonical operator preflight |
+| [Release audit checklist](releases/RELEASE_AUDIT_CHECKLIST.md) | Evidence verification |
+| [v1.1.0 Release notes](releases/1.1.0.md) | Phase 0 hardening complete |
+| [Claims-evidence matrix](comms/claims_evidence_matrix.md) | Evidence completeness gate |
 
-- Repository license: **MIT** (root `LICENSE`).
-- Compliance metadata: `LICENSES.md` and `NOTICE` in repository root.
-- Automated license compliance gate: `python scripts/validate_license_compliance.py`.
-- Safety-critical use should record third-party license attestations in release evidence.
+---
 
-## Current Weak-Point Mitigation Priorities
+## Documentation validators
 
-The documentation set tracks hardening and optimization priorities around:
+Both validators run as fail-closed CI checks:
 
-1. deterministic orchestration contracts and replay parity,
-2. fail-closed governance paths under missing or malformed inputs, and
-3. conservative performance improvements that do not alter public APIs.
+```bash
+python scripts/validate_readme_alignment.py --format json
+python scripts/validate_docs_integrity.py --format json
+```
 
-Use the release checklist and evidence matrix to show each mitigation is backed
-by deterministic tests before merge.
+- `validate_readme_alignment.py` — enforces contract snippets across key README and release files.
+- `validate_docs_integrity.py` — scans all `.md` files, validates local links and image targets, flags missing alt text.
+
+---
 
 ## Orchestration hardening invariants
 
-`app/orchestration/mutation_orchestration_service.py` enforces these invariants:
+`app/orchestration/mutation_orchestration_service.py` enforces:
 
 - Task normalization is deterministic (first-seen order, deduplicated labels).
 - Empty/whitespace-only task batches resolve to `safe_boot=True`.
@@ -136,4 +118,20 @@ by deterministic tests before merge.
 - Transition failures preserve fail-closed behavior (`run_cycle=False`).
 - Blocked transition payloads are isolated per envelope to prevent cross-call mutation bleed.
 
-Related: [governance mutation lifecycle](governance/mutation_lifecycle.md).
+---
+
+## Brand and visual assets
+
+ADAAD visual assets in `docs/assets/` are available for repository documentation and release artifacts.
+
+- Per-file provenance and usage notes: [`assets/IMAGE_PROVENANCE.md`](assets/IMAGE_PROVENANCE.md)
+- `assets/adaad-banner.svg` requires owner approval for external packaging or marketing redistribution.
+- Use of ADAAD names/logos does not grant trademark rights. See [`../BRAND_LICENSE.md`](../BRAND_LICENSE.md).
+
+---
+
+## License and compliance
+
+- Repository license: **MIT** (root `LICENSE`)
+- Compliance metadata: `LICENSES.md` and `NOTICE`
+- Compliance gate: `python scripts/validate_license_compliance.py`
