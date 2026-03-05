@@ -69,3 +69,33 @@ def test_verify_governance_token_propagates_missing_key_error_not_false(
     token = f"cryovant-gov-v1:k1:{future}:nonce123:sha256:{'a' * 64}"
     with pytest.raises(MissingSigningKeyError, match="strict_env"):
         verify_governance_token(token)
+
+
+# --- PR-HARDEN-01 additions ---
+
+def test_env_mode_raises_for_unknown_adaad_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ADAAD_ENV", "jupiter")
+    from importlib import reload
+    import security.cryovant as cryovant
+    reload(cryovant)
+    with pytest.raises(RuntimeError, match="adaad_env_unknown"):
+        cryovant.env_mode()
+
+
+def test_verify_session_raises_in_staging(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ADAAD_ENV", "staging")
+    monkeypatch.delenv("CRYOVANT_DEV_MODE", raising=False)
+    from importlib import reload
+    import security.cryovant as cryovant
+    reload(cryovant)
+    with pytest.raises(cryovant.GovernanceTokenError, match="strict_env"):
+        cryovant.verify_session("any-token")
+
+
+def test_signature_valid_blocks_dev_sig_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ADAAD_ENV", "production")
+    monkeypatch.delenv("CRYOVANT_DEV_MODE", raising=False)
+    from importlib import reload
+    import security.cryovant as cryovant
+    reload(cryovant)
+    assert not cryovant.signature_valid("cryovant-dev-some-sig")

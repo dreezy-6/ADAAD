@@ -65,10 +65,13 @@ def dev_mode() -> bool:
 
 
 def env_mode() -> str:
-    mode = os.environ.get("ADAAD_ENV", "prod").strip().lower()
-    if mode in {"dev", "prod"}:
-        return mode
-    return "prod"
+    """Return canonical environment mode. Raises RuntimeError for unknown values."""
+    mode = os.environ.get("ADAAD_ENV", "").strip().lower()
+    if not mode:
+        return "prod"
+    if mode not in _KNOWN_ENVS:
+        raise RuntimeError(f"adaad_env_unknown:{mode!r}")
+    return mode
 
 
 def _keys_configured() -> bool:

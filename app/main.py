@@ -990,7 +990,46 @@ class Orchestrator:
         return score
 
 
+_BOOT_KNOWN_ENVS: frozenset[str] = frozenset({"dev", "test", "staging", "production", "prod"})
+_BOOT_STRICT_ENVS: frozenset[str] = frozenset({"staging", "production", "prod"})
+
+
+def _validate_boot_environment() -> None:
+    """Fail closed on invalid or unsafe environment configuration at startup."""
+    env = (os.getenv("ADAAD_ENV") or "").strip().lower()
+    if not env:
+        raise SystemExit(
+            "CRITICAL: ADAAD_ENV is not set. Set to one of: dev, test, staging, production"
+        )
+    if env not in _BOOT_KNOWN_ENVS:
+        raise SystemExit(
+            f"CRITICAL: ADAAD_ENV={env!r} is not a recognised environment. "
+            f"Permitted: {sorted(_BOOT_KNOWN_ENVS)}"
+        )
+    if env in _BOOT_STRICT_ENVS and os.getenv("CRYOVANT_DEV_MODE"):
+        raise SystemExit(
+            f"CRITICAL: CRYOVANT_DEV_MODE is set in strict environment {env!r}. "
+            "This configuration is not permitted."
+        )
+    if env in _BOOT_STRICT_ENVS:
+        has_key = os.getenv("ADAAD_GOVERNANCE_SESSION_SIGNING_KEY") or any(
+            v for k, v in os.environ.items()
+            if k.startswith("ADAAD_GOVERNANCE_SESSION_KEY_")
+        )
+        if not has_key:
+            raise SystemExit(
+                "CRITICAL: missing_governance_signing_key — "
+                "ADAAD_GOVERNANCE_SESSION_SIGNING_KEY must be set in strict environment."
+            )
+    metrics.log(
+        event_type="boot_env_validated",
+        payload={"env": env},
+        level="INFO",
+    )
+
+
 def main() -> None:
+    _validate_boot_environment()
     parser = argparse.ArgumentParser(description="ADAAD orchestrator")
     parser.add_argument("--verbose", action="store_true", help="Print boot stage diagnostics to stdout.")
     parser.add_argument("--dry-run", action="store_true", help="Evaluate mutations without applying them.")
