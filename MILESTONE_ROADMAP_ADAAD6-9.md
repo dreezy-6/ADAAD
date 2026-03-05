@@ -155,7 +155,7 @@ Aponi surfaces are authoring and analysis only. They do not grant execution auth
 
 | PR | Deliverable | Status |
 |---|---|---|
-| PR-10-01 | FeedRegistry + VolatilityIndex/ResourcePrice/DemandSignal adapters + schema | ⬜ |
+| PR-10-01 | FeedRegistry + VolatilityIndex/ResourcePrice/DemandSignal adapters + schema | ✅ 19 tests |
 | PR-10-02 | MarketFitnessIntegrator + FitnessOrchestrator wiring + webhook endpoint + tests | ⬜ |
 | PR-10-MS | VERSION 1.4.0 · docs · README | ⬜ |
 
