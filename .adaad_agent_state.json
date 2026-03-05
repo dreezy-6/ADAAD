@@ -1,19 +1,21 @@
 {
   "schema_version": "1.1.0",
-  "last_completed_pr": "PR-PHASE0-COMPLETE",
-  "next_pr": "PR-CI-01",
-  "active_phase": "Phase 0 Track A — COMPLETE",
+  "last_completed_pr": "PR-CI-01",
+  "next_pr": "PR-CI-02",
+  "active_phase": "Phase 0 Track A \u2014 COMPLETE",
   "last_invocation": "2026-03-05",
   "blocked_reason": null,
   "blocked_at_gate": null,
   "blocked_at_tier": null,
   "last_gate_results": {
     "tier_0": "pass",
-    "tier_1": "pass",
+    "tier_1": "not_run",
     "tier_2": "not_applicable",
     "tier_3": "not_run"
   },
-  "open_findings": ["H-01"],
-  "value_checkpoints_reached": ["phase0-track-a-hardening"],
+  "open_findings": [],
+  "value_checkpoints_reached": [
+    "phase0-track-a-hardening"
+  ],
   "pending_evidence_rows": []
 }
