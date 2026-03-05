@@ -22,6 +22,10 @@ This matrix maps major external/public claims to objective, versioned repository
 | `snapshot-atomicity` | "Ledger snapshots are staged atomically and latest valid recovery snapshot selection is sequence-ordered." | [Snapshot manager implementation](../../runtime/recovery/ledger_guardian.py); [Snapshot guardian tests](../../tests/governance/test_ledger_guardian.py) | Complete |
 | `boot-env-validation` | "ADAAD rejects startup with unknown or misconfigured environment values; dev tokens and dev signatures are rejected in strict environments." | [Boot guard](../../app/main.py); [Cryovant env enforcement](../../security/cryovant.py); [Boot guard tests](../../tests/test_boot_env_validation.py); [Strict env tests](../../tests/test_cryovant_strict_env_rejection.py) | Complete |
 
+| `federation-key-pinning` | "Federation messages are accepted only from registered, trusted key IDs; caller-supplied key substitution is rejected." | [Key registry loader](../../runtime/governance/federation/key_registry.py); [Transport enforcement](../../runtime/governance/federation/transport.py); [Registry file](../../governance/federation_trusted_keys.json); [Key registry tests](../../tests/governance/federation/test_federation_key_registry.py) | Complete |
+| `sandbox-injection-hardening` | "Sandbox preflight blocks shell metacharacter injection, IFS word-splitting bypasses, shell evaluation primitives, and disallowed environment variables." | [Preflight implementation](../../runtime/sandbox/preflight.py); [Injection hardening tests](../../tests/test_sandbox_injection_hardening.py) | Complete |
+| `spdx-header-compliance` | "All Python source files carry SPDX-License-Identifier headers, enforced by script." | [SPDX check script](../../scripts/check_spdx_headers.py) | Complete |
+
 ## Completion standard
 
 An entry is considered complete only when:

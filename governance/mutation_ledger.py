@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Immutable append-only mutation ledger."""
 
 from __future__ import annotations

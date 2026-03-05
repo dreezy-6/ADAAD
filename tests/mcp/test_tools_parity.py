@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 import json
 
 from runtime.mcp.tools_registry import SERVER_TOOLS, tools_list_response

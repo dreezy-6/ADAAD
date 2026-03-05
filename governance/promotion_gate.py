@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Promotion gate integrating sandbox and fitness thresholds."""
 
 from __future__ import annotations

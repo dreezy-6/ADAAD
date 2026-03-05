@@ -54,7 +54,7 @@ This page catalogs `ADAAD_*` environment variables currently read by executable 
 | `ADAAD_DISPATCHER_VERSION` | `'v1'` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/evidence_bundle.py` |
 | `ADAAD_DRY_RUN` | `''` | boolean-like: `1|true|yes|on` enables | application orchestration (app) | `app/main.py` |
 | `ADAAD_DYNAMIC_AGENT_PRESSURE` | `'0.0'` | string/JSON per caller contract | runtime/governance engine | `runtime/platform/android_monitor.py` |
-| `ADAAD_ENV` | `'dev', 'prod', dev, unset` | `dev` or `prod` (caller may accept additional values) | developer bootstrap script | `quickstart.sh` |
+| `ADAAD_ENV` | **Required** — `dev`, `test`, `staging`, `production`, `prod` | Boot guard rejects unknown/unset values with `SystemExit`. For local dev: `export ADAAD_ENV=dev` | `app/main.py` boot guard | `quickstart.sh` |
 | `ADAAD_EVIDENCE_BUNDLE_KEY_ID` | `'forensics-dev'` | secret string; required in secured deployments | runtime/governance engine | `runtime/evolution/evidence_bundle.py` |
 | `ADAAD_EVIDENCE_BUNDLE_SIGNING_ALGO` | `unset` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/evidence_bundle.py` |
 | `ADAAD_EVIDENCE_BUNDLE_SIGNING_KEY` | `'', unset` | secret string; required in secured deployments | runtime/governance engine | `runtime/evolution/evidence_bundle.py` |

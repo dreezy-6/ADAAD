@@ -9,8 +9,29 @@ from typing import Any
 from runtime.sandbox.manifest import SandboxManifest
 from runtime.sandbox.policy import SandboxPolicy
 
-_DISALLOWED_ENV_KEYS = frozenset({"LD_PRELOAD", "PYTHONINSPECT"})
-_DISALLOWED_TOKEN_FRAGMENTS = ("&&", "||", ";", "|", "`", "$(", "${", ">", "<")
+_DISALLOWED_ENV_KEYS = frozenset({
+    "LD_PRELOAD",
+    "PYTHONINSPECT",
+    "LD_LIBRARY_PATH",
+    "PYTHONSTARTUP",
+})
+# C-02 hardening: extend beyond basic shell metacharacters to cover bash word-splitting
+# bypasses, null-byte injection, and shell-builtin execution primitives.
+_DISALLOWED_TOKEN_FRAGMENTS: tuple[str, ...] = (
+    # Shell control operators
+    "&&", "||", ";", "|", "`", "$(", "${",
+    # Redirect operators
+    ">", "<", "<<",
+    # IFS word-splitting bypasses
+    "$IFS", "${IFS}",
+    # Null-byte injection
+    "\x00", "%00",
+    # Shell evaluation primitives
+    "eval ", "eval\t", "exec ", "exec\t",
+    "source ", "source\t",
+    # Newline injection (literal and escaped)
+    "\\n",
+)
 _MAX_TOKEN_LENGTH = 512
 _MAX_TOKEN_PREVIEW_LENGTH = 80
 

@@ -4,7 +4,7 @@
 > ADAAD enforces constitutional mutation gates, deterministic replay checks, and fail-closed execution behavior.
 > It is built for governed staging and audit workflows.
 
-**Last reviewed:** 2026-03-04
+**Last reviewed:** 2026-03-05
 
 > ℹ️ **Note:** Visual conventions in this document follow [docs/DOCS_VISUAL_STYLE_GUIDE.md](docs/DOCS_VISUAL_STYLE_GUIDE.md).
 
@@ -49,6 +49,9 @@ ADAAD is a governance layer for autonomous code mutation. It exists to ensure au
 | 🧾 Ledger-anchored evidence | Every governed step can be traced to durable artifacts for audit and review. |
 | 🚦 Release evidence gates | Public-readiness milestones require objective evidence completion before release. |
 | 🧠 Versioned memory subsystem | Runtime memory state now supports append-only versions with confidence metadata and non-destructive rollback pointers. |
+| 🔒 Fail-closed boot hardening | Boot rejects unknown ADAAD_ENV, dev-mode in strict envs, and missing governance keys — no silent fallback. |
+| 🛡️ Federation key pinning | Federation messages accepted only from registered key IDs; caller-supplied key substitution is rejected. |
+| 🧹 Sandbox injection hardening | Preflight blocks shell metacharacters, IFS bypass, eval/exec/source primitives, and null-byte injection. |
 
 ## 🎬 Operator Journey (at a glance)
 
@@ -258,9 +261,13 @@ should still validate third-party dependency license obligations per release.
 | Focus area | Link |
 | --- | --- |
 | Security controls and threat posture | [docs/SECURITY.md](docs/SECURITY.md) |
+| Security invariants (current) | [docs/governance/SECURITY_INVARIANTS_MATRIX.md](docs/governance/SECURITY_INVARIANTS_MATRIX.md) |
+| Federation key registry | [docs/governance/FEDERATION_KEY_REGISTRY.md](docs/governance/FEDERATION_KEY_REGISTRY.md) |
 | Deterministic replay contract | [docs/DETERMINISM.md](docs/DETERMINISM.md) |
 | Governance mutation lifecycle | [docs/governance/mutation_lifecycle.md](docs/governance/mutation_lifecycle.md) |
 | Release evidence and audit gates | [docs/RELEASE_EVIDENCE_MATRIX.md](docs/RELEASE_EVIDENCE_MATRIX.md) |
+| Claims-to-evidence matrix | [docs/comms/claims_evidence_matrix.md](docs/comms/claims_evidence_matrix.md) |
+| v1.1.0 Release notes | [docs/releases/1.1.0.md](docs/releases/1.1.0.md) |
 
 ## Quick Start
 
@@ -296,9 +303,13 @@ should still validate third-party dependency license obligations per release.
 |---|---|
 | Recommended for | Governed audit workflows, replay verification, staged mutation review |
 | Not ready for | Unattended production autonomy |
-| Maturity | Stable / v1.0 |
+| Maturity | Stable / v1.1 — Phase 0 hardening complete |
 | Replay mode | Audit and strict governance-ready |
 | Mutation execution | Fail-closed and policy-gated |
+| Boot validation | Fail-closed — unknown env, dev-mode in strict env, missing signing key all rejected |
+| Federation trust | Key-pinned — untrusted key_id rejected at transport layer |
+| Sandbox hardening | Extended injection fragment list — IFS, eval, exec, null-byte blocked |
+| SPDX compliance | All Python source files covered |
 
 
 ## Start here next
@@ -315,6 +326,10 @@ ADAAD currently guarantees:
 - Canonicalized Aponi integration port
 - Configurable and ledger-visible dispatcher latency
 - YAML hermetic fallback for constitution loading
+- **[v1.1]** Fail-closed boot environment validation — unknown/misconfigured env rejected at process start
+- **[v1.1]** Federation key pinning — `key_id` must be in the governed trusted registry
+- **[v1.1]** Sandbox injection hardening — extended fragment list covers IFS bypass, eval/exec/source, null-byte
+- **[v1.1]** SPDX license header coverage — all Python source files enforce Apache-2.0 identifier
 
 ADAAD does **not** yet implement:
 
@@ -332,7 +347,23 @@ ADAAD does **not** yet implement:
 | `ADAAD_DETERMINISTIC_LOCK` | Freeze deterministic runtime behavior |
 | `ADAAD_CONSTITUTION_STRICT` | Strict constitution enforcement mode |
 | `ADAAD_SIMULATION_ALLOW_UNSUPPORTED_DNA_DEEPCOPY` | Legacy compatibility escape hatch for unsupported DNA payload deepcopy in simulation (default fail-closed) |
+| `ADAAD_ENV` | **Required.** Runtime environment: `dev`, `test`, `staging`, `production`, `prod`. Unknown values cause `SystemExit` at boot. |
+| `ADAAD_GOVERNANCE_SESSION_SIGNING_KEY` | **Required in strict envs.** HMAC key for governance session tokens. Absent key causes `SystemExit` in staging/production/prod. |
+| `CRYOVANT_DEV_MODE` | Enable dev-only signature/token overrides. Rejected in strict environments at boot. |
 
+
+## Phase 0 Hardening Completion (v1.1)
+
+All Phase 0 Track A critical findings resolved:
+
+| Finding | Status | PR |
+|---|---|---|
+| C-01 — No boot-time env validation | ✅ Resolved | PR-HARDEN-01 |
+| C-02 — Sandbox injection fragment list incomplete | ✅ Resolved | Phase 0 inline |
+| C-03 — Federation caller-supplied public key | ✅ Resolved | PR-SECURITY-01 |
+| H-01 — Python version inconsistency in CI | 🟡 Pending | PR-CI-01 |
+
+See [docs/releases/1.1.0.md](docs/releases/1.1.0.md) for full release notes.
 
 ## Security and determinism enforcement updates
 

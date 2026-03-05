@@ -5,7 +5,7 @@
 
 > Deterministic, governance-first path for a first local ADAAD run.
 
-**Last reviewed:** 2026-03-04
+**Last reviewed:** 2026-03-05
 
 > 🎥 Prefer video? A walkthrough is not published yet; this guide is the canonical setup path today.
 
