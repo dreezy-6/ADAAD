@@ -507,7 +507,7 @@ Cross-track blocking does not exist unless explicitly noted.
 | PR-SECURITY-01 | Federation key pinning registry | C-03 | **critical** | transport.py audit |
 | PR-PERF-01 | Streaming lineage ledger | C-04 | standard | none |
 | PR-OPS-01 | Snapshot atomicity + sequence ordering | H-07, M-02 | standard | none |
-| PR-DOCS-01 | Federation key registry governance doc | C-03 | docs | PR-SECURITY-01 |
+| PR-DOCS-01 | Federation key registry governance doc | C-03 | docs | PR-OPS-01 |
 
 **Track B — PR Plan PRs**
 
@@ -563,11 +563,15 @@ PRs 14–17 and 19 can start after ADAAD-7 merged. PR-18 requires PR-12.
 5. PR-SECURITY-01  (federation key pinning)        — transport.py audit complete
 6. PR-PERF-01      (streaming lineage verify)      — no deps
 7. PR-OPS-01       (snapshot atomicity)            — no deps
-8. PR-DOCS-01      (federation registry docs)      — PR-SECURITY-01 merged
+8. PR-DOCS-01      (federation registry docs)      — PR-OPS-01 merged
 ```
 
 Out-of-sequence merges on security/determinism surfaces require explicit PR
 justification and lane-owner sign-off before the agent will proceed.
+
+Sequence is flexible here only for docs lane: **disabled**; `PR-DOCS-01` remains strict serial behind `PR-OPS-01`.
+
+Agent MUST emit `[ADAAD WAITING]` unless `PR-OPS-01` is merged and CI-green on merge SHA.
 
 ---
 

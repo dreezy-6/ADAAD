@@ -222,7 +222,7 @@ in the same PR:
   5. PR-SECURITY-01  (federation key pinning)      — depends on transport.py audit
   6. PR-PERF-01      (streaming lineage verify)    — no deps
   7. PR-OPS-01       (snapshot atomicity)          — no deps
-  8. PR-DOCS-01      (federation registry docs)    — depends on PR-SECURITY-01
+  8. PR-DOCS-01      (federation registry docs)    — depends on PR-OPS-01
   ```
   Out-of-sequence merges on security/determinism surfaces require explicit PR justification and lane-owner sign-off.
 
