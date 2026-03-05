@@ -3,7 +3,7 @@
 ![Status: Stable](https://img.shields.io/badge/Status-Stable-2ea043)
 ![Milestone: ADAAD-8 Complete](https://img.shields.io/badge/Milestone-ADAAD--8_Complete-2ea043)
 ![Milestone: ADAAD-8 Complete](https://img.shields.io/badge/Milestone-ADAAD--8_Complete-2ea043)
-![Active: ADAAD-9](https://img.shields.io/badge/Active-ADAAD--9-0ea5e9)
+![Milestone: ADAAD-9 Complete](https://img.shields.io/badge/Milestone-ADAAD--9_Complete-2ea043)
 
 > Governance-grade milestone plan · `innovative-ai/adaad` · Authoritative baseline: `1.1.0 (Stable)`
 
@@ -36,7 +36,7 @@ ADAAD-8 · Policy Simulation Mode (v1.2)     ✅ COMPLETE — 2026-03-05
     │  Aponi simulation mode · exportable governance profiles
     │
     ▼
-ADAAD-9 · Developer Experience (v1.3)       🔵 IN PROGRESS
+ADAAD-9 · Developer Experience (v1.3)       ✅ COMPLETE — 2026-03-05
             ↑ consumes ADAAD-8 simulation panel (Phase 5)
 
          Aponi-as-IDE
@@ -121,7 +121,7 @@ ADAAD-9 · Developer Experience (v1.3)       🔵 IN PROGRESS
 
 ## ADAAD-9 · Developer Experience
 
-**Version:** 1.3.0 · **Status:** 🔵 In Progress · **Prerequisite:** ADAAD-8 merged ✅
+**Version:** 1.3.0 · **Status:** ✅ Complete · **Merged:** 2026-03-05
 
 ### Scope
 
@@ -131,7 +131,7 @@ ADAAD-9 · Developer Experience (v1.3)       🔵 IN PROGRESS
 | PR-15 | Inline Constitutional Linter | critical | PR-14 | ✅ Complete |
 | PR-16 | Evidence Viewer + Endpoint | standard | PR-15 | ✅ Complete — `ui/aponi/evidence_viewer.js` · 17 tests |
 | PR-17 | Replay Inspector UI | standard | PR-16 | ✅ Complete — 4 e2e tests added |
-| PR-18 | Simulation Panel Integration | standard | PR-12 | 🔵 In Progress |
+| PR-18 | Simulation Panel Integration | standard | PR-12 | ✅ Complete — `ui/aponi/simulation_panel.js` |
 
 ### Authority invariant
 
