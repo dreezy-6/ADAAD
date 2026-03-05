@@ -188,3 +188,24 @@ Authoritative current version/maturity for these notes: **0.65.x, Experimental /
 - Added Cryovant gating with ledger/keys scaffolding and certification checks to block uncertified Dream/Beast execution.
 - Normalized imports to canonical roots and consolidated metrics into `reports/metrics.jsonl`.
 - Introduced deterministic orchestrator boot order, warm pool startup, and minimal Aponi dashboard endpoints.
+
+## [1.3.0] — 2026-03-05 · ADAAD-9 Developer Experience
+
+### ADAAD-9 · Aponi-as-IDE — Governance-First Developer Environment
+
+Aponi evolves from a read-only governance observatory into a **governance-first authoring environment**. Developers can now author, lint, simulate, and inspect evidence for mutation proposals entirely within a single browser-accessible interface — without departing to a second toolchain.
+
+**D1 — Mutation Proposal Editor:** `ui/aponi/proposal_editor.js` routes proposals through `POST /mutation/propose`; emits `aponi_editor_proposal_submitted.v1` journal event on every editor-originated submission.
+
+**D2 — Inline Constitutional Linter:** `runtime/mcp/linting_bridge.py` (`MutationLintingBridge`) wraps `mutation_analyzer.py`; debounced 800ms; uses same rule engine as `GovernanceGate`; `AndroidMonitor.should_throttle()` governs call frequency; determinism tests in `tests/mcp/test_linting_bridge.py`.
+
+**D3 — Simulation Panel:** `ui/aponi/simulation_panel.js`; wires Epic 2 `POST /simulation/run` + `GET /simulation/results/{run_id}`; pre-populates constraints from `/simulation/context`; surfaces comparative outcomes (actual/simulated/delta) and provenance (deterministic, replay_seed) inline.
+
+**D4 — Evidence Viewer:** `ui/aponi/evidence_viewer.js`; fetches `GET /evidence/{bundle_id}`; renders provenance fields (`constitution_version`, `scoring_algorithm_version`, `governor_version`, hashes), risk summaries with high-risk highlight, signer fields, sandbox snapshot, replay proof chain. 17 tests in `tests/test_evidence_viewer.py` covering schema conformance, auth gating, provenance presence, determinism.
+
+**D5 — Replay Inspector:** `ui/aponi/replay_inspector.js` over `/replay/divergence` + `/replay/diff`; navigable epoch-by-epoch transition chain; divergence alert distinction; lineage navigation from mutation to full ancestor chain. 4 new e2e tests in `tests/test_aponi_dashboard_e2e.py`.
+
+**D6 — Android/Pydroid3 Compatibility:** All heavy operations (simulation, evidence fetch) respect `AndroidMonitor.should_throttle()`; epoch range bounded by platform limit from `/simulation/context`.
+
+**Authority invariant:** Aponi IDE introduces no new execution path. All write operations route through `POST /mutation/propose` → MCP queue → `GovernanceGate` → constitutional evaluation → staging. `authority_level` clamped to `governor-review` by `proposal_validator.py` for all editor-originated submissions.
+
