@@ -169,7 +169,7 @@ Aponi surfaces are authoring and analysis only. They do not grant execution auth
 
 | PR | Deliverable | Status |
 |---|---|---|
-| PR-11-01 | AgentBudgetPool + BudgetArbitrator (Softmax fitness-weighted) + CompetitionLedger | ⬜ |
+| PR-11-01 | AgentBudgetPool + BudgetArbitrator (Softmax fitness-weighted) + CompetitionLedger | ✅ 16 tests |
 | PR-11-02 | FitnessOrchestrator post-fitness hook + market signal coupling + starvation pipeline + tests | ⬜ |
 | PR-11-MS | VERSION 1.5.0 · docs · README | ⬜ |
 
