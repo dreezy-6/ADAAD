@@ -89,7 +89,7 @@ from runtime.platform.android_monitor import AndroidMonitor
 from runtime.governance_surface import canonicalize_governance_details
 from security.ledger import journal
 
-CONSTITUTION_VERSION = "0.2.0"
+CONSTITUTION_VERSION = "0.3.0"
 ELEMENT_ID = "Earth"
 POLICY_PATH = Path("runtime/governance/constitution.yaml")
 RULE_APPLICABILITY_PATH = Path("governance/rule_applicability.yaml")
