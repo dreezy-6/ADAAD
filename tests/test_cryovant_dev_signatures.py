@@ -239,7 +239,8 @@ class CryovantDevSignatureTest(unittest.TestCase):
         os.environ["ADAAD_GOVERNANCE_SESSION_SIGNING_KEY"] = "gov-secret"
         self.addCleanup(os.environ.pop, "ADAAD_GOVERNANCE_SESSION_SIGNING_KEY", None)
         token = cryovant.sign_governance_token(key_id="orchestrator", expires_at=1, nonce="expired")
-        self.assertFalse(cryovant.verify_governance_token(token))
+        with self.assertRaises(cryovant.TokenExpiredError):
+            cryovant.verify_governance_token(token)
 
     def test_verify_governance_token_allows_dev_override_only_in_explicit_dev_mode(self) -> None:
         os.environ["CRYOVANT_DEV_TOKEN"] = "dev-token"

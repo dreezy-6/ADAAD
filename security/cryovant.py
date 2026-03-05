@@ -90,6 +90,20 @@ def _resolve_hmac_secret(*, key_id: str, specific_env_prefix: str, generic_env_v
     generic = os.environ.get(generic_env_var, "").strip()
     if generic:
         return generic
+    env = (os.getenv("ADAAD_ENV") or "").strip().lower()
+    if env in _STRICT_ENVS:
+        metrics.log(
+            event_type="cryovant_missing_signing_key_strict_env",
+            payload={
+                "key_id": key_id,
+                "env": env,
+                "specific_env_var": specific_env,
+                "generic_env_var": generic_env_var,
+            },
+            level="CRITICAL",
+            element_id=ELEMENT_ID,
+        )
+        raise MissingSigningKeyError(f"missing_signing_key:strict_env:{env}:set {specific_env} or {generic_env_var}")
     return f"{fallback_namespace}:{key_id}"
 
 
@@ -258,6 +272,14 @@ class GovernanceTokenError(ValueError):
     """Raised when governance token/session validation is rejected."""
 
 
+class MissingSigningKeyError(RuntimeError):
+    """Raised when required signing key material is absent in strict environments."""
+
+
+class TokenExpiredError(ValueError):
+    """Raised when a governance token's wall-clock expiry has passed."""
+
+
 def verify_session(token: str) -> bool:
     """Legacy session verification path.
 
@@ -390,18 +412,21 @@ def verify_governance_token(
     except ValueError:
         return False
     if expires_at <= int(time.time()):
-        return False
+        raise TokenExpiredError(f"governance_token_expired:key_id={key_id}:expired_at={expires_at}")
 
     signature = f"{sig_prefix}:{digest}"
     signed_digest = f"sha256:{key_id}:{expires_at}:{nonce}"
-    return verify_hmac_digest_signature(
-        key_id=key_id,
-        signed_digest=signed_digest,
-        signature=signature,
-        specific_env_prefix=specific_env_prefix,
-        generic_env_var=generic_env_var,
-        fallback_namespace=fallback_namespace,
-    )
+    try:
+        return verify_hmac_digest_signature(
+            key_id=key_id,
+            signed_digest=signed_digest,
+            signature=signature,
+            specific_env_prefix=specific_env_prefix,
+            generic_env_var=generic_env_var,
+            fallback_namespace=fallback_namespace,
+        )
+    except MissingSigningKeyError:
+        raise
 
 
 def _dev_signature_allowed(signature: str) -> bool:

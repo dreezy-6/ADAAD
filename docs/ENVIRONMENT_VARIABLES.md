@@ -116,7 +116,7 @@ This page catalogs `ADAAD_*` environment variables currently read by executable 
 | `ADAAD_PROMPT_PACK_VERSION` | `'unknown_prompt_pack'` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/baseline.py` |
 | `ADAAD_PROVIDER_ID` | `'unknown_provider'` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/baseline.py` |
 | `ADAAD_RECOVERY_TIER` | `unset` | enum string defined by caller | agent/orchestrator packages | `adaad/orchestrator/dispatcher.py` |
-| `ADAAD_REPLAY_MODE` | `'', 'audit', 'off', unset` | enum string defined by caller | agent/orchestrator packages | `adaad/orchestrator/dispatcher.py` |
+| `ADAAD_REPLAY_MODE` | `'', 'audit', 'off', 'strict', unset` | enum string defined by caller; `strict` requires deterministic provider/seed | runtime/governance engine + agent/orchestrator packages | `runtime/governance/foundation/determinism.py`, `adaad/orchestrator/dispatcher.py` |
 | `ADAAD_REPLAY_PROOF_ALGO` | `unset` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/replay_attestation.py` |
 | `ADAAD_REPLAY_PROOF_KEYRING_PATH` | `unset` | secret string; required in secured deployments | runtime/governance engine | `runtime/evolution/replay_attestation.py` |
 | `ADAAD_REPLAY_PROOF_KEY_ID` | `'replay-proof-dev'` | secret string; required in secured deployments | runtime/governance engine | `runtime/evolution/replay_attestation.py` |
