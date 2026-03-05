@@ -130,8 +130,8 @@ ADAAD-9 · Developer Experience (v1.3)       🔵 IN PROGRESS
 | PR-14 | Mutation Proposal Editor (Aponi Phase 1) | critical | ADAAD-7 ✅ | ✅ Complete |
 | PR-15 | Inline Constitutional Linter | critical | PR-14 | ✅ Complete |
 | PR-16 | Evidence Viewer + Endpoint | standard | PR-15 | ✅ Complete — `ui/aponi/evidence_viewer.js` · 17 tests |
-| PR-17 | Replay Inspector UI | standard | PR-16 | 🔵 In Progress |
-| PR-18 | Simulation Panel Integration | standard | PR-12 | ⬜ Next |
+| PR-17 | Replay Inspector UI | standard | PR-16 | ✅ Complete — 4 e2e tests added |
+| PR-18 | Simulation Panel Integration | standard | PR-12 | 🔵 In Progress |
 
 ### Authority invariant
 
