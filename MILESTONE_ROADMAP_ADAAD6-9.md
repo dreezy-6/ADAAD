@@ -179,13 +179,13 @@ Aponi surfaces are authoring and analysis only. They do not grant execution auth
 
 ## ADAAD-12 · Real Container-Level Isolation Backend
 
-**Version:** 1.6.0 · **Status:** 🔵 In Progress · **Prerequisite:** ADAAD-11 ✅
+**Version:** 1.6.0 · **Status:** ✅ Complete · **Merged:** 2026-03-05
 
 | PR | Deliverable | Status |
 |---|---|---|
-| PR-12-01 | ContainerOrchestrator + ContainerHealthProbe + default seccomp/network/resource profiles | ⬜ |
-| PR-12-02 | executor.py orchestrator wiring + lifecycle audit trail + MutationBudget integration + tests | ⬜ |
-| PR-12-MS | VERSION 1.6.0 · docs · README | ⬜ |
+| PR-12-01 | ContainerOrchestrator + HealthProbe + 3 default profiles | ✅ |
+| PR-12-02 | executor wiring + lifecycle audit trail + 20 tests | ✅ |
+| PR-12-MS | VERSION 1.6.0 · docs · README | ✅ |
 
 **Value unlock:** Sandbox execution moves from best-effort process isolation to kernel-enforced cgroup v2 limits with real-time read-back, signed lifecycle audit, and budget coupling.
 
@@ -193,7 +193,7 @@ Aponi surfaces are authoring and analysis only. They do not grant execution auth
 
 ## ADAAD-13 · Fully Autonomous Multi-Node Federation
 
-**Version:** 1.7.0 · **Status:** ⬜ Queued · **Prerequisite:** ADAAD-12 ✅
+**Version:** 1.7.0 · **Status:** 🔵 In Progress · **Prerequisite:** ADAAD-12 ✅
 
 | PR | Deliverable | Status |
 |---|---|---|
