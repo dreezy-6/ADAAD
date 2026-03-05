@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from runtime.market.feed_registry import FeedRegistry, MarketSignalReading
-from runtime.market.market_fitness_integrator import IntegrationResult, MarketFitnessIntegrator
+from runtime.market.market_fitness_integrator import MarketEnrichmentRecord, MarketFitnessIntegrator
 
 __all__ = [
     "FeedRegistry",
     "MarketSignalReading",
     "MarketFitnessIntegrator",
-    "IntegrationResult",
+    "MarketEnrichmentRecord",
 ]
