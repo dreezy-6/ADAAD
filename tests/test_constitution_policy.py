@@ -134,22 +134,22 @@ def test_tier_override_behavior_from_policy() -> None:
 
 def test_load_policy_document_parses_yaml_content(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.yaml"
-    _write_policy(policy_path, "version: 0.2.0\nrules: []\n")
+    _write_policy(policy_path, "version: 0.3.0\nrules: []\n")
 
     policy, policy_hash = constitution._load_policy_document(policy_path)
 
-    assert policy["version"] == "0.2.0"
+    assert policy["version"] == "0.3.0"
     assert policy["rules"] == []
     assert len(policy_hash) == 64
 
 
 def test_load_policy_document_parses_json_in_yaml_extension(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.yaml"
-    _write_policy(policy_path, '{"version":"0.2.0","rules":[]}')
+    _write_policy(policy_path, '{"version":"0.3.0","rules":[]}')
 
     policy, _ = constitution._load_policy_document(policy_path)
 
-    assert policy["version"] == "0.2.0"
+    assert policy["version"] == "0.3.0"
     assert policy["rules"] == []
 
 
@@ -165,7 +165,7 @@ def test_invalid_schema_fail_close(tmp_path: Path) -> None:
     invalid = tmp_path / "constitution.yaml"
     _write_policy(
         invalid,
-        '{"version":"0.2.0","tiers":{"PRODUCTION":0},"severities":["blocking"],"immutability_constraints":{},"rules":[]}',
+        '{"version":"0.3.0","tiers":{"PRODUCTION":0},"severities":["blocking"],"immutability_constraints":{},"rules":[]}',
     )
     with pytest.raises(ValueError, match="invalid_schema"):
         constitution.load_constitution_policy(path=invalid)
@@ -210,7 +210,7 @@ def test_reload_logs_amendment_hashes(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_version_mismatch_fails_close(tmp_path: Path) -> None:
     mismatch = tmp_path / "constitution.yaml"
-    body = constitution.POLICY_PATH.read_text(encoding="utf-8").replace('"version": "0.2.0"', '"version": "9.9.9"', 1)
+    body = constitution.POLICY_PATH.read_text(encoding="utf-8").replace('"version": "0.3.0"', '"version": "9.9.9"', 1)
     _write_policy(mismatch, body)
     with pytest.raises(ValueError, match="version_mismatch"):
         constitution.load_constitution_policy(path=mismatch, expected_version=constitution.CONSTITUTION_VERSION)
