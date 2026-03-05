@@ -378,3 +378,57 @@ def test_simulation_run_rejects_epoch_range_beyond_android_bound(monkeypatch) ->
     assert payload["ok"] is False
     assert payload["error"] == "epoch_range_exceeds_platform_limit"
     assert payload["max_epoch_range"] == 10
+
+
+def test_reviewer_panel_in_state_payload(monkeypatch, tmp_path) -> None:
+    """reviewer_panel key must appear in state_payload when dashboard fetches state."""
+    from security.ledger import journal as _journal_module
+    empty_journal = tmp_path / "journal.jsonl"
+    empty_journal.touch()
+    monkeypatch.setattr(_journal_module, "JOURNAL_PATH", empty_journal)
+    monkeypatch.setattr(_journal_module, "TAIL_STATE_PATH", tmp_path / "tail.json")
+
+    from ui.aponi_dashboard import AponiDashboard
+    panel = AponiDashboard._reviewer_reputation_panel()
+    assert "epoch_id" in panel
+    assert "reputation_scores" in panel
+    assert "tier_calibration" in panel
+    assert "scoring_algorithm_version" in panel
+
+
+def test_reviewer_panel_constitutional_floor_enforced(monkeypatch, tmp_path) -> None:
+    """tier_calibration entries must always carry constitutional_floor_enforced=True."""
+    from security.ledger import journal as _journal_module
+    import json
+
+    # Write one reviewer_action_outcome event to the journal
+    journal = tmp_path / "journal.jsonl"
+    entry = {
+        "tx": "TX-test",
+        "ts": "2026-03-05T00:00:00Z",
+        "type": "reviewer_action_outcome",
+        "payload": {
+            "reviewer_id": "alice",
+            "review_id": "rv-1",
+            "mutation_id": "mut-1",
+            "decision": "approve",
+            "latency_seconds": 1000.0,
+            "epoch_id": "epoch-7",
+            "scoring_algorithm_version": "1.0",
+        },
+        "prev_hash": "0" * 64,
+    }
+    import hashlib
+    material = entry.copy()
+    del material["prev_hash"]
+    # Recompute hash
+    m = hashlib.sha256((entry["prev_hash"] + json.dumps({k: v for k, v in entry.items() if k != "prev_hash"}, ensure_ascii=False, sort_keys=True)).encode()).hexdigest()
+    entry["hash"] = m
+    journal.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    monkeypatch.setattr(_journal_module, "JOURNAL_PATH", journal)
+    monkeypatch.setattr(_journal_module, "TAIL_STATE_PATH", tmp_path / "tail.json")
+
+    from ui.aponi_dashboard import AponiDashboard
+    panel = AponiDashboard._reviewer_reputation_panel()
+    for tier_data in panel["tier_calibration"].values():
+        assert tier_data["constitutional_floor_enforced"] is True

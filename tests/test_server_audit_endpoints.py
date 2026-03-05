@@ -226,3 +226,68 @@ def test_review_quality_metrics_endpoint(monkeypatch) -> None:
     assert payload["sla_seconds"] == 86400
     assert payload["window_count"] == 2
     assert payload["review_latency_distribution_seconds"]["count"] == 2
+
+
+def test_reviewer_calibration_endpoint_auth_gate(monkeypatch) -> None:
+    """GET /governance/reviewer-calibration requires bearer token with audit:read scope."""
+    monkeypatch.setenv("ADAAD_AUDIT_TOKENS", json.dumps({"audit-token": ["audit:read"]}))
+
+    with TestClient(server.app) as client:
+        unauthorized = client.get("/governance/reviewer-calibration?epoch_id=epoch-7")
+        assert unauthorized.status_code == 401
+
+        authorized = client.get(
+            "/governance/reviewer-calibration?epoch_id=epoch-7",
+            headers=_auth_header(),
+        )
+
+    assert authorized.status_code == 200
+
+
+def test_reviewer_calibration_endpoint_schema(monkeypatch, tmp_path) -> None:
+    """GET /governance/reviewer-calibration returns expected schema keys."""
+    monkeypatch.setenv("ADAAD_AUDIT_TOKENS", json.dumps({"audit-token": ["audit:read"]}))
+
+    # Point journal to an empty temp file (no events)
+    import server as _server_module
+    from security.ledger import journal as _journal_module
+    empty_journal = tmp_path / "journal.jsonl"
+    empty_journal.touch()
+    monkeypatch.setattr(_journal_module, "JOURNAL_PATH", empty_journal)
+    monkeypatch.setattr(_journal_module, "TAIL_STATE_PATH", tmp_path / "tail.json")
+
+    with TestClient(server.app) as client:
+        resp = client.get(
+            "/governance/reviewer-calibration?epoch_id=epoch-99&reviewer_ids=alice,bob",
+            headers=_auth_header(),
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "data" in data
+    assert data["data"]["epoch_id"] == "epoch-99"
+    assert "reputation_scores" in data["data"]
+    assert "tier_calibration" in data["data"]
+    assert "scoring_algorithm_version" in data["data"]
+    assert data["authn"]["scope"] == "audit:read"
+
+
+def test_reviewer_calibration_explicit_reviewer_ids(monkeypatch, tmp_path) -> None:
+    """Explicit reviewer_ids param returns scores for exactly those reviewers."""
+    monkeypatch.setenv("ADAAD_AUDIT_TOKENS", json.dumps({"audit-token": ["audit:read"]}))
+
+    from security.ledger import journal as _journal_module
+    empty_journal = tmp_path / "journal.jsonl"
+    empty_journal.touch()
+    monkeypatch.setattr(_journal_module, "JOURNAL_PATH", empty_journal)
+    monkeypatch.setattr(_journal_module, "TAIL_STATE_PATH", tmp_path / "tail.json")
+
+    with TestClient(server.app) as client:
+        resp = client.get(
+            "/governance/reviewer-calibration?epoch_id=epoch-7&reviewer_ids=alice,bob,carol",
+            headers=_auth_header(),
+        )
+
+    assert resp.status_code == 200
+    scores = resp.json()["data"]["reputation_scores"]
+    assert set(scores.keys()) == {"alice", "bob", "carol"}

@@ -1061,6 +1061,7 @@ class AponiDashboard:
                     state_payload = self._run_background(dict, state_ref)
                     state_payload["mutation_rate_limit"] = self._run_background(self._mutation_rate_state)
                     state_payload["determinism_panel"] = self._run_background(self._determinism_panel)
+                    state_payload["reviewer_panel"] = self._run_background(self._reviewer_reputation_panel)
                     self._send_json(state_payload)
                     return
                 if path.startswith("/metrics/review-quality"):
@@ -4368,6 +4369,80 @@ scheduleNextQueueRefresh();
 
 
         return Handler
+
+    @classmethod
+    def _reviewer_reputation_panel(cls) -> dict:
+        """Compute reviewer reputation panel data for Aponi dashboard."""
+        from runtime.governance.reviewer_reputation import (
+            compute_epoch_reputation_batch,
+            DEFAULT_EPOCH_WEIGHTS,
+            SCORING_ALGORITHM_VERSION,
+        )
+        from runtime.governance.review_pressure import compute_panel_calibration, DEFAULT_TIER_CONFIG
+        from security.ledger.journal import JOURNAL_PATH, ensure_journal
+        import json as _json
+
+        ensure_journal()
+        events: list = []
+        try:
+            for line in JOURNAL_PATH.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = _json.loads(line)
+                    payload = entry.get("payload") or {}
+                    if (
+                        entry.get("type") == "reviewer_action_outcome"
+                        or payload.get("event_type") == "reviewer_action_outcome"
+                    ):
+                        events.append({"event_type": "reviewer_action_outcome", "payload": payload})
+                except (ValueError, KeyError):
+                    continue
+        except OSError:
+            events = []
+
+        # Collect unique epoch IDs from events
+        epoch_ids = list({str(ev["payload"].get("epoch_id") or "") for ev in events if ev["payload"].get("epoch_id")})
+        latest_epoch = epoch_ids[-1] if epoch_ids else "unknown"
+
+        ids = list({
+            str(ev["payload"].get("reviewer_id") or "")
+            for ev in events
+            if ev["payload"].get("epoch_id") == latest_epoch and ev["payload"].get("reviewer_id")
+        })
+
+        reputation_scores = compute_epoch_reputation_batch(ids, events, epoch_id=latest_epoch)
+
+        tier_scores: dict = {}
+        for rec in reputation_scores.values():
+            for tier in DEFAULT_TIER_CONFIG:
+                tier_scores[tier] = rec["composite_score"]
+            break
+        calibration = compute_panel_calibration(tier_scores) if tier_scores else {}
+
+        return {
+            "epoch_id": latest_epoch,
+            "scoring_algorithm_version": SCORING_ALGORITHM_VERSION,
+            "reviewer_count": len(ids),
+            "reputation_scores": {
+                rid: {
+                    "composite_score": rec["composite_score"],
+                    "dimension_scores": rec["dimension_scores"],
+                    "event_count": rec["event_count"],
+                }
+                for rid, rec in reputation_scores.items()
+            },
+            "tier_calibration": {
+                tier: {
+                    "adjusted_count": cal["adjusted_count"],
+                    "base_count": cal["base_count"],
+                    "constitutional_floor_enforced": cal["constitutional_floor_enforced"],
+                }
+                for tier, cal in calibration.items()
+            },
+        }
+
 
     def stop(self) -> None:
         if self._server:
