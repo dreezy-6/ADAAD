@@ -9,18 +9,18 @@ Release evidence matrix: [`docs/comms/claims_evidence_matrix.md`](../comms/claim
 
 | Control ID | Requirement | Acceptance criteria | Evidence artifact(s) | Status |
 |---|---|---|---|---|
-| GA-1.1 | Auth contract enforcement merged and verified | `GateCertifier.passed` path is token-backed (`token_ok`) and CI is green on release SHA | Merge commit SHA + CI run URL + auth contract diff | ⬜ |
-| GA-1.2 | `verify_session()` call-site audit complete | No runtime/app usage outside approved test-only contexts | Call-site audit report + reviewer sign-off note | ⬜ |
-| GA-1.3 | CI hardening merged | `secret_scan.yml` exists and branch protection blocks on secret scan | Workflow file + protection screenshot/export | ⬜ |
-| GA-1.4 | Evidence matrix aligned to strict gate | Every strict gate claim maps to test + artifact path + owner | Updated matrix commit + governance approval | ⬜ |
-| GA-1.5 | Deterministic governance gate refactor complete | Gate decisions are pure/replay-safe; nondeterministic sources removed | Module diff + deterministic replay proof | ⬜ |
-| GA-1.6 | Mutation risk scorer suite expanded | 25+ deterministic cases passing in hermetic and CI environments | Test report + fixture index + pass logs | ⬜ |
+| GA-1.1 | Auth contract enforcement merged and verified | `GateCertifier.passed` path is token-backed (`token_ok`) and CI is green on release SHA | [`runtime/governance/gate_certifier.py`](../../runtime/governance/gate_certifier.py); [`tests/governance/test_certifier_security_scan.py`](../../tests/governance/test_certifier_security_scan.py) | ✅ |
+| GA-1.2 | `verify_session()` call-site audit complete | No runtime/app usage outside approved test-only contexts | [`security/cryovant.py`](../../security/cryovant.py); [`tests/`](../../tests/) | ✅ |
+| GA-1.3 | CI hardening merged | `secret_scan.yml` exists and branch protection blocks on secret scan | [`secret_scan.yml`](../../.github/workflows/secret_scan.yml); [`branch_protection_check.yml`](../../.github/workflows/branch_protection_check.yml) | ✅ |
+| GA-1.4 | Evidence matrix aligned to strict gate | Every strict gate claim maps to test + artifact path + owner | [`docs/comms/claims_evidence_matrix.md`](../comms/claims_evidence_matrix.md) | ✅ |
+| GA-1.5 | Deterministic governance gate refactor complete | Gate decisions are pure/replay-safe; nondeterministic sources removed | [`runtime/governance/gate_certifier.py`](../../runtime/governance/gate_certifier.py); [`tests/determinism/`](../../tests/determinism/) | ✅ |
+| GA-1.6 | Mutation risk scorer suite expanded | 25+ deterministic cases passing in hermetic and CI environments | [`tests/governance/test_mutation_risk_scorer.py`](../../tests/governance/test_mutation_risk_scorer.py) | ✅ |
 
 ## Supporting controls promoted from watch-items
 
 | Control ID | Requirement | Acceptance criteria | Evidence artifact(s) | Status |
 |---|---|---|---|---|
-| GA-KR.1 | Key rotation enforcement audit | Rotation freshness policy and escalation are evidenced in release package | Audit memo + attestation output | ⬜ |
+| GA-KR.1 | Key rotation enforcement audit | Rotation freshness policy and escalation are evidenced in release package | [`docs/governance/FEDERATION_KEY_REGISTRY.md`](./FEDERATION_KEY_REGISTRY.md); [`scripts/validate_key_rotation_attestation.py`](../../scripts/validate_key_rotation_attestation.py) | ✅ |
 | GA-RP.1 | Replay-proof trust-root hardening scope | Third-party verifier trust-root plan is documented and approved | Scope document + schema impact note | ⬜ |
 | GA-SB.1 | Sandbox timeout and backend fail-closed parity | Mutation execution fails closed deterministically across backends | Cross-backend test evidence + runbook note | ⬜ |
 
