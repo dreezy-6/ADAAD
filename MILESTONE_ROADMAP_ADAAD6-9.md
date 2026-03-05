@@ -151,12 +151,12 @@ Aponi surfaces are authoring and analysis only. They do not grant execution auth
 
 ## ADAAD-10 · Live Market Signal Adapters
 
-**Version:** 1.4.0 · **Status:** ⬜ Next · **Prerequisite:** ADAAD-9 ✅
+**Version:** 1.4.0 · **Status:** 🔵 In Progress · **Prerequisite:** ADAAD-9 ✅
 
 | PR | Deliverable | Status |
 |---|---|---|
 | PR-10-01 | FeedRegistry + VolatilityIndex/ResourcePrice/DemandSignal adapters + schema | ✅ 19 tests |
-| PR-10-02 | MarketFitnessIntegrator + FitnessOrchestrator wiring + webhook endpoint + tests | ⬜ |
+| PR-10-02 | MarketFitnessIntegrator + FitnessOrchestrator wiring + tests | ✅ 12 tests |
 | PR-10-MS | VERSION 1.4.0 · docs · README | ⬜ |
 
 **Value unlock:** Live DAU + retention signals replace synthetic constants, activating real Darwinian selection pressure across the entire fitness pipeline.
