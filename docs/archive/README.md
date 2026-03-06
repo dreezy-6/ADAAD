@@ -1,5 +1,7 @@
 # Archive
 
+> ⚠️ **Historical archive only.** Commands and procedures in this folder may be obsolete and must not be used as current setup guidance. Use `README.md`, `QUICKSTART.md`, and `docs/governance/` for active instructions.
+
 Historical planning documents, milestone trackers, and PR artifacts superseded by v2.0.0.
 These files are preserved for audit lineage only. Do not reference them for current governance.
 

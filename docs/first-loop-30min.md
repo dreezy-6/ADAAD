@@ -10,13 +10,13 @@ This walkthrough runs one full ADAAD cycle:
 
 ## 0) Prereqs (2 min)
 
-Use the same onboarding entrypoint as project setup:
+Preferred setup flow:
 
 ```bash
 python onboard.py
 ```
 
-If you already have a virtualenv and only need dependencies:
+Fallback (if onboarding is unavailable in your environment):
 
 ```bash
 pip install -r requirements.server.txt
