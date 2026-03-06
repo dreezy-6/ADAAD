@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
+from __future__ import annotations
+_AGENT_CONTRACT_EXCLUDED = True  # infrastructure module — not a governed agent contract
 
 """
 Concrete mutation strategies that generate actionable ops.
 """
 
-from __future__ import annotations
 
 import json
 import os

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
+_AGENT_CONTRACT_EXCLUDED = True  # infrastructure module — not a governed agent contract
 
 import argparse
 import ast

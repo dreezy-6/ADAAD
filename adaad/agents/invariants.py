@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
+from __future__ import annotations
+_AGENT_CONTRACT_EXCLUDED = True  # infrastructure module — not a governed agent contract
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -15,7 +17,6 @@
 Invariant checks for agent metadata.
 """
 
-from __future__ import annotations
 
 import json
 from pathlib import Path
