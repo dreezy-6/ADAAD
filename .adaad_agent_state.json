@@ -1,8 +1,8 @@
 {
   "schema_version": "2.3.0",
   "last_completed_pr": "AI-MUTATION-v2.0-MILESTONE",
-  "next_pr": "ADAAD-15-pending",
-  "active_phase": "v2.3.0 RELEASED \u00b7 post-merge doc sync",
+  "next_pr": "PR-PHASE5-01",
+  "active_phase": "v3.0.0 SPEC ISSUED \u00b7 Phase 5 Multi-Repo Federation \u00b7 awaiting human sign-off on PR-PHASE5-01",
   "last_invocation": "2026-03-06",
   "blocked_reason": null,
   "blocked_at_gate": null,
@@ -44,7 +44,8 @@
     "population-manager-blx-alpha-ga",
     "pr12-gate-ok-fix",
     "architect-spec-v2.0.0-issued",
-    "v2.0.0-released"
+    "v2.0.0-released",
+    "architect-spec-v3.0.0-issued"
   ],
   "pending_evidence_rows": [],
   "last_sync_sha": "2de28a3"
