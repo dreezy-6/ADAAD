@@ -84,6 +84,10 @@ from security.ledger.journal import JournalIntegrityError
 from ui.aponi_dashboard import AponiDashboard
 
 
+# Module-level alias for CheckpointVerifier.verify_all_checkpoints — exposed so
+# tests can monkeypatch `app.main.verify_all` without reaching into the class.
+verify_all = CheckpointVerifier.verify_all_checkpoints
+
 ORCHESTRATOR_LOGGER = "adaad.orchestrator"
 
 

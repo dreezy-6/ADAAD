@@ -34,8 +34,8 @@ def _event(*, event_id: str, signature: str | None = None) -> AGMEventEnvelope:
 def test_ledger_store_append_and_verify_json(tmp_path) -> None:
     ledger = ScoringLedgerStore(path=tmp_path / "scoring.jsonl", backend="json")
     signer = DeterministicMockSigner()
-    ledger.append_event(_event(event_id="evt-1"), verifier=signer)
-    ledger.append_event(_event(event_id="evt-2"), verifier=signer)
+    ledger.append_event(_event(event_id="00000000000000000000000000000001"), verifier=signer)
+    ledger.append_event(_event(event_id="00000000000000000000000000000002"), verifier=signer)
 
     report = ledger.verify_chain(verifier=signer)
 
@@ -47,8 +47,8 @@ def test_ledger_store_detects_hash_chain_tamper(tmp_path) -> None:
     ledger_path = tmp_path / "scoring.jsonl"
     ledger = ScoringLedgerStore(path=ledger_path, backend="json")
     signer = DeterministicMockSigner()
-    ledger.append_event(_event(event_id="evt-1"), verifier=signer)
-    ledger.append_event(_event(event_id="evt-2"), verifier=signer)
+    ledger.append_event(_event(event_id="00000000000000000000000000000001"), verifier=signer)
+    ledger.append_event(_event(event_id="00000000000000000000000000000002"), verifier=signer)
 
     lines = ledger_path.read_text(encoding="utf-8").splitlines()
     lines[1] = lines[1].replace('"prev_hash": "', '"prev_hash": "sha256:deadbeef')
@@ -67,7 +67,7 @@ def test_ledger_store_json_sqlite_parity(tmp_path) -> None:
     sqlite_ledger = ScoringLedgerStore(path=json_path, sqlite_path=sqlite_path, backend="sqlite")
     signer = DeterministicMockSigner()
 
-    for event_id in ["evt-a", "evt-b", "evt-c"]:
+    for event_id in ["0000000000000000000000000000000a", "0000000000000000000000000000000b", "0000000000000000000000000000000c"]:
         envelope = _event(event_id=event_id)
         json_ledger.append_event(envelope, verifier=signer)
         sqlite_ledger.append_event(envelope, verifier=signer)
@@ -79,7 +79,7 @@ def test_ledger_store_json_sqlite_parity(tmp_path) -> None:
 def test_ledger_store_rejects_invalid_signature(tmp_path) -> None:
     ledger = ScoringLedgerStore(path=tmp_path / "scoring.jsonl", backend="json")
     signer = DeterministicMockSigner()
-    invalid = _event(event_id="evt-bad", signature="sig:deadbeef")
+    invalid = _event(event_id="0000000000000000000000000000000d", signature="sig:deadbeef")
 
     try:
         ledger.append_event(invalid, verifier=signer)
