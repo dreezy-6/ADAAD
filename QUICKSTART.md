@@ -38,11 +38,12 @@ python onboard.py
 
 ---
 
-## Manual setup (if you prefer)
+## Manual setup (fallback when `python onboard.py` is unavailable)
 
 ```bash
 # 1. Environment
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 pip install -r requirements.server.txt
 
 # 2. Configure

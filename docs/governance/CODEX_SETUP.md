@@ -87,7 +87,13 @@ same change window.
 
 ## Environment bootstrap (recommended before ADAAD preflight)
 
-Run this once per fresh environment to avoid false gate failures from missing deterministic/security dependencies:
+Preferred setup path (governed, end-to-end):
+
+```bash
+python onboard.py
+```
+
+Fallback (use only when `onboard.py` cannot run in your environment):
 
 ```bash
 python -m pip install --upgrade pip

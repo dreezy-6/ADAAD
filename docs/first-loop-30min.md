@@ -10,8 +10,16 @@ This walkthrough runs one full ADAAD cycle:
 
 ## 0) Prereqs (2 min)
 
+Preferred setup flow:
+
 ```bash
-pip install -r requirements.txt
+python onboard.py
+```
+
+Fallback (if onboarding is unavailable in your environment):
+
+```bash
+pip install -r requirements.server.txt
 ```
 
 ## 1) Boot the orchestrator (5 min)
