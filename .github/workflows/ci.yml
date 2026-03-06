@@ -177,6 +177,11 @@ jobs:
         run: python scripts/validate_readme_alignment.py --format json
       - name: Validate markdown link and image integrity
         run: python scripts/validate_docs_integrity.py --format json
+      - name: Validate governance + release markdown link integrity
+        run: >-
+          python scripts/validate_docs_integrity.py
+          --format json
+          --roots docs/governance docs/comms docs/release docs/releases
 
   workflow-python-version-guard:
     runs-on: ubuntu-latest

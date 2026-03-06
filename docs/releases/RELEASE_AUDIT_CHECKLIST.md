@@ -17,7 +17,7 @@ Canonical operator preflight checklist: [`docs/release/release_checklist.md`](..
 - [ ] Evidence bundle reproducibility test completed
 - [ ] Port canonicalization verification completed (Aponi constants)
 
-## v1.1-GA closure controls (blocking)
+## v1.1-GA closure controls (historical blocking baseline)
 
 - [ ] 1.1 Auth contract enforcement merged and CI-green on release SHA
 - [ ] 1.2 `verify_session()` call-site audit complete (no runtime/app usage)
@@ -31,6 +31,8 @@ Canonical operator preflight checklist: [`docs/release/release_checklist.md`](..
 
 - Replay and determinism: [`docs/DETERMINISM.md`](../DETERMINISM.md)
 - Release evidence matrix: [`docs/comms/claims_evidence_matrix.md`](../comms/claims_evidence_matrix.md)
-- v1.1-GA closure tracker: [`docs/governance/ADAAD_7_GA_CLOSURE_TRACKER.md`](../governance/ADAAD_7_GA_CLOSURE_TRACKER.md)
+- Program PR procession (active): [`docs/governance/ADAAD_PR_PROCESSION_2026-03.md`](../governance/ADAAD_PR_PROCESSION_2026-03.md)
+- Program roadmap (active): [`ROADMAP.md`](../../ROADMAP.md)
+- v1.1-GA closure tracker (historical): [`docs/governance/ADAAD_7_GA_CLOSURE_TRACKER.md`](../governance/ADAAD_7_GA_CLOSURE_TRACKER.md)
 - Mutation evidence schema: [`schemas/evidence_bundle.v1.json`](../../schemas/evidence_bundle.v1.json)
 - Constitution contract: [`docs/CONSTITUTION.md`](../CONSTITUTION.md)

@@ -25,6 +25,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="json",
         help="Output format. Defaults to json for CI readability.",
     )
+    parser.add_argument(
+        "--roots",
+        nargs="+",
+        default=None,
+        help="Optional markdown roots (files or directories) relative to repo root.",
+    )
     return parser
 
 
@@ -134,9 +140,26 @@ def _scan_markdown_file(markdown_file: Path) -> list[dict[str, object]]:
     return findings
 
 
-def _collect_findings() -> list[dict[str, object]]:
+def _resolve_markdown_targets(roots: list[str] | None) -> list[Path]:
+    if roots is None:
+        return sorted(ROOT.rglob("*.md"))
+
+    targets: set[Path] = set()
+    for root in roots:
+        candidate = (ROOT / root).resolve()
+        if not candidate.exists():
+            raise FileNotFoundError(f"markdown root not found: {root}")
+        if candidate.is_file():
+            if candidate.suffix.lower() == ".md":
+                targets.add(candidate)
+            continue
+        targets.update(path for path in candidate.rglob("*.md") if path.is_file())
+    return sorted(targets)
+
+
+def _collect_findings(roots: list[str] | None = None) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
-    for markdown_file in sorted(ROOT.rglob("*.md")):
+    for markdown_file in _resolve_markdown_targets(roots):
         findings.extend(_scan_markdown_file(markdown_file))
     return sorted(findings, key=lambda item: (str(item["file"]), int(item["line"]), str(item["kind"]), str(item["target"])))
 
@@ -169,7 +192,7 @@ def main() -> int:
     args = _build_parser().parse_args()
     findings: list[dict[str, object]] = []
     try:
-        findings = _collect_findings()
+        findings = _collect_findings(roots=args.roots)
     except Exception as exc:  # fail closed
         findings = [
             {
