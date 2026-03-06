@@ -5,10 +5,10 @@
 
 | Metric | Value |
 | --- | --- |
-| Report version | `1.0.0` |
-| Branch | `work` |
+| Report version | `2.2.0` |
+| Branch | `main` |
 | Tag | `(none)` |
-| Short SHA | `e00d030` |
+| Short SHA | `c5c9e70` |
 
 All future architecture snapshots MUST include branch, tag (if any), and short SHA.
 <!-- ARCH_SNAPSHOT_METADATA:END -->

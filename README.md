@@ -6,7 +6,7 @@
   <a href="https://github.com/InnovativeAI-adaad/ADAAD/actions/workflows/ci.yml">
     <img alt="CI" src="https://github.com/InnovativeAI-adaad/ADAAD/actions/workflows/ci.yml/badge.svg"/>
   </a>
-  <img alt="Version" src="https://img.shields.io/badge/version-2.0.0-00d4ff?style=flat-square&labelColor=060d14"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-2.2.0-00d4ff?style=flat-square&labelColor=060d14"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11+-7b61ff?style=flat-square&labelColor=060d14"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square&labelColor=060d14"/>
   <img alt="Android" src="https://img.shields.io/badge/android-pydroid3-f59e0b?style=flat-square&labelColor=060d14"/>
@@ -213,6 +213,7 @@ This is architecturally enforced, not just documented.
 
 | Version | Capability |
 |---|---|
+| **v2.2** | Phase 2 — Governed Explore/Exploit Loop |
 | **v2.0** | AI mutation engine · UCB1 bandit · epoch telemetry · MCP pipeline tools |
 | v1.8 | Cross-track convergence — market × federation × container × Darwinian unified |
 | v1.7 | Fully autonomous multi-node federation — Raft consensus, gossip, node supervisor |

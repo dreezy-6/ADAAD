@@ -1,8 +1,8 @@
 {
-  "schema_version": "2.0.0",
+  "schema_version": "2.2.0",
   "last_completed_pr": "AI-MUTATION-v2.0-MILESTONE",
   "next_pr": "ADAAD-15-pending",
-  "active_phase": "v2.0.0 RELEASED · AI Mutation Capability Expansion",
+  "active_phase": "v2.2.0 RELEASED \u00b7 post-merge doc sync",
   "last_invocation": "2026-03-06",
   "blocked_reason": null,
   "blocked_at_gate": null,
