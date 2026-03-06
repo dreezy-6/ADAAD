@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
+from __future__ import annotations
+_AGENT_CONTRACT_EXCLUDED = True  # infrastructure module — not a governed agent contract
 """
 Lightweight mutation strategy selector using UCB1-style scoring.
 """
 
-from __future__ import annotations
 
 import json
 import math
