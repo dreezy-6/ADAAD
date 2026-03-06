@@ -1,6 +1,6 @@
 # Release Checklist
 
-Use this checklist for any release candidate, with strict enforcement for governance and public-readiness milestones.
+Use this checklist for any release candidate, with strict enforcement for governance and public-readiness milestones across current roadmap phases.
 
 ## Release types
 
@@ -49,19 +49,20 @@ Reference: `docs/DEPENDABOT_REVIEW_POLICY.md`.
 
 ## Versioned documentation and release notes
 
-- [ ] Release notes file exists at `docs/releases/<version>.md` and reflects scope (`VERSION` currently `1.0.0`, baseline notes: `docs/releases/1.0.0.md`).
+- [ ] Release notes file exists at `docs/releases/<version>.md` and reflects the current scope; include explicit roadmap/phase mapping for the release window.
 - [ ] Governance/spec deltas are reflected in versioned docs.
 - [ ] Any externally referenced docs/spec links are immutable/versioned.
 
 ## Tagging controls for governance/public-readiness releases
 
 - [ ] For milestone tags (for example `vX.Y.Z-governance-*` or `vX.Y.Z-public-readiness-*`), confirm `.github/workflows/governance_strict_release_gate.yml` passed (including terminal `release-gate`).
-- [ ] For `v1.1-GA` tagging, complete and record a mandatory verification that `GateCertifier.passed` requires `token_ok` in `runtime/governance/gate_certifier.py` and no production caller depends on deprecated `verify_session(...)` in `security/cryovant.py`.
-- [ ] Patent filing readiness artifact reviewed by IP counsel before creating `v1.1-GA` tag.
+- [ ] For legacy `v1.1-GA` references, preserve historical verification evidence that `GateCertifier.passed` requires `token_ok` in `runtime/governance/gate_certifier.py` and no production caller depends on deprecated `verify_session(...)` in `security/cryovant.py`.
+- [ ] For current governance/public-readiness tags, confirm release notes include explicit links to active phase scope in `ROADMAP.md` and `docs/governance/ADAAD_PR_PROCESSION_2026-03.md`.
+- [ ] Patent filing readiness artifact reviewed by IP counsel before creating governance/public-readiness tags, when applicable.
 - [ ] `docs/governance/LANE_OWNERSHIP.md` exists and all lanes have identified owners.
 - [ ] All pending claims-evidence rows from `ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md §Evidence Lane Output Contract` are `Complete` in `docs/comms/claims_evidence_matrix.md`.
-- [ ] Federation HMAC key rotation runbook exists for `ADAAD_FEDERATION_MANIFEST_HMAC_KEY`, validated by security owner, before creating `v1.1-GA` tag.
-- [ ] Attach CI green status evidence (run URL or artifact) for the exact release commit before creating the `v1.1-GA` tag.
+- [ ] Federation HMAC key rotation runbook exists for `ADAAD_FEDERATION_MANIFEST_HMAC_KEY`, validated by security owner, before creating governance/public-readiness tags.
+- [ ] Attach CI green status evidence (run URL or artifact) for the exact release commit before creating governance/public-readiness tags.
 - [ ] Only create/publish the tag after evidence gate checks pass.
 
 ## Go/No-Go criteria
@@ -79,4 +80,4 @@ If any criterion fails, the decision is **No-Go** until remediated.
 
 ---
 
-Related docs: [Repository README](../../README.md) · [Documentation index](../README.md) · [Strategic build suggestions](../ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) · [GA closure tracker](../governance/ADAAD_7_GA_CLOSURE_TRACKER.md) · [Release audit evidence verification checklist](../releases/RELEASE_AUDIT_CHECKLIST.md)
+Related docs: [Repository README](../../README.md) · [Documentation index](../README.md) · [Strategic build suggestions](../ADAAD_STRATEGIC_BUILD_SUGGESTIONS.md) · [Program PR procession](../governance/ADAAD_PR_PROCESSION_2026-03.md) · [Roadmap](../../ROADMAP.md) · [v1.1-GA historical closure tracker](../governance/ADAAD_7_GA_CLOSURE_TRACKER.md) · [Release audit evidence verification checklist](../releases/RELEASE_AUDIT_CHECKLIST.md)

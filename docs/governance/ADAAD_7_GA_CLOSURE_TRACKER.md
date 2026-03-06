@@ -1,11 +1,15 @@
-# ADAAD v1.1-GA Closure Tracker (Execution Control Surface)
+## ADAAD v1.1-GA Closure Tracker (Historical Baseline)
 
-This tracker converts the ADAAD-7 execution plan into auditable release controls. It is designed for governance sign-off and strict replay verification.
+This document preserves the completed ADAAD-7 / v1.1-GA closure controls as a historical audit baseline.
 
-Primary execution plan: [`ADAAD_7_EXECUTION_PLAN.md`](../../ADAAD_7_EXECUTION_PLAN.md)
+> Current sequencing and roadmap execution are tracked in [`ADAAD_PR_PROCESSION_2026-03.md`](./ADAAD_PR_PROCESSION_2026-03.md) and [`ROADMAP.md`](../../ROADMAP.md).
+>
+> Use this file for historical evidence traceability only; do not treat it as the active forward plan.
+
+Primary execution plan: [`ADAAD_7_EXECUTION_PLAN.md`](../archive/ADAAD_7_EXECUTION_PLAN.md)
 Release evidence matrix: [`docs/comms/claims_evidence_matrix.md`](../comms/claims_evidence_matrix.md)
 
-## Phase 1 Control Gate (must be 100% complete)
+## Historical Phase 1 Control Gate (completed)
 
 | Control ID | Requirement | Acceptance criteria | Evidence artifact(s) | Status |
 |---|---|---|---|---|
@@ -22,14 +26,14 @@ Release evidence matrix: [`docs/comms/claims_evidence_matrix.md`](../comms/claim
 |---|---|---|---|---|
 | GA-KR.1 | Key rotation enforcement audit | Rotation freshness policy and escalation are evidenced in release package | [`docs/governance/FEDERATION_KEY_REGISTRY.md`](./FEDERATION_KEY_REGISTRY.md); [`scripts/validate_key_rotation_attestation.py`](../../scripts/validate_key_rotation_attestation.py) | ✅ |
 | GA-RP.1 | Replay-proof trust-root hardening scope | Third-party verifier trust-root plan is documented and approved | [`STRICT_REPLAY_INVARIANTS.md`](./STRICT_REPLAY_INVARIANTS.md); [`ARCHITECT_SPEC_v2.0.0.md` §3.3](./ARCHITECT_SPEC_v2.0.0.md) | ✅ |
-| GA-SB.1 | Sandbox timeout and backend fail-closed parity | Mutation execution fails closed deterministically across backends | [`resource_bounds.py`](../../runtime/governance/validators/resource_bounds.py); [`test_resource_bounds.py`](../../tests/test_resource_bounds.py); [`RELEASE_EVIDENCE_MATRIX.md`](../RELEASE_EVIDENCE_MATRIX.md) | ✅ |
+| GA-SB.1 | Sandbox timeout and backend fail-closed parity | Mutation execution fails closed deterministically across backends | [`resource_bounds.py`](../../runtime/governance/validators/resource_bounds.py); [`test_resource_bounds.py`](../../tests/test_resource_bounds.py); [`claims_evidence_matrix.md`](../comms/claims_evidence_matrix.md) | ✅ |
 
 ## Sign-off protocol
 
 - Governance Lead signs only when all `GA-1.x` controls are complete.
 - Security Lead signs when `GA-1.1`, `GA-1.2`, `GA-1.3`, and `GA-KR.1` are complete.
 - Runtime/Codex sign-off required for `GA-1.5`, `GA-1.6`, and `GA-SB.1`.
-- Release tag `v1.1-GA` is blocked until all mandatory controls are checked.
+- Historical note: release tag `v1.1-GA` was blocked until all mandatory controls were checked.
 
 ## Evidence packaging notes
 

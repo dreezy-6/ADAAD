@@ -213,7 +213,7 @@ Required before tagging `v2.2.0`:
 1. PR-PHASE4-02 through PR-PHASE4-07 merged and CI green
 2. `CHANGELOG.md` Phase 4 section complete with all evidence links
 3. `ROADMAP.md` Phase 4 status updated to `✅ shipped`
-4. `docs/RELEASE_EVIDENCE_MATRIX.md` Phase 4 row complete
+4. `docs/comms/claims_evidence_matrix.md` Phase 4 row complete
 5. Governance + Runtime sign-off
 
 ---
@@ -284,7 +284,7 @@ Required before tagging `v2.2.0`:
 | Depends on | PR-PHASE5-02 merged |
 
 **Scope:**
-- `docs/RELEASE_EVIDENCE_MATRIX.md` — Phase 5 row with cross-repo determinism verification requirements
+- `docs/comms/claims_evidence_matrix.md` — Phase 5 row with cross-repo determinism verification requirements
 - CI job `federated-determinism`: verifies zero divergences in simulated two-node federation epoch
 - `CONSTITUTION.md` v0.5.0: adds `federated_mutation_dual_approval` as BLOCKING rule
 
