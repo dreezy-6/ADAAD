@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ADAAD Backup Rules
+  Governance signing keys and the ledger are NEVER backed up to Google Drive.
+  The ledger is reconstructible from the server; keys must be re-provisioned.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="adaad_governance.xml" />
+    <exclude domain="file"       path="governance_ledger.jsonl" />
+    <exclude domain="file"       path="ledger_integrity.json" />
+</full-backup-content>

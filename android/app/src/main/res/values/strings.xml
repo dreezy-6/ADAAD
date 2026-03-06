@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ADAAD</string>
+    <string name="app_description">Constitutional Governance for Autonomous Code Evolution</string>
+    <string name="constitution_version">v0.3.0</string>
+    <string name="adaad_version">3.0.0</string>
+    <string name="company_name">InnovativeAI LLC</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Governance Dashboard</string>
+    <string name="constitution_healthy">Constitution — HEALTHY</string>
+    <string name="constitution_rules_active">rules active</string>
+    <string name="ledger_verified">Ledger verified</string>
+
+    <!-- Navigation -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_proposals">Proposals</string>
+    <string name="nav_ledger">Ledger</string>
+    <string name="nav_constitution">Rules</string>
+    <string name="nav_federation">Federation</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Governance -->
+    <string name="proposal_approve">Approve</string>
+    <string name="proposal_reject">Reject</string>
+    <string name="proposal_escalate">Escalate</string>
+    <string name="gate_pass">PASS</string>
+    <string name="gate_fail">FAIL</string>
+    <string name="tier_0_blocking">Tier 0 — Blocking</string>
+    <string name="tier_1_post_approval">Tier 1 — Post-Approval</string>
+    <string name="tier_2_advisory">Tier 2 — Advisory</string>
+
+    <!-- Boot error -->
+    <string name="boot_error_title">Boot Failure</string>
+    <string name="boot_error_desc">ADAAD encountered a fail-closed error during boot.</string>
+    <string name="retry">Retry</string>
+</resources>

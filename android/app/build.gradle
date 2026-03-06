@@ -1,0 +1,149 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+android {
+    namespace 'com.innovativeai.adaad'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.innovativeai.adaad"
+        minSdk 26          // Android 8.0 — required for ADAAD cryptographic primitives
+        targetSdk 34
+        versionCode 30000  // 3.0.0
+        versionName "3.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables { useSupportLibrary true }
+
+        buildConfigField "String", "ADAAD_API_BASE", '"https://api.innovativeai.dev/adaad/v1"'
+        buildConfigField "String", "ADAAD_VERSION", '"3.0.0"'
+        buildConfigField "String", "CONSTITUTION_VERSION", '"0.3.0"'
+    }
+
+    signingConfigs {
+        release {
+            storeFile     file(System.getenv("ADAAD_KEYSTORE_PATH") ?: "keystore/innovativeai-release.jks")
+            storePassword System.getenv("ADAAD_STORE_PASSWORD") ?: ""
+            keyAlias      System.getenv("ADAAD_KEY_ALIAS")      ?: "adaad-release"
+            keyPassword   System.getenv("ADAAD_KEY_PASSWORD")   ?: ""
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix  "-debug"
+            buildConfigField "Boolean", "MOCK_GOVERNANCE", "true"
+        }
+        release {
+            minifyEnabled   true
+            shrinkResources true
+            signingConfig   signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            buildConfigField "Boolean", "MOCK_GOVERNANCE", "false"
+        }
+    }
+
+    flavorDimensions += "tier"
+    productFlavors {
+        community {
+            dimension "tier"
+            applicationIdSuffix ""
+            buildConfigField "String", "TIER", '"community"'
+        }
+        developer {
+            dimension "tier"
+            applicationIdSuffix ".dev"
+            buildConfigField "String", "TIER", '"developer"'
+        }
+        enterprise {
+            dimension "tier"
+            applicationIdSuffix ".enterprise"
+            buildConfigField "String", "TIER", '"enterprise"'
+        }
+    }
+
+    buildFeatures {
+        compose    true
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions { jvmTarget = '17' }
+
+    bundle {
+        language   { enableSplit = true }
+        density    { enableSplit = true }
+        abi        { enableSplit = true }
+    }
+}
+
+dependencies {
+    // Compose BOM
+    def composeBom = platform('androidx.compose:compose-bom:2024.02.00')
+    implementation composeBom
+    androidTestImplementation composeBom
+
+    // Core
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.activity:activity-compose:1.8.2'
+
+    // Compose UI
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.compose.ui:ui-graphics'
+    implementation 'androidx.compose.ui:ui-tooling-preview'
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.material:material-icons-extended'
+    implementation 'androidx.navigation:navigation-compose:2.7.6'
+
+    // ViewModel + State
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+
+    // Networking
+    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+
+    // Cryptography (ADAAD governance signing)
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.77'
+
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // DataStore (governance config persistence)
+    implementation 'androidx.datastore:datastore-preferences:1.0.0'
+
+    // Work (background epoch processing)
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
+
+    // Room (local governance ledger)
+    implementation 'androidx.room:room-runtime:2.6.1'
+    implementation 'androidx.room:room-ktx:2.6.1'
+    annotationProcessor 'androidx.room:room-compiler:2.6.1'
+
+    // Security
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+
+    // Charts (epoch metrics)
+    implementation 'com.patrykandpatrick.vico:compose-m3:1.13.1'
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.10.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
+    debugImplementation 'androidx.compose.ui:ui-tooling'
+    debugImplementation 'androidx.compose.ui:ui-test-manifest'
+}

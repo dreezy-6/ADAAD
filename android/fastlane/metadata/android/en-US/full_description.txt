@@ -1,0 +1,91 @@
+ADAAD — Autonomous Device-Anchored Adaptive Development
+
+The only mobile platform for constitutionally governed, deterministically reproducible autonomous code evolution. Built for engineering teams, platform architects, and AI governance professionals who need to manage, audit, and verify AI-driven code changes from anywhere.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT ADAAD DOES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ADAAD governs every autonomous code mutation through a constitutional rule system before it can be executed. Nothing slips through. Every decision is ledger-anchored, cryptographically signed, and replay-verifiable — on your Android device, wherever you are.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GOVERNANCE DASHBOARD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Real-time overview of constitutional health, active epochs, and pending proposals
+• 13 constitutional rules displayed with tier classification (Blocking / Post-Approval / Advisory)
+• Live chain hash display — verify ledger integrity at a glance
+• Governance event feed with pass/fail status for every rule evaluation
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONSTITUTIONAL RULE BROWSER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Browse and understand every constitutional rule in Constitution v0.3.0:
+
+▸ AST Validity — syntactic correctness gate
+▸ No Banned Tokens — blocks eval, exec, and shell injection primitives
+▸ Signature Required — Ed25519 governance signature enforcement
+▸ Lineage Continuity — SHA-256 chain hash verification
+▸ Single File Scope — mutation blast radius control
+▸ Resource Bounds — mobile-aware resource and execution authority limits
+▸ Entropy Budget — determinism contract enforcement
+▸ Complexity Delta — cyclomatic complexity ceiling
+▸ Federation Dual Gate — cross-repo dual approval requirement
+▸ Federation HMAC Required — key material fail-closed enforcement
+▸ Reviewer Calibration — adaptive governance pressure signals
+▸ Revenue Credit Floor — economic fitness telemetry
+▸ Deployment Authority — authority tier validation
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROPOSAL REVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Review, approve, reject, or escalate mutation proposals from your phone
+• See full constitutional evaluation results — which rules passed, which failed, why
+• Tier 0 failures block automatically — no accidental approvals of constitutionally invalid proposals
+• Human-in-the-loop: Tier 0 and governor-review authority proposals always require a human decision
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GOVERNANCE LEDGER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Append-only, chain-hashed event ledger stored securely on device
+• Every governance decision creates a ledger entry with SHA-256 chain hash
+• Replay-verifiable: any sequence can be independently verified
+• Export evidence bundles for audit submission directly from your phone
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FEDERATION MANAGEMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Monitor multi-repo federation status and HMAC key health
+• Federation dual-gate enforcement: cross-repo mutations require approval in both repositories
+• Key rotation status and alerts for expiring federation HMAC keys
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY & PRIVACY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Governance signing keys protected by Android Keystore (biometric-gated)
+• Governance ledger never backed up to Google Drive — security by design
+• All API communication over TLS 1.2+ with certificate validation
+• Fail-closed boot sequence: the app never starts with an invalid governance configuration
+• No analytics, no tracking, no advertising — governance data stays yours
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OPEN SOURCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ADAAD is open source under Apache License 2.0.
+Source: github.com/InnovativeAI-adaad/ADAAD
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIREMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• Android 8.0 (API 26) or later
+• Active ADAAD workspace (free Community tier available)
+• Internet connection for governance API synchronisation
+
+InnovativeAI LLC · Blackwell, Oklahoma · innovativeai.dev/adaad

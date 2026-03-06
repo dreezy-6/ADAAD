@@ -1,0 +1,23 @@
+ADAAD v3.0.0 — Multi-Repo Federation GA
+
+🛡️ Constitutional Governance
+• Constitution v0.3.0 with 13 enforced rules
+• Two new Tier 0 rules: Federation Dual Gate + Federation HMAC Required
+• Fail-closed boot sequence — app never starts with invalid governance state
+
+🔗 Multi-Repo Federation (Phase 5)
+• Federation status dashboard with HMAC key health monitoring
+• Cross-repo dual-gate enforcement visible in proposal review
+• Federation origin traceability in governance ledger
+
+🔒 Security
+• Governance signing keys protected by Android Keystore
+• Ledger explicitly excluded from Google Drive backup
+• Certificate-pinned API communication
+
+📋 Governance Dashboard
+• Real-time chain hash display
+• Constitutional rule browser with tier filter
+• Pending proposal review with full rule verdict display
+
+Open source: github.com/InnovativeAI-adaad/ADAAD
