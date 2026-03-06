@@ -15,7 +15,9 @@ from runtime.evolution.promotion_state_machine import (
 from runtime.mutation_lifecycle import LifecycleTransitionError, MutationLifecycleContext, transition
 
 
-def test_promotion_state_machine_allows_declared_transitions_with_guards() -> None:
+def test_promotion_state_machine_allows_declared_transitions_with_guards(monkeypatch) -> None:
+    import security.cryovant as _cryovant
+    monkeypatch.setattr(_cryovant, "signature_valid", lambda sig: sig == "cryovant-static-valid-signature")
     context = PromotionTransitionContext(
         signature="cryovant-static-valid-signature",
         trust_mode="prod",
@@ -61,7 +63,9 @@ def test_mutation_lifecycle_guard_rejection_emits_rejected_event(monkeypatch: py
     assert rejected_payloads[0]["guard_report"]["ok"] is False
 
 
-def test_promotion_state_machine_fail_closes_on_founders_key_rotation_failure() -> None:
+def test_promotion_state_machine_fail_closes_on_founders_key_rotation_failure(monkeypatch) -> None:
+    import security.cryovant as _cryovant
+    monkeypatch.setattr(_cryovant, "signature_valid", lambda sig: sig == "cryovant-static-valid-signature")
     context = PromotionTransitionContext(
         signature="cryovant-static-valid-signature",
         trust_mode="prod",

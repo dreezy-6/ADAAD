@@ -9,11 +9,14 @@ from runtime.governance.foundation import canonical_json, sha256_prefixed_digest
 from runtime.mutation_lifecycle import MutationLifecycleContext, transition
 
 
-def test_successful_transition_writes_deterministic_evidence_bundle(tmp_path: Path) -> None:
+def test_successful_transition_writes_deterministic_evidence_bundle(tmp_path: Path, monkeypatch) -> None:
+    import runtime.mutation_lifecycle as _lc
+    monkeypatch.setattr(_lc, "_signature_valid", lambda sig, trust_mode, ctx: (True, "verified"))
+    monkeypatch.setattr(_lc, "_known_agent_prefix_ok", lambda agent_id: True)
     manifests_dir = tmp_path / "security" / "promotion_manifests"
     context = MutationLifecycleContext(
         mutation_id="mut-evidence",
-        agent_id="agent-1",
+        agent_id="test-agent-1",
         epoch_id="epoch-7",
         signature="cryovant-static-valid-signature",
         trust_mode="prod",
