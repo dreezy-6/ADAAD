@@ -116,7 +116,8 @@ class CheckpointRegistry:
             "prev_checkpoint_hash": prev_checkpoint_hash,
         }
         checkpoint_hash = sha256_prefixed_digest(checkpoint_material)
-        checkpoint_id = f"chk_{checkpoint_hash.split(':', 1)[1][:16]}"
+        checkpoint_id_material = {"epoch_id": epoch_id, "manifest_hash": checkpoint_hash}
+        checkpoint_id = f"chk_{sha256_prefixed_digest(checkpoint_id_material).split(':', 1)[1][:16]}"
         created_at = self.provider.iso_now()
         event = EpochCheckpointEvent(
             epoch_id=epoch_id,
