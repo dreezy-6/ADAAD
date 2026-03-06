@@ -5,7 +5,7 @@
 
 > One-page, deterministic architecture orientation for governance-first ADAAD operation.
 
-**Last reviewed:** 2026-03-04
+**Last reviewed:** 2026-03-06 · v2.0.0
 
 A one-page overview of ADAAD's governance-first architecture for autonomous code evolution.
 
@@ -15,6 +15,8 @@ A one-page overview of ADAAD's governance-first architecture for autonomous code
 - **Governance Layer (Constitution + policy engine):** mutation legality and gate evaluation.
 - **Execution Layer (Dream / Beast / Architect):** proposal, scoring, and controlled execution.
 - **Evidence Layer:** lineage, replay attestations, and release evidence bundles.
+- **AI Mutation Layer (v2.0.0):** `AIMutationProposer` (Claude API, 3 personas), `EvolutionLoop` (5-phase orchestrator), `WeightAdaptor` (momentum descent), `FitnessLandscape` (plateau detection), `PopulationManager` (BLX-alpha GA).
+- **Canonical spec:** `docs/governance/ARCHITECT_SPEC_v2.0.0.md`
 
 ## Boundaries
 

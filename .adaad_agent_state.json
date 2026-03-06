@@ -1,9 +1,9 @@
 {
-  "schema_version": "1.8.0",
-  "last_completed_pr": "PR-14-MILESTONE",
+  "schema_version": "2.0.0",
+  "last_completed_pr": "AI-MUTATION-v2.0-MILESTONE",
   "next_pr": "ADAAD-15-pending",
-  "active_phase": "ADAAD-14 COMPLETE · v1.8.0 released",
-  "last_invocation": "2026-03-05",
+  "active_phase": "v2.0.0 RELEASED · AI Mutation Capability Expansion",
+  "last_invocation": "2026-03-06",
   "blocked_reason": null,
   "blocked_at_gate": null,
   "blocked_at_tier": null,
@@ -36,7 +36,15 @@
     "pr-14-01-federated-signal-broker",
     "pr-14-02-cross-node-budget-arbitrator",
     "pr-14-03-market-driven-container-profiler",
-    "v1.8.0-released"
+    "v1.8.0-released",
+    "ai-mutation-proposer-claude-api",
+    "evolution-loop-five-phase-orchestrator",
+    "weight-adaptor-momentum-descent",
+    "fitness-landscape-plateau-detection",
+    "population-manager-blx-alpha-ga",
+    "pr12-gate-ok-fix",
+    "architect-spec-v2.0.0-issued",
+    "v2.0.0-released"
   ],
   "pending_evidence_rows": []
 }
