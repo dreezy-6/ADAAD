@@ -139,6 +139,8 @@ class MutationCandidate:
     agent_origin:          str           = "unknown"
     epoch_id:              str           = ""
     source_context_hash:   str           = ""
+    # v3 semantic diff field — optional Python source for AST-based scoring
+    python_content:        Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +177,11 @@ def score_candidate(
     - Accepts PopulationState for adaptive threshold + elitism bonus.
     - Propagates lineage fields from candidate into returned MutationScore.
 
+    v3 addition:
+    - When candidate.python_content is set, SemanticDiffEngine replaces the
+      risk_score and complexity fields with AST-derived values before scoring.
+      The original candidate fields are used as fallback when parsing fails.
+
     Returns a MutationScore with:
     - score in [0.0, 1.0] (hard-clamped)
     - accepted=True when score >= adjusted_threshold AND no hard violations
@@ -182,6 +189,22 @@ def score_candidate(
     - warnings for out-of-range inputs
     """
     warnings_list: List[str] = []
+
+    # ── v3: Semantic enrichment of risk_score and complexity ──────────────
+    effective_risk_score = float(candidate.risk_score)
+    effective_complexity = float(candidate.complexity)
+    semantic_active = False
+
+    if candidate.python_content is not None:
+        try:
+            from runtime.evolution.semantic_diff import SemanticDiffEngine as _SDE
+            sdiff = _SDE().diff(before_source="", after_source=candidate.python_content)
+            if not sdiff.fallback_used:
+                effective_risk_score = sdiff.risk_score
+                effective_complexity = sdiff.complexity_score
+                semantic_active = True
+        except Exception:  # noqa: BLE001 — graceful degradation to v1 scores
+            pass
 
     # Weight resolution (v2: prefer ScoringWeights; fallback to v1 dict)
     if weights is not None:
@@ -207,7 +230,7 @@ def score_candidate(
         warnings_list.append(f"horizon_roi_clamped:{horizon_roi_raw:.4f}->1.0")
     horizon_roi = min(1.0, max(0.0, horizon_roi_raw))
 
-    # Input range warnings
+    # Input range warnings (use original candidate fields for range validation)
     if not (0.0 <= candidate.expected_gain <= 1.0):
         warnings_list.append(f"expected_gain_out_of_range:{candidate.expected_gain}")
     if not (0.0 <= candidate.risk_score <= 1.0):
@@ -217,12 +240,12 @@ def score_candidate(
     if not (0.0 <= candidate.coverage_delta <= 1.0):
         warnings_list.append(f"coverage_delta_out_of_range:{candidate.coverage_delta}")
 
-    # Dimension contributions
+    # Dimension contributions (use semantic-enriched values when available)
     eg_contrib  = float(candidate.expected_gain) * w_dict.get("expected_gain", 0.35)
     cd_contrib  = float(candidate.coverage_delta) * w_dict.get("coverage_delta", 0.25)
     hr_contrib  = horizon_roi * w_dict.get("horizon_roi", 0.20)
-    risk_pen    = float(candidate.risk_score) * w_dict.get("risk_penalty", 0.20)
-    complex_pen = float(candidate.complexity) * w_dict.get("complexity_penalty", 0.10)
+    risk_pen    = effective_risk_score * w_dict.get("risk_penalty", 0.20)
+    complex_pen = effective_complexity * w_dict.get("complexity_penalty", 0.10)
 
     raw = eg_contrib + cd_contrib + hr_contrib - risk_pen - complex_pen
     base_score = round(min(HARD_CEILING, max(HARD_FLOOR, raw)), 4)
@@ -248,6 +271,7 @@ def score_candidate(
         "raw_before_clamp":           round(raw, 4),
         "diversity_pressure":         round(diversity_pressure, 4),
         "adjusted_threshold":         round(adjusted_threshold, 4),
+        "semantic_scoring_active":    1.0 if semantic_active else 0.0,
     }
 
     has_hard_violation = any("_out_of_range" in w for w in warnings_list)
