@@ -860,6 +860,173 @@ def api_market_signal_ingest(
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Fast-Path Intelligence endpoints — v0.66
+# Surfaces MutationRouteOptimizer, EntropyFastGate, CheckpointChain, and
+# FastPathScorer through read-only REST endpoints consumed by the Aponi
+# Fast-Path Intelligence panel.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class RoutePreviewRequest(BaseModel):
+    mutation_id: str
+    intent: str
+    files_touched: list[str] = []
+    loc_added: int = 0
+    loc_deleted: int = 0
+    risk_tags: list[str] = []
+    ops: list[dict[str, Any]] = []
+
+
+class EntropyGateRequest(BaseModel):
+    mutation_id: str
+    estimated_bits: int
+    sources: list[str] = []
+    strict: bool = True
+
+
+@app.post("/api/fast-path/route-preview")
+async def fast_path_route_preview(req: RoutePreviewRequest) -> dict[str, Any]:
+    """Deterministic tier routing preview for a candidate mutation.
+
+    Accepts mutation metadata and returns the TRIVIAL / STANDARD / ELEVATED
+    routing decision, reasons, and fast-path flags without touching the
+    full evaluation pipeline.
+    """
+    try:
+        from runtime.evolution.mutation_route_optimizer import MutationRouteOptimizer
+        optimizer = MutationRouteOptimizer()
+        decision = optimizer.route(
+            mutation_id=req.mutation_id,
+            intent=req.intent,
+            ops=req.ops,
+            files_touched=req.files_touched,
+            loc_added=req.loc_added,
+            loc_deleted=req.loc_deleted,
+            risk_tags=req.risk_tags,
+        )
+        return {
+            "ok": True,
+            "decision": decision.to_payload(),
+            "summary": {
+                "tier": decision.tier.value,
+                "skip_heavy_scoring": decision.skip_heavy_scoring,
+                "require_human_review": decision.require_human_review,
+                "reasons": list(decision.reasons),
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"route_preview_error: {exc}") from exc
+
+
+@app.post("/api/fast-path/entropy-gate")
+async def fast_path_entropy_gate(req: EntropyGateRequest) -> dict[str, Any]:
+    """Evaluate the entropy fast-gate for a mutation candidate.
+
+    Returns ALLOW / WARN / DENY verdict with reason and gate digest.
+    """
+    try:
+        from runtime.evolution.entropy_fast_gate import EntropyFastGate
+        gate = EntropyFastGate(strict=req.strict)
+        result = gate.evaluate(
+            mutation_id=req.mutation_id,
+            estimated_bits=req.estimated_bits,
+            sources=req.sources,
+        )
+        return {
+            "ok": True,
+            "result": result.to_payload(),
+            "denied": result.denied,
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"entropy_gate_error: {exc}") from exc
+
+
+@app.get("/api/fast-path/checkpoint-chain/verify")
+async def fast_path_checkpoint_chain_verify() -> dict[str, Any]:
+    """Build and verify a demonstration checkpoint chain from current epoch state.
+
+    Returns chain length, integrity status, and genesis / head digests.
+    """
+    try:
+        from runtime.evolution.checkpoint_chain import build_checkpoint_chain, verify_checkpoint_chain
+
+        # Use stable, deterministic payloads — no wall-clock timestamps.
+        # The genesis epoch anchors to the ADAAD fast-path module version string
+        # so the digest is stable across calls for a given codebase version.
+        entries = [
+            ("epoch_genesis",  {"event": "genesis",       "system": "ADAAD", "layer": "fast_path_v066"}),
+            ("epoch_current",  {"event": "current_state", "layer": "fast_path_v066", "stage": "evaluation"}),
+            ("epoch_head",     {"event": "head_checkpoint","layer": "fast_path_v066", "fast_path_active": True}),
+        ]
+        chain = build_checkpoint_chain(entries)
+        integrity_ok = verify_checkpoint_chain(chain)
+
+        return {
+            "ok": True,
+            "integrity": integrity_ok,
+            "chain_length": len(chain),
+            "genesis_digest": chain[0].chain_digest,
+            "head_digest": chain[-1].chain_digest,
+            "links": [
+                {
+                    "epoch_id": cp.epoch_id,
+                    "predecessor_digest": cp.predecessor_digest,
+                    "chain_digest": cp.chain_digest,
+                    "chain_version": cp.chain_version,
+                }
+                for cp in chain
+            ],
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"checkpoint_chain_error: {exc}") from exc
+
+
+@app.get("/api/fast-path/stats")
+async def fast_path_stats() -> dict[str, Any]:
+    """Aggregate statistics for the fast-path routing layer.
+
+    Returns tier distribution constants, threshold configuration, and
+    module version metadata for the Aponi Fast-Path Intelligence panel.
+    """
+    try:
+        from runtime.evolution.mutation_route_optimizer import (
+            ROUTE_VERSION,
+            ELEVATED_PATH_PREFIXES,
+            ELEVATED_INTENT_KEYWORDS,
+            TRIVIAL_OP_TYPES,
+        )
+        from runtime.evolution.entropy_fast_gate import (
+            FAST_GATE_VERSION,
+            DEFAULT_WARN_BITS,
+            DEFAULT_DENY_BITS,
+        )
+        from runtime.evolution.fast_path_scorer import FAST_PATH_VERSION
+        from runtime.evolution.checkpoint_chain import CHAIN_VERSION
+
+        return {
+            "ok": True,
+            "versions": {
+                "route_optimizer": ROUTE_VERSION,
+                "entropy_gate": FAST_GATE_VERSION,
+                "fast_path_scorer": FAST_PATH_VERSION,
+                "checkpoint_chain": CHAIN_VERSION,
+            },
+            "entropy_thresholds": {
+                "warn_bits": DEFAULT_WARN_BITS,
+                "deny_bits": DEFAULT_DENY_BITS,
+            },
+            "route_config": {
+                "elevated_path_prefixes": sorted(ELEVATED_PATH_PREFIXES),
+                "elevated_intent_keywords": sorted(ELEVATED_INTENT_KEYWORDS),
+                "trivial_op_types": sorted(TRIVIAL_OP_TYPES),
+                "tiers": ["TRIVIAL", "STANDARD", "ELEVATED"],
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"fast_path_stats_error: {exc}") from exc
+
+
 MOCK_ENDPOINTS = ["status", "agents", "tree", "kpis", "changes", "suggestions"]
 
 for endpoint_name in MOCK_ENDPOINTS:
