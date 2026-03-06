@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
 
-from runtime.autonomy.bandit_selector import BanditSelector, MIN_PULLS_FOR_BANDIT
+from runtime.autonomy.bandit_selector import BanditSelector, ThompsonBanditSelector, MIN_PULLS_FOR_BANDIT, AGENTS
+from runtime.autonomy.non_stationarity_detector import NonStationarityDetector
 
 DEFAULT_LANDSCAPE_PATH = Path("data/fitness_landscape_state.json")
 
@@ -75,6 +76,8 @@ class FitnessLandscape:
         self._path    = state_path
         self._records: Dict[str, TypeRecord] = {}
         self._bandit: BanditSelector = BanditSelector()
+        self._detector: NonStationarityDetector = NonStationarityDetector()
+        self._thompson_active: bool = False
         self._load()
 
     # ------------------------------------------------------------------
@@ -95,6 +98,17 @@ class FitnessLandscape:
         _TYPE_TO_AGENT = {"structural": "architect", "performance": "beast", "coverage": "beast"}
         agent_arm = _TYPE_TO_AGENT.get(mutation_type, "dream")
         self._bandit.record(agent_arm, won=won)
+        # Feed live win rates into non-stationarity detector every record
+        live_rates = {
+            agent: self._bandit._arms[agent].win_rate
+            for agent in AGENTS
+            if agent in self._bandit._arms
+        }
+        if live_rates:
+            self._detector.record(live_rates)
+        # Escalate to Thompson Sampling if shift detected
+        if self._detector.is_non_stationary() and self._bandit.is_active:
+            self._thompson_active = True
         self._save()
 
     # ------------------------------------------------------------------
@@ -137,6 +151,23 @@ class FitnessLandscape:
         if self.is_plateau():
             return "dream"
 
+        # Phase 3: Thompson Sampling when non-stationarity detected
+        if self._thompson_active and self._bandit.is_active:
+            import hashlib, random
+            # Deterministic rng seeded from current arm state hash
+            state_seed = abs(hash(str(sorted(
+                (a, arm.wins, arm.losses)
+                for a, arm in self._bandit._arms.items()
+            )))) % (2**31)
+            rng = random.Random(state_seed)
+            thompson = ThompsonBanditSelector(rng=rng)
+            for agent, arm in self._bandit._arms.items():
+                for _ in range(arm.wins):
+                    thompson.record(agent, won=True)
+                for _ in range(arm.losses):
+                    thompson.record(agent, won=False)
+            return thompson.select()
+
         # Phase 2: UCB1 bandit when enough data has been collected
         if self._bandit.is_active:
             return self._bandit.select()
@@ -160,6 +191,8 @@ class FitnessLandscape:
             "recommended_agent":    self.recommended_agent(),
             "best_mutation_type":   self.best_mutation_type(),
             "bandit":               self._bandit.summary(),
+            "non_stationarity":     self._detector.arm_statistics(),
+            "thompson_active":      self._thompson_active,
         }
 
     # ------------------------------------------------------------------
@@ -174,6 +207,7 @@ class FitnessLandscape:
                 for t, r in self._records.items()
             },
             "bandit": self._bandit.to_state(),
+            "thompson_active": self._thompson_active,
             "saved_at": time.time(),
         }
         self._path.write_text(json.dumps(state, indent=2))
@@ -193,5 +227,6 @@ class FitnessLandscape:
                     self._bandit = BanditSelector.from_state(state["bandit"])
                 except Exception:  # pragma: no cover — corrupt bandit state, reset
                     self._bandit = BanditSelector()
+            self._thompson_active = bool(state.get("thompson_active", False))
         except (json.JSONDecodeError, KeyError, TypeError):
             pass  # Corrupt state — start fresh
