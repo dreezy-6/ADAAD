@@ -232,6 +232,7 @@ def _parse_proposals(
             agent_origin=agent,
             epoch_id=epoch_id,
             source_context_hash=context_hash,
+            python_content=p.get("python_content") or None,
         ))
 
     return candidates

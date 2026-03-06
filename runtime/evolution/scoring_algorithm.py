@@ -14,8 +14,18 @@ from runtime.governance.foundation import (
     require_replay_safe_provider,
     sha256_prefixed_digest,
 )
+from runtime.evolution.semantic_diff import SemanticDiffEngine as _SemanticDiffEngine
 
-ALGORITHM_VERSION = "v1.1.0"
+ALGORITHM_VERSION = "v1.2.0"
+
+# When semantic diff scoring is active (before_source / after_source provided),
+# the output carries this compound version for replay verification.
+SEMANTIC_ALGORITHM_VERSION = "v1.2.0+semantic_diff_v1.0"
+
+# Scale factors: map semantic float scores [0, 1] into the integer penalty domain.
+# Chosen to keep penalty magnitudes compatible with typical v1 LOC-based values.
+_SEMANTIC_DIFF_PENALTY_SCALE: int = 500
+_SEMANTIC_RISK_PENALTY_SCALE: int = 300
 
 SEVERITY_WEIGHTS = MappingProxyType(
     {
@@ -118,6 +128,37 @@ def compute_risk_penalty(code_diff: Dict[str, Any]) -> int:
     return penalty
 
 
+def compute_semantic_penalties(
+    before_source: "str | None",
+    after_source: "str | None",
+) -> "tuple[int, int, str, bool]":
+    """Compute (diff_penalty, risk_penalty, algorithm_version, fallback_used) using SemanticDiffEngine.
+
+    Uses AST-based risk_score and complexity_score in place of LOC/tag heuristics.
+
+    ``before_source`` may be ``None`` or ``""``; an empty string is treated as the
+    zero-AST baseline so the full after-state metrics are treated as the structural
+    delta (conservative: entire new file counts as the change).
+
+    Returns a 4-tuple:
+        diff_penalty       — int, replaces LOC-based compute_diff_penalty
+        risk_penalty       — int, replaces tag-based compute_risk_penalty
+        algorithm_version  — str, SEMANTIC_ALGORITHM_VERSION if semantic active,
+                             ALGORITHM_VERSION if fallback
+        fallback_used      — bool
+    """
+    engine = _SemanticDiffEngine()
+    sdiff = engine.diff(
+        before_source=before_source if before_source is not None else "",
+        after_source=after_source,
+    )
+    if sdiff.fallback_used:
+        return 0, 0, ALGORITHM_VERSION, True  # caller will use LOC/tag fallback
+    diff_penalty = int(round(sdiff.complexity_score * _SEMANTIC_DIFF_PENALTY_SCALE))
+    risk_penalty  = int(round(sdiff.risk_score      * _SEMANTIC_RISK_PENALTY_SCALE))
+    return diff_penalty, risk_penalty, SEMANTIC_ALGORITHM_VERSION, False
+
+
 def _clamp_term(value: Any, *, max_value: int = MAX_COMPONENT_TERM) -> int:
     try:
         numeric = int(round(float(value)))
@@ -159,8 +200,20 @@ def compute_score(
     provider: RuntimeDeterminismProvider | None = None,
     replay_mode: str = "off",
     recovery_tier: str | None = None,
+    before_source: "str | None" = None,
+    after_source: "str | None" = None,
 ) -> Dict[str, Any]:
-    """Compute deterministic score with canonical hashing and bounded arithmetic."""
+    """Compute deterministic score with canonical hashing and bounded arithmetic.
+
+    When ``after_source`` is supplied the scorer invokes SemanticDiffEngine to
+    derive AST-aware ``diff_penalty`` and ``risk_penalty`` in place of the v1
+    LOC/tag heuristics.  ``before_source`` is optional; when omitted the empty
+    baseline is used (treat entire new file as the structural delta).
+
+    ``algorithm_version`` in the output reflects which path was taken:
+      - ``ALGORITHM_VERSION``         — LOC/tag fallback (no source supplied)
+      - ``SEMANTIC_ALGORITHM_VERSION`` — AST-based scoring active
+    """
     runtime_provider = provider or default_provider()
     require_replay_safe_provider(runtime_provider, replay_mode=replay_mode, recovery_tier=recovery_tier)
 
@@ -170,11 +223,32 @@ def compute_score(
 
     test_score = score_tests(scoring_input.get("test_results", {}))
     static_penalty = compute_static_penalty(scoring_input.get("static_analysis", {}))
-    diff_penalty = compute_diff_penalty(scoring_input.get("code_diff", {}))
-    risk_penalty = compute_risk_penalty(scoring_input.get("code_diff", {}))
     sustainability_term = compute_long_horizon_sustainability_term(scoring_input)
     resource_efficiency_term = compute_resource_efficiency_term(scoring_input)
     cross_agent_synergy_term = compute_cross_agent_synergy_term(scoring_input)
+
+    # ── Scoring path selection ─────────────────────────────────────────────
+    active_algorithm_version = ALGORITHM_VERSION
+    semantic_diff_version: "str | None" = None
+    semantic_fallback_used: bool = True
+
+    if after_source is not None:
+        sem_diff, sem_risk, sem_alg, sem_fallback = compute_semantic_penalties(
+            before_source, after_source
+        )
+        if not sem_fallback:
+            diff_penalty  = sem_diff
+            risk_penalty  = sem_risk
+            active_algorithm_version = sem_alg
+            semantic_diff_version = sem_alg
+            semantic_fallback_used = False
+        else:
+            # SemanticDiffEngine fell back (syntax error / unparseable) — use LOC/tags
+            diff_penalty = compute_diff_penalty(scoring_input.get("code_diff", {}))
+            risk_penalty = compute_risk_penalty(scoring_input.get("code_diff", {}))
+    else:
+        diff_penalty = compute_diff_penalty(scoring_input.get("code_diff", {}))
+        risk_penalty = compute_risk_penalty(scoring_input.get("code_diff", {}))
 
     final_score = max(
         0,
@@ -187,12 +261,12 @@ def compute_score(
         - risk_penalty,
     )
 
-    return {
+    result: Dict[str, Any] = {
         "mutation_id": scoring_input.get("mutation_id", ""),
         "epoch_id": scoring_input.get("epoch_id", ""),
         "score": int(final_score),
         "input_hash": input_hash,
-        "algorithm_version": ALGORITHM_VERSION,
+        "algorithm_version": active_algorithm_version,
         "constitution_hash": scoring_input.get("constitution_hash", ""),
         "timestamp": runtime_provider.iso_now(),
         "components": {
@@ -206,9 +280,17 @@ def compute_score(
         },
     }
 
+    # Semantic provenance fields — present only when semantic path active
+    if semantic_diff_version is not None:
+        result["semantic_diff_version"] = semantic_diff_version
+        result["semantic_fallback_used"] = semantic_fallback_used
+
+    return result
+
 
 __all__ = [
     "ALGORITHM_VERSION",
+    "SEMANTIC_ALGORITHM_VERSION",
     "MAX_FILES",
     "MAX_COMPONENT_TERM",
     "MAX_ISSUES",
@@ -224,6 +306,7 @@ __all__ = [
     "compute_risk_penalty",
     "compute_resource_efficiency_term",
     "compute_score",
+    "compute_semantic_penalties",
     "compute_static_penalty",
     "score_tests",
     "validate_input",
