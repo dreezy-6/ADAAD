@@ -316,6 +316,36 @@ jobs:
       - name: Run deterministic red-team critical subset
         run: PYTHONPATH=. python tools/run_redteam_harness.py --subset critical --output reports/redteam/critical.json
 
+  fast-path-innovations:
+    runs-on: ubuntu-latest
+    needs: classify
+    if: needs.classify.outputs.runtime == 'true' || needs.classify.outputs.tests == 'true'
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-env
+        with:
+          install-deps: "true"
+      - name: Run fast-path innovation tests (route optimizer, entropy gate, checkpoint chain, parallel gate)
+        run: |
+          PYTHONPATH=. pytest \
+            tests/test_mutation_route_optimizer.py \
+            tests/test_entropy_fast_gate.py \
+            tests/test_checkpoint_chain_new.py \
+            tests/test_fast_path_scorer.py \
+            tests/test_parallel_gate.py \
+            -v --tb=short -q
+      - name: Confirm fast-path modules importable (smoke)
+        run: |
+          PYTHONPATH=. python -c "
+          from runtime.evolution.mutation_route_optimizer import MutationRouteOptimizer
+          from runtime.evolution.entropy_fast_gate import EntropyFastGate
+          from runtime.evolution.checkpoint_chain import build_checkpoint_chain
+          from runtime.evolution.fast_path_scorer import fast_path_score
+          from runtime.governance.parallel_gate import ParallelGovernanceGate
+          print('ALL FAST-PATH MODULES IMPORTED OK')
+          "
+
   release-evidence-readiness:
     runs-on: ubuntu-latest
     needs: classify
@@ -343,6 +373,7 @@ jobs:
       - promotion-suite
       - redteam-critical-subset
       - release-evidence-readiness
+      - fast-path-innovations
     if: always()
     steps:
       - name: Write CI gating summary
@@ -370,4 +401,5 @@ jobs:
             echo "| promotion-suite | ${{ needs.promotion-suite.result }} | ${{ needs.classify.outputs.promotion_reason }} |"
             echo "| redteam-critical-subset | ${{ needs.redteam-critical-subset.result }} | ${{ needs.classify.outputs.redteam_reason }} |"
             echo "| release-evidence-readiness | ${{ needs.release-evidence-readiness.result }} | Always-on matrix link validation. |"
+            echo "| fast-path-innovations | ${{ needs.fast-path-innovations.result }} | Route optimizer / entropy gate / checkpoint chain / parallel gate — conditional on runtime or test changes. |"
           } >> "$GITHUB_STEP_SUMMARY"
