@@ -206,3 +206,22 @@ def test_validate_bundle_legacy_mode_backfills_new_required_fields(tmp_path: Pat
     assert "$.goal_graph_hash:missing_required" in strict_errors
 
     assert builder.validate_bundle(legacy_bundle, allow_legacy=True) == []
+
+
+def test_legacy_bundle_validation_disabled_by_default_in_strict_context(monkeypatch) -> None:
+    from runtime.evolution import evidence_bundle as module
+
+    monkeypatch.setenv("ADAAD_ENV", "dev")
+    monkeypatch.setenv("ADAAD_REPLAY_MODE", "strict")
+    monkeypatch.delenv("ADAAD_ENABLE_LEGACY_EVIDENCE_BUNDLE", raising=False)
+
+    assert module._legacy_bundle_validation_enabled() is False
+
+
+def test_legacy_bundle_validation_can_be_explicitly_enabled(monkeypatch) -> None:
+    from runtime.evolution import evidence_bundle as module
+
+    monkeypatch.setenv("ADAAD_REPLAY_MODE", "strict")
+    monkeypatch.setenv("ADAAD_ENABLE_LEGACY_EVIDENCE_BUNDLE", "1")
+
+    assert module._legacy_bundle_validation_enabled() is True

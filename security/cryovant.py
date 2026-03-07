@@ -39,6 +39,7 @@ DEFAULT_ROTATION_INTERVAL_SECONDS = 60 * 60 * 24 * 30
 _HMAC_SIGNATURE_PREFIX = "sha256:"
 _STRICT_ENVS = frozenset({"staging", "production", "prod"})
 _KNOWN_ENVS = frozenset({"dev", "test", "staging", "production", "prod"})
+_STRICT_GOVERNANCE_MODES = frozenset({"strict", "audit"})
 _ARTIFACT_HMAC_CONFIG: Dict[str, Dict[str, str]] = {
     "replay_proof": {
         "specific_env_prefix": "ADAAD_REPLAY_PROOF_KEY_",
@@ -60,6 +61,25 @@ _ARTIFACT_HMAC_CONFIG: Dict[str, Dict[str, str]] = {
 
 def dev_mode() -> bool:
     return os.environ.get("CRYOVANT_DEV_MODE", "0").lower() in {"1", "true", "yes", "on"}
+
+
+def _is_truthy_env(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _governance_strict_context() -> bool:
+    env = (os.getenv("ADAAD_ENV") or "").strip().lower()
+    replay_mode = (os.getenv("ADAAD_REPLAY_MODE") or "").strip().lower()
+    recovery_tier = (os.getenv("ADAAD_RECOVERY_TIER") or "").strip().lower()
+    strict_override = _is_truthy_env(os.getenv("ADAAD_GOVERNANCE_STRICT", ""))
+    return env in _STRICT_ENVS or replay_mode in _STRICT_GOVERNANCE_MODES or recovery_tier in _STRICT_GOVERNANCE_MODES or strict_override
+
+
+def _legacy_feature_enabled(flag: str) -> bool:
+    configured = os.getenv(flag)
+    if configured is None:
+        return not _governance_strict_context()
+    return _is_truthy_env(configured)
 
 
 
@@ -241,6 +261,14 @@ def verify_payload_signature(
     else:
         signed_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     if signature in {f"cryovant-static-{signed_digest}", f"cryovant-static-{signed_digest.split(':', 1)[1]}"}:
+        if not _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_STATIC_SIGNATURES"):
+            metrics.log(
+                event_type="cryovant_legacy_static_payload_signature_disabled",
+                payload={"key_id": key_id, "env_mode": env_mode()},
+                level="CRITICAL",
+                element_id=ELEMENT_ID,
+            )
+            return False
         if env_mode() == "dev" and dev_mode():
             metrics.log(
                 event_type="cryovant_legacy_static_payload_signature_accepted",
@@ -297,6 +325,9 @@ def verify_session(token: str) -> bool:
 
     if env in _STRICT_ENVS:
         raise GovernanceTokenError("verify_session_legacy_disabled_strict_env")
+
+    if not _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_VERIFY_SESSION"):
+        raise GovernanceTokenError("verify_session_legacy_flag_disabled")
 
     if env == "dev" and dev_mode():
         metrics.log(
@@ -400,6 +431,8 @@ def verify_governance_token(
 
     dev_token = os.environ.get("CRYOVANT_DEV_TOKEN", "").strip()
     if dev_token and candidate == dev_token:
+        if not _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_DEV_TOKEN_OVERRIDE"):
+            return False
         return env_mode() == "dev" and dev_mode()
 
     parts = candidate.split(":", 5)
@@ -490,7 +523,10 @@ def _valid_signature(
         ):
             return True
 
-    if _legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature):
+    if (
+        _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_STATIC_SIGNATURES")
+        and (_legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature))
+    ):
         metrics.log(
             event_type="cryovant_legacy_signature_accepted",
             payload={"signature_prefix": signature[:24], "env_mode": env_mode()},
