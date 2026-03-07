@@ -42,6 +42,28 @@ on:
       - "tests/test_evidence_bundle_federated.py"
 
 jobs:
+  phase6-federated-amendment-dual-gate:
+    name: phase6-federated-amendment-dual-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.server.txt
+      - name: Run Phase 6 federated amendment dual-gate selector
+        run: >-
+          python -m pytest tests/governance/federation/test_federated_amendment.py -k "test_dual_gate_" -q
+
   federation-determinism:
     name: Phase 5 — Federation Determinism Gate
     runs-on: ubuntu-latest

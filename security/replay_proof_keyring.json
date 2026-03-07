@@ -1,6 +1,10 @@
 {
   "version": "1",
   "keys": {
+    "proof-key": {
+      "algorithm": "hmac-sha256",
+      "hmac_secret": "adaad-replay-proof-dev-secret:proof-key"
+    },
     "replay-proof-ed25519-dev": {
       "algorithm": "ed25519",
       "private_key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",

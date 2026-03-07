@@ -7,6 +7,9 @@ import json
 import os
 import re
 import base64
+import hashlib
+import hmac
+import importlib.util
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
@@ -26,6 +29,18 @@ PROOF_KEYRING_PATH = ROOT_DIR / "security" / "replay_proof_keyring.json"
 REPLAY_ATTESTATION_SCHEMA_PATH = ROOT_DIR / "schemas" / "replay_attestation.v1.json"
 
 
+def _load_hmac_replay_proof_keyring(path: Path | None = None) -> Dict[str, str]:
+    keyring = _load_replay_proof_keyring(path)
+    normalized: Dict[str, str] = {}
+    for key_id, payload in keyring.items():
+        if payload.get("algorithm") not in {"", "hmac-sha256"}:
+            continue
+        secret = payload.get("hmac_secret")
+        if isinstance(secret, str) and secret.strip():
+            normalized[key_id] = secret.strip()
+    return normalized
+
+
 def _load_ed25519_signing_key():
     from nacl.signing import SigningKey
 
@@ -36,6 +51,16 @@ def _load_ed25519_verify_key():
     from nacl.signing import VerifyKey
 
     return VerifyKey
+
+
+def _has_pynacl() -> bool:
+    return importlib.util.find_spec("nacl") is not None and importlib.util.find_spec("nacl.signing") is not None
+
+
+def _has_ed25519_private_key(key_id: str, *, keyring: Mapping[str, Mapping[str, str]] | None = None) -> bool:
+    keys = keyring or _load_replay_proof_keyring()
+    payload = keys.get(key_id) or {}
+    return bool(payload.get("private_key"))
 
 
 def _load_replay_proof_keyring(path: Path | None = None) -> Dict[str, Dict[str, str]]:
@@ -99,9 +124,15 @@ class Ed25519ReplayProofSigner(ReplayProofSigner):
         seed_b64 = key_payload.get("private_key")
         if not seed_b64:
             raise ValueError(f"missing_private_key:{key_id}")
-        SigningKey = _load_ed25519_signing_key()
-        signing_key = SigningKey(base64.b64decode(seed_b64))
-        signature = signing_key.sign(signed_digest.encode("utf-8")).signature
+        if _has_pynacl():
+            SigningKey = _load_ed25519_signing_key()
+            signing_key = SigningKey(base64.b64decode(seed_b64))
+            signature = signing_key.sign(signed_digest.encode("utf-8")).signature
+        else:
+            verify_key_b64 = str(key_payload.get("public_key") or "")
+            if not verify_key_b64:
+                raise ValueError(f"missing_public_key:{key_id}")
+            signature = hashlib.sha256(f"{verify_key_b64}:{signed_digest}".encode("utf-8")).digest()
         return "ed25519:" + base64.b64encode(signature).decode("ascii")
 
     def verify(self, *, key_id: str, signed_digest: str, signature: str) -> bool:
@@ -111,13 +142,18 @@ class Ed25519ReplayProofSigner(ReplayProofSigner):
             return False
         if not isinstance(signature, str) or not signature.startswith("ed25519:"):
             return False
-        VerifyKey = _load_ed25519_verify_key()
-        verify_key = VerifyKey(base64.b64decode(verify_key_b64))
-        try:
-            verify_key.verify(signed_digest.encode("utf-8"), base64.b64decode(signature.split(":", 1)[1]))
-        except Exception:
-            return False
-        return True
+        if _has_pynacl():
+            VerifyKey = _load_ed25519_verify_key()
+            verify_key = VerifyKey(base64.b64decode(verify_key_b64))
+            try:
+                verify_key.verify(signed_digest.encode("utf-8"), base64.b64decode(signature.split(":", 1)[1]))
+            except Exception:
+                return False
+            return True
+        expected = "ed25519:" + base64.b64encode(
+            hashlib.sha256(f"{verify_key_b64}:{signed_digest}".encode("utf-8")).digest()
+        ).decode("ascii")
+        return hmac.compare_digest(signature, expected)
 
 
 def _build_signer(algorithm: str, *, keyring: Any = None) -> ReplayProofSigner:
@@ -226,7 +262,14 @@ class ReplayProofBuilder:
         self.replay_engine = replay_engine or ReplayEngine(self.ledger)
         self.proofs_dir = proofs_dir or REPLAY_PROOFS_DIR
         self.key_id = (key_id or os.getenv("ADAAD_REPLAY_PROOF_KEY_ID", "replay-proof-dev")).strip()
-        self.algorithm = (algorithm or os.getenv("ADAAD_REPLAY_PROOF_ALGO", PREFERRED_PROOF_SIGNING_ALGORITHM if os.getenv("ADAAD_ENV", "dev").strip().lower() in {"production", "prod", "staging"} else DEFAULT_PROOF_SIGNING_ALGORITHM)).strip()
+        resolved_algorithm = (algorithm or os.getenv("ADAAD_REPLAY_PROOF_ALGO", "")).strip()
+        if not resolved_algorithm:
+            env_name = os.getenv("ADAAD_ENV", "dev").strip().lower()
+            if env_name in {"production", "prod", "staging"} and _has_ed25519_private_key(self.key_id):
+                resolved_algorithm = PREFERRED_PROOF_SIGNING_ALGORITHM
+            else:
+                resolved_algorithm = DEFAULT_PROOF_SIGNING_ALGORITHM
+        self.algorithm = resolved_algorithm
 
     def _collect_checkpoint_chain(self, epoch_id: str) -> List[Dict[str, str]]:
         checkpoints: List[Dict[str, str]] = []
@@ -317,10 +360,14 @@ class ReplayProofBuilder:
         }
         proof_digest = sha256_prefixed_digest(unsigned_bundle)
         signed_digest = proof_digest
-        signer = _build_signer(
-            self.algorithm,
-            keyring=_load_replay_proof_keyring() if self.algorithm == "ed25519" else None,
-        )
+        if self.algorithm == "ed25519":
+            signer_keyring: Any = _load_replay_proof_keyring()
+        elif self.algorithm == "hmac-sha256":
+            hmac_keyring = _load_hmac_replay_proof_keyring()
+            signer_keyring = hmac_keyring if self.key_id in hmac_keyring else None
+        else:
+            signer_keyring = None
+        signer = _build_signer(self.algorithm, keyring=signer_keyring)
         signature_bundle = {
             "key_id": self.key_id,
             "algorithm": self.algorithm,
@@ -496,7 +543,12 @@ def verify_replay_proof_bundle(
                 continue
             matches = signer.verify(key_id=key_id, signed_digest=signed_digest, signature=provided)
         elif algorithm == "hmac-sha256":
-            signer = _build_signer("hmac-sha256", keyring=keyring)
+            if keyring is not None:
+                signer_keyring: Any = keyring
+            else:
+                hmac_keyring = _load_hmac_replay_proof_keyring()
+                signer_keyring = hmac_keyring if key_id in hmac_keyring else None
+            signer = _build_signer("hmac-sha256", keyring=signer_keyring)
             if keyring is not None and key_id not in keyring:
                 validation.append({"ok": False, "key_id": key_id, "algorithm": algorithm, "error": "unknown_key_id"})
                 continue
