@@ -189,3 +189,12 @@ Expected traceability fields in the emitted payload are:
 - `source` (`aponi_editor_ui`)
 
 This event intentionally excludes mutation request body fields so UI-linked telemetry preserves governance traceability without leaking sensitive proposal content.
+
+
+## Module map (feature split)
+
+- `ui/aponi_dashboard.py` remains the integration entrypoint (server wiring, route table, handler composition).
+- `ui/features/timeline.py` owns evolution timeline projection shaping.
+- `ui/features/replay_panel.py` owns replay divergence panel payload assembly.
+- `ui/features/evidence_panel.py` owns evidence/replay diff export helper logic.
+- `ui/features/federation_panel.py` owns federation panel integration constants for deterministic UI assembly.

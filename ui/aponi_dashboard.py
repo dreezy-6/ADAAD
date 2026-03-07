@@ -50,6 +50,11 @@ from runtime.evolution.lineage_v2 import resolve_certified_ancestor_path
 from runtime.evolution.replay_attestation import REPLAY_PROOFS_DIR, load_replay_proof, verify_replay_proof_bundle
 from security.ledger import journal
 
+from ui.features.evidence_panel import replay_diff_export, state_fingerprint
+from ui.features.federation_panel import FEDERATION_PANEL_SECTION_ID
+from ui.features.replay_panel import replay_divergence
+from ui.features.timeline import evolution_timeline
+
 ELEMENT_ID = "Metal"
 HUMAN_DASHBOARD_TITLE = "Aponi Governance Nerve Center"
 SEMANTIC_DRIFT_CLASSES: tuple[str, ...] = (
@@ -1936,8 +1941,7 @@ class AponiDashboard:
 
             @staticmethod
             def _state_fingerprint(value) -> str:
-                canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-                return f"sha256:{sha256(canonical.encode('utf-8')).hexdigest()}"
+                return state_fingerprint(value, json)
 
             @classmethod
             def _epoch_export(cls, epoch_id: str) -> Dict:
@@ -1958,17 +1962,7 @@ class AponiDashboard:
 
             @classmethod
             def _replay_diff_export(cls, epoch_id: str) -> Dict:
-                diff = cls._replay_diff(epoch_id)
-                if not diff.get("ok"):
-                    return diff
-                try:
-                    bundle = cls._bundle_builder.build_bundle(epoch_start=epoch_id, persist=True)
-                except EvidenceBundleError as exc:
-                    return {"ok": False, "error": "bundle_export_failed", "epoch_id": epoch_id, "detail": str(exc)}
-                diff_payload = dict(diff)
-                diff_payload["bundle_id"] = bundle.get("bundle_id", "")
-                diff_payload["export_metadata"] = bundle.get("export_metadata", {})
-                return diff_payload
+                return replay_diff_export(epoch_id=epoch_id, replay_diff=cls._replay_diff, bundle_builder=cls._bundle_builder)
 
             @classmethod
             def _replay_diff(cls, epoch_id: str) -> Dict:
@@ -2110,39 +2104,18 @@ class AponiDashboard:
 
             @classmethod
             def _replay_divergence(cls) -> Dict:
-                recent = metrics.tail(limit=200)
-                divergence_events = [
-                    entry
-                    for entry in recent
-                    if normalize_event_type(entry) in {EVENT_TYPE_REPLAY_DIVERGENCE, EVENT_TYPE_REPLAY_FAILURE}
-                ]
-                return {
-                    "window": 200,
-                    "divergence_event_count": len(divergence_events),
-                    "latest_events": divergence_events[-10:],
-                    "proof_status": {
-                        epoch_id: cls._replay_proof_status(epoch_id)
-                        for epoch_id in lineage_v2.list_epoch_ids()[-10:]
-                    },
-                }
+                return replay_divergence(
+                    metrics_module=metrics,
+                    normalize_event_type=normalize_event_type,
+                    replay_divergence_event=EVENT_TYPE_REPLAY_DIVERGENCE,
+                    replay_failure_event=EVENT_TYPE_REPLAY_FAILURE,
+                    lineage_v2=lineage_v2,
+                    replay_proof_status=cls._replay_proof_status,
+                )
 
             @staticmethod
             def _evolution_timeline() -> List[Dict]:
-                timeline: List[Dict] = []
-                for entry in lineage_v2.read_all()[-200:]:
-                    if not isinstance(entry, dict):
-                        continue
-                    timeline.append(
-                        {
-                            "epoch": entry.get("epoch_id", entry.get("epoch", "")),
-                            "mutation_id": entry.get("mutation_id", entry.get("id", "")),
-                            "fitness_score": entry.get("fitness_score", entry.get("score", 0.0)),
-                            "risk_tier": entry.get("risk_tier", "unknown"),
-                            "applied": bool(entry.get("applied", True)),
-                            "timestamp": entry.get("ts", entry.get("timestamp", "")),
-                        }
-                    )
-                return timeline
+                return evolution_timeline(lineage_v2)
 
             @staticmethod
             def _series_confidence_band(values: List[float]) -> Dict[str, float]:

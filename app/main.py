@@ -15,12 +15,10 @@
 Deterministic orchestrator entrypoint.
 """
 
-import argparse
 import asyncio
 import json
 import logging
 import os
-import re
 import time
 import sys
 import threading
@@ -30,6 +28,15 @@ from app import APP_ROOT
 from app.architect_agent import ArchitectAgent
 from app.orchestration import MutationOrchestrationService
 from app.simulation_utils import LRUCache, clone_dna_for_simulation, stable_hash
+from app.boot_preflight import (
+    apply_governance_ci_mode_defaults,
+    governance_ci_mode_enabled,
+    load_storage_manager_configs,
+    validate_boot_environment,
+)
+from app.cli_args import build_parser, resolve_runtime_inputs
+from app.mutation_cycle import run_mutation_cycle
+from app.replay_verification import run_replay_preflight
 from adaad.agents import AGENTS_ROOT
 from runtime.api.agents import MutationEngine, MutationRequest, agent_path_from_id, iter_agent_dirs, resolve_agent_id
 from runtime.api.legacy_modes import BeastModeLoop, DreamMode
@@ -91,6 +98,23 @@ verify_all = CheckpointVerifier.verify_all_checkpoints
 ORCHESTRATOR_LOGGER = "adaad.orchestrator"
 
 
+
+
+def _governance_ci_mode_enabled() -> bool:
+    return governance_ci_mode_enabled()
+
+
+def _apply_governance_ci_mode_defaults() -> None:
+    apply_governance_ci_mode_defaults()
+
+
+def _load_storage_manager_configs() -> tuple[dict[str, Any], dict[str, Any]]:
+    return load_storage_manager_configs()
+
+
+def _validate_boot_environment() -> None:
+    validate_boot_environment()
+
 def _get_orchestrator_logger() -> logging.Logger:
     logger = logging.getLogger(ORCHESTRATOR_LOGGER)
     if logger.handlers:
@@ -101,46 +125,6 @@ def _get_orchestrator_logger() -> logging.Logger:
     logger.setLevel(logging.INFO)
     logger.propagate = False
     return logger
-
-
-def _governance_ci_mode_enabled() -> bool:
-    return os.getenv("ADAAD_GOVERNANCE_CI_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _apply_governance_ci_mode_defaults() -> None:
-    os.environ.setdefault("ADAAD_FORCE_DETERMINISTIC_PROVIDER", "1")
-    os.environ.setdefault("ADAAD_DETERMINISTIC_SEED", "adaad-governance-ci")
-    os.environ.setdefault("ADAAD_RESOURCE_MEMORY_MB", "2048")
-    os.environ.setdefault("ADAAD_RESOURCE_CPU_SECONDS", "30")
-    os.environ.setdefault("ADAAD_RESOURCE_WALL_SECONDS", "60")
-
-
-def _load_storage_manager_configs() -> tuple[dict[str, Any], dict[str, Any]]:
-    runtime_config: dict[str, Any] = {}
-    governance_config: dict[str, Any] = {}
-
-    profile_path = APP_ROOT.parent / "governance_runtime_profile.lock.json"
-    if profile_path.exists():
-        try:
-            profile_payload = json.loads(profile_path.read_text(encoding="utf-8"))
-            runtime_manifest = profile_payload.get("runtime_manifest", {})
-            if isinstance(runtime_manifest, dict):
-                storage_config = runtime_manifest.get("storage_manager", {})
-                if isinstance(storage_config, dict):
-                    runtime_config.update(storage_config)
-        except (OSError, ValueError, TypeError):
-            runtime_config = {}
-
-    governance_path = APP_ROOT.parent / "governance" / "storage_manager.json"
-    if governance_path.exists():
-        try:
-            governance_payload = json.loads(governance_path.read_text(encoding="utf-8"))
-            if isinstance(governance_payload, dict):
-                governance_config.update(governance_payload)
-        except (OSError, ValueError, TypeError):
-            governance_config = {}
-
-    return governance_config, runtime_config
 
 
 class Orchestrator:
@@ -171,7 +155,7 @@ class Orchestrator:
         self.recovery_hook = AutoRecoveryHook(self.snapshot_manager)
         self.tier_manager = TierManager()
         self.resource_monitor = AndroidMonitor(APP_ROOT.parent)
-        governance_storage_config, runtime_storage_config = _load_storage_manager_configs()
+        governance_storage_config, runtime_storage_config = load_storage_manager_configs()
         self.storage_manager = StorageManager(
             APP_ROOT.parent,
             governance_config=governance_storage_config,
@@ -299,35 +283,7 @@ class Orchestrator:
         self._v("Aponi dashboard started")
 
     def _run_replay_preflight(self, *, verify_only: bool = False) -> Dict[str, Any]:
-        mode = self.replay_mode
-        envelope, preflight = self.replay_service.run_preflight(
-            evolution_runtime=self.evolution_runtime,
-            replay_mode=mode,
-            replay_epoch=self.replay_epoch,
-            verify_only=verify_only,
-        )
-        outcome = envelope.payload
-        has_divergence = bool(outcome.get("divergence"))
-        self.state["replay_mode"] = mode.value
-        self.state["replay_target"] = preflight.get("verify_target")
-        self.state["replay_decision"] = preflight.get("decision")
-        self.state["replay_results"] = preflight.get("results", [])
-        self.state["replay_divergence"] = has_divergence
-        self.state["status"] = "replay_warning" if has_divergence else "replay_verified"
-        self.state["replay_score"] = outcome.get("replay_score", 1.0)
-        if envelope.evidence_refs:
-            self._v(f"Replay manifest written: {envelope.evidence_refs[0]}")
-        if envelope.status == "error":
-            self._fail(envelope.reason)
-        self._v("Replay Summary:")
-        self._v(f"  Mode: {mode.value}")
-        self._v(f"  Target: {preflight.get('verify_target')}")
-        self._v(f"  Divergence: {has_divergence}")
-        self._v(f"  Score: {self.state['replay_score']}")
-        if verify_only:
-            dump()
-            return {"verify_only": True, **outcome}
-        return {"verify_only": False, **outcome}
+        return run_replay_preflight(self, dump, verify_only=verify_only)
 
     def verify_replay_only(self) -> None:
         self._v("Running replay verification-only mode")
@@ -653,238 +609,7 @@ class Orchestrator:
         return True, "ok"
 
     def _run_mutation_cycle(self) -> None:
-        """
-        Execute one architect → mutation engine → executor cycle.
-        """
-        if self.evolution_runtime.fail_closed:
-            metrics.log(event_type="mutation_cycle_blocked", payload={"reason": "replay_fail_closed", "epoch_id": self.evolution_runtime.current_epoch_id}, level="ERROR")
-            return
-        hook_before = self.evolution_runtime.before_mutation_cycle()
-        active_epoch_id = hook_before.get("epoch_id")
-        epoch_meta = {"epoch_id": active_epoch_id, "epoch_start_ts": self.evolution_runtime.epoch_start_ts, "epoch_mutation_count": self.evolution_runtime.epoch_mutation_count}
-        proposals = self.architect.propose_mutations()
-        for proposal in proposals:
-            proposal.epoch_id = active_epoch_id
-        if not proposals:
-            metrics.log(event_type="mutation_cycle_skipped", payload={"reason": "no proposals", "epoch_id": active_epoch_id}, level="INFO")
-            return
-        self.mutation_engine.refresh_state_from_metrics()
-        selected, scores = self.mutation_engine.select(proposals)
-        metrics.log(event_type="mutation_strategy_scores", payload={"scores": scores, **epoch_meta}, level="INFO")
-        if not selected:
-            metrics.log(event_type="mutation_cycle_skipped", payload={"reason": "no selection", "epoch_id": active_epoch_id}, level="INFO")
-            return
-        forced_tier = get_forced_tier()
-        tier = forced_tier or determine_tier(selected.agent_id)
-        if forced_tier is not None:
-            metrics.log(
-                event_type="mutation_tier_override",
-                payload={"agent_id": selected.agent_id, "tier": tier.name},
-                level="INFO",
-            )
-        platform_snapshot = self.resource_monitor.snapshot()
-        eval_wall_start = time.monotonic()
-        eval_cpu_start = time.process_time()
-        envelope_state = {
-            "epoch_id": active_epoch_id,
-            "epoch_entropy_bits": int(getattr(self.evolution_runtime, "epoch_cumulative_entropy_bits", 0) or 0),
-            "observed_entropy_bits": 0,
-            "platform_telemetry": {
-                "battery_percent": round(platform_snapshot.battery_percent, 4),
-                "memory_mb": round(platform_snapshot.memory_mb, 4),
-                "storage_mb": round(platform_snapshot.storage_mb, 4),
-                "cpu_percent": round(platform_snapshot.cpu_percent, 4),
-            },
-            # Pre-evaluation snapshot for headroom checks: resource_bounds validates
-            # platform capacity here, while post-evaluation timing is logged separately.
-            "resource_measurements": {
-                "wall_seconds": 0.0,
-                "cpu_seconds": 0.0,
-                "peak_rss_mb": round(platform_snapshot.memory_mb, 4),
-            },
-        }
-        with deterministic_envelope_scope(envelope_state):
-            constitutional_verdict = evaluate_mutation(selected, tier)
-        eval_wall_elapsed = max(0.0, time.monotonic() - eval_wall_start)
-        eval_cpu_elapsed = max(0.0, time.process_time() - eval_cpu_start)
-        metrics.log(
-            event_type="constitutional_evaluation_resource_measurements",
-            payload={
-                "epoch_id": active_epoch_id,
-                "agent_id": selected.agent_id,
-                "wall_seconds": round(eval_wall_elapsed, 6),
-                "cpu_seconds": round(eval_cpu_elapsed, 6),
-                "peak_rss_mb": round(platform_snapshot.memory_mb, 4),
-            },
-            level="INFO",
-        )
-        if not constitutional_verdict.get("passed"):
-            entropy_budget_verdict = next(
-                (
-                    item
-                    for item in constitutional_verdict.get("verdicts", [])
-                    if isinstance(item, dict) and item.get("rule") == "entropy_budget_limit"
-                ),
-                {},
-            )
-            entropy_details = entropy_budget_verdict.get("details") if isinstance(entropy_budget_verdict, dict) else {}
-            entropy_details = entropy_details if isinstance(entropy_details, dict) else {}
-            if isinstance(entropy_details.get("details"), dict):
-                entropy_details = dict(entropy_details["details"])
-            if "entropy_budget_limit" in constitutional_verdict.get("blocking_failures", []):
-                metrics.log(
-                    event_type="mutation_rejected_entropy",
-                    payload={
-                        "agent_id": selected.agent_id,
-                        "epoch_id": active_epoch_id,
-                        "rule": "entropy_budget_limit",
-                        "reason": entropy_details.get("reason") or entropy_budget_verdict.get("reason", "entropy_budget_limit"),
-                        "max_mutation_entropy_bits": entropy_details.get("max_mutation_entropy_bits"),
-                        "epoch_entropy_bits": entropy_details.get("epoch_entropy_bits"),
-                        "constitutional_verdict": constitutional_verdict,
-                        "evidence": {
-                            "rule": "entropy_budget_limit",
-                            "details": entropy_details,
-                            "blocking_failures": constitutional_verdict.get("blocking_failures", []),
-                        },
-                    },
-                    level="ERROR",
-                )
-            metrics.log(
-                event_type="mutation_rejected_constitutional",
-                payload={**constitutional_verdict, "epoch_id": active_epoch_id, "decision": "rejected", "evidence": constitutional_verdict},
-                level="ERROR",
-            )
-            journal.write_entry(
-                agent_id=selected.agent_id,
-                action="mutation_rejected_constitutional",
-                payload={**constitutional_verdict, "epoch_id": active_epoch_id, "decision": "rejected", "evidence": constitutional_verdict},
-            )
-            if self.dry_run:
-                bias = self.mutation_engine.bias_details(selected)
-                metrics.log(
-                    event_type="mutation_dry_run",
-                    payload={
-                        "agent_id": selected.agent_id,
-                        "strategy_id": selected.intent or "default",
-                        "tier": tier.name,
-                        "constitution_version": constitutional_verdict.get("constitution_version"),
-                        "constitutional_verdict": constitutional_verdict,
-                        "bias": bias,
-                        "fitness_score": None,
-                        "status": "rejected",
-                    },
-                    level="WARN",
-                )
-                journal.write_entry(
-                    agent_id=selected.agent_id,
-                    action="mutation_dry_run",
-                    payload={
-                        "epoch_id": active_epoch_id,
-                        "strategy_id": selected.intent or "default",
-                        "tier": tier.name,
-                        "constitutional_verdict": constitutional_verdict,
-                        "bias": bias,
-                        "fitness_score": None,
-                        "status": "rejected",
-                        "ts": now_iso(),
-                    },
-                )
-            return
-        metrics.log(
-            event_type="mutation_approved_constitutional",
-            payload={
-                "agent_id": selected.agent_id,
-                **epoch_meta,
-                "tier": tier.name,
-                "constitution_version": constitutional_verdict.get("constitution_version"),
-                "warnings": constitutional_verdict.get("warnings", []),
-            },
-            level="INFO",
-        )
-        if self.dry_run:
-            try:
-                fitness_score = self._simulate_fitness_score(selected)
-            except ValueError as exc:
-                metrics.log(
-                    event_type="mutation_dry_run_simulation_rejected",
-                    payload={
-                        "agent_id": selected.agent_id,
-                        "epoch_id": active_epoch_id,
-                        "strategy_id": selected.intent or "default",
-                        "tier": tier.name,
-                        "constitution_version": constitutional_verdict.get("constitution_version"),
-                        "constitutional_verdict": constitutional_verdict,
-                        "reason": str(exc),
-                        "decision": "rejected",
-                        "evidence": {
-                            "rule": "simulation_clone_type_safety",
-                            "error": str(exc),
-                        },
-                    },
-                    level="ERROR",
-                )
-                journal.write_entry(
-                    agent_id=selected.agent_id,
-                    action="mutation_dry_run",
-                    payload={
-                        "epoch_id": active_epoch_id,
-                        "strategy_id": selected.intent or "default",
-                        "tier": tier.name,
-                        "constitutional_verdict": constitutional_verdict,
-                        "fitness_score": None,
-                        "status": "rejected",
-                        "reason": str(exc),
-                        "ts": now_iso(),
-                    },
-                )
-                return
-            bias = self.mutation_engine.bias_details(selected)
-            metrics.log(
-                event_type="mutation_dry_run",
-                payload={
-                    "agent_id": selected.agent_id,
-                    "epoch_id": active_epoch_id,
-                    "strategy_id": selected.intent or "default",
-                    "tier": tier.name,
-                    "constitution_version": constitutional_verdict.get("constitution_version"),
-                    "constitutional_verdict": constitutional_verdict,
-                    "bias": bias,
-                    "fitness_score": fitness_score,
-                    "status": "approved",
-                },
-                level="INFO",
-            )
-            journal.write_entry(
-                agent_id=selected.agent_id,
-                action="mutation_dry_run",
-                payload={
-                    "epoch_id": active_epoch_id,
-                    "strategy_id": selected.intent or "default",
-                    "tier": tier.name,
-                    "constitutional_verdict": constitutional_verdict,
-                    "bias": bias,
-                    "fitness_score": fitness_score,
-                    "status": "approved",
-                    "ts": now_iso(),
-                },
-            )
-            return
-
-        result = self.executor.execute(selected)
-        journal.write_entry(
-            agent_id=selected.agent_id,
-            action="mutation_cycle",
-            payload={
-                "result": result,
-                "constitutional_verdict": constitutional_verdict,
-                "epoch_id": active_epoch_id,
-                "epoch_start_ts": self.evolution_runtime.epoch_start_ts,
-                "epoch_mutation_count": self.evolution_runtime.epoch_mutation_count,
-                "replay": result.get("evolution", {}).get("replay", {}),
-                "ts": now_iso(),
-            },
-        )
+        run_mutation_cycle(self)
 
     def _register_capabilities(self) -> None:
         registrations = [
@@ -994,84 +719,15 @@ class Orchestrator:
         return score
 
 
-_BOOT_KNOWN_ENVS: frozenset[str] = frozenset({"dev", "test", "staging", "production", "prod"})
-_BOOT_STRICT_ENVS: frozenset[str] = frozenset({"staging", "production", "prod"})
-
-
-def _validate_boot_environment() -> None:
-    """Fail closed on invalid or unsafe environment configuration at startup."""
-    env = (os.getenv("ADAAD_ENV") or "").strip().lower()
-    if not env:
-        raise SystemExit(
-            "CRITICAL: ADAAD_ENV is not set. Set to one of: dev, test, staging, production"
-        )
-    if env not in _BOOT_KNOWN_ENVS:
-        raise SystemExit(
-            f"CRITICAL: ADAAD_ENV={env!r} is not a recognised environment. "
-            f"Permitted: {sorted(_BOOT_KNOWN_ENVS)}"
-        )
-    if env in _BOOT_STRICT_ENVS and os.getenv("CRYOVANT_DEV_MODE"):
-        raise SystemExit(
-            f"CRITICAL: CRYOVANT_DEV_MODE is set in strict environment {env!r}. "
-            "This configuration is not permitted."
-        )
-    if env in _BOOT_STRICT_ENVS:
-        has_key = os.getenv("ADAAD_GOVERNANCE_SESSION_SIGNING_KEY") or any(
-            v for k, v in os.environ.items()
-            if k.startswith("ADAAD_GOVERNANCE_SESSION_KEY_")
-        )
-        if not has_key:
-            raise SystemExit(
-                "CRITICAL: missing_governance_signing_key — "
-                "ADAAD_GOVERNANCE_SESSION_SIGNING_KEY must be set in strict environment."
-            )
-    metrics.log(
-        event_type="boot_env_validated",
-        payload={"env": env},
-        level="INFO",
-    )
-
-
 def main() -> None:
-    _validate_boot_environment()
-    parser = argparse.ArgumentParser(description="ADAAD orchestrator")
-    parser.add_argument("--verbose", action="store_true", help="Print boot stage diagnostics to stdout.")
-    parser.add_argument("--dry-run", action="store_true", help="Evaluate mutations without applying them.")
-    parser.add_argument(
-        "--replay",
-        default="off",
-        help=(
-            "Replay mode: off (skip replay), audit (verify and continue), strict (verify and fail-close). "
-            "Legacy aliases: full->audit, true->audit, false->off."
-        ),
-    )
-    parser.add_argument("--replay-epoch", default="", help="Replay a specific epoch id as the verification target.")
-    parser.add_argument("--epoch", default="", help="Epoch identifier used for replay-proof export or replay targeting.")
-    parser.add_argument("--verify-replay", action="store_true", help="Run replay verification and exit after reporting result.")
-    parser.add_argument(
-        "--exit-after-boot",
-        action="store_true",
-        help="Complete one governed boot (including replay audit) and exit before any mutation cycle.",
-    )
-    parser.add_argument(
-        "--export-replay-proof",
-        action="store_true",
-        help="Export a signed replay proof bundle for --epoch and exit.",
-    )
+    validate_boot_environment()
+    parser = build_parser()
     args = parser.parse_args()
 
-    dry_run_env = os.getenv("ADAAD_DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
-    try:
-        replay_mode = normalize_replay_mode(args.replay)
-    except ValueError as exc:
-        parser.error(str(exc))
+    dry_run_env, replay_mode, selected_epoch = resolve_runtime_inputs(args, parser)
 
-    if _governance_ci_mode_enabled():
-        _apply_governance_ci_mode_defaults()
-
-    selected_epoch = (args.epoch or args.replay_epoch).strip()
-    if args.epoch and args.replay_epoch and args.epoch.strip() != args.replay_epoch.strip():
-        logging.warning("Both --epoch (%s) and --replay-epoch (%s) were provided; using --epoch.", args.epoch, args.replay_epoch)
+    if governance_ci_mode_enabled():
+        apply_governance_ci_mode_defaults()
 
     if args.export_replay_proof:
         if not selected_epoch:
