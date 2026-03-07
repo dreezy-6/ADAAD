@@ -6,9 +6,9 @@
 | Metric | Value |
 | --- | --- |
 | Report version | `3.0.0` |
-| Branch | `chore/doc-sync-v3` |
-| Short SHA | `b0a4655` |
-| Last sync | 2026-03-06 |
+| Branch | `work` |
+| Tag | `(none)` |
+| Short SHA | `d168da6` |
 
 All future architecture snapshots MUST include branch, tag (if any), and short SHA.
 <!-- ARCH_SNAPSHOT_METADATA:END -->
