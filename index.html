@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ADAAD — AI That Improves Your Code. Constitutionally.</title>
+<meta name="description" content="ADAAD is an open-source governed mutation engine. Three AI agents compete to improve your codebase — every change gated, logged, and reversible. Free. Open source."/>
+<meta property="og:title" content="ADAAD — AI That Improves Your Code. Constitutionally."/>
+<meta property="og:description" content="Three AI agents. One governance gate. Zero unsupervised changes. The autonomous mutation engine built for teams that can't afford to trust blindly."/>
+<meta property="og:type" content="website"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #050810;
+    --bg2: #080c16;
+    --surface: #0d1224;
+    --border: rgba(0,212,255,0.12);
+    --cyan: #00d4ff;
+    --amber: #f59e0b;
+    --green: #22c55e;
+    --red: #ef4444;
+    --violet: #7b61ff;
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --display: 'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ─── GRID NOISE OVERLAY ─── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ─── GLOW ORBS ─── */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.35;
+  }
+  .orb-1 { width: 600px; height: 600px; background: #1a3a6b; top: -200px; left: -200px; }
+  .orb-2 { width: 500px; height: 500px; background: #0d2b4a; top: 50%; right: -150px; }
+  .orb-3 { width: 400px; height: 400px; background: #1a1040; bottom: -100px; left: 30%; }
+
+  /* ─── NAV ─── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 16px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(5,8,16,0.85);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-logo {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
+    color: var(--cyan);
+    text-decoration: none;
+  }
+  .nav-logo span { color: var(--text); }
+
+  .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-links a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--text); }
+
+  .nav-cta {
+    background: var(--cyan);
+    color: #000 !important;
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-weight: 600 !important;
+    font-size: 0.875rem;
+    transition: opacity 0.2s !important;
+  }
+  .nav-cta:hover { opacity: 0.85; }
+
+  /* ─── HERO ─── */
+  .hero {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 120px 24px 80px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 100px;
+    padding: 6px 16px;
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    color: var(--cyan);
+    margin-bottom: 32px;
+    animation: fadeUp 0.6s ease both;
+  }
+  .badge .dot {
+    width: 6px; height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.4); }
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(2.8rem, 7vw, 6rem);
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    max-width: 900px;
+    margin-bottom: 12px;
+    animation: fadeUp 0.6s 0.1s ease both;
+  }
+
+  h1 .accent { color: var(--cyan); }
+  h1 .accent2 { color: var(--amber); }
+
+  .hero-sub {
+    font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+    color: var(--muted);
+    max-width: 580px;
+    margin-bottom: 48px;
+    font-weight: 300;
+    animation: fadeUp 0.6s 0.2s ease both;
+    line-height: 1.5;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    animation: fadeUp 0.6s 0.3s ease both;
+    margin-bottom: 64px;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--cyan);
+    color: #000;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 14px 28px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 0 30px rgba(0,212,255,0.25);
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 50px rgba(0,212,255,0.4);
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: transparent;
+    color: var(--text);
+    font-weight: 500;
+    font-size: 1rem;
+    padding: 14px 28px;
+    border-radius: 8px;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .btn-secondary:hover {
+    border-color: rgba(0,212,255,0.4);
+    background: rgba(0,212,255,0.05);
+  }
+
+  /* ─── TERMINAL BLOCK ─── */
+  .terminal {
+    animation: fadeUp 0.6s 0.4s ease both;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 540px;
+    width: 100%;
+    text-align: left;
+    box-shadow: 0 0 60px rgba(0,212,255,0.06);
+  }
+
+  .terminal-bar {
+    background: rgba(255,255,255,0.04);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tbar-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .tbar-dot.r { background: #ef4444; }
+  .tbar-dot.y { background: #f59e0b; }
+  .tbar-dot.g { background: #22c55e; }
+  .tbar-label {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .terminal-body {
+    padding: 20px 20px 24px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.8;
+  }
+
+  .t-prompt { color: var(--cyan); }
+  .t-cmd { color: var(--text); }
+  .t-ok { color: var(--green); }
+  .t-info { color: var(--muted); }
+  .t-cyan { color: var(--cyan); }
+  .t-amber { color: var(--amber); }
+  .t-divider { color: var(--muted); letter-spacing: 0; }
+
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 14px;
+    background: var(--cyan);
+    vertical-align: middle;
+    animation: blink 1.1s infinite;
+  }
+  @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+
+  /* ─── PIPELINE SECTION ─── */
+  section { position: relative; z-index: 1; }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    color: var(--cyan);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(2rem, 4vw, 3rem);
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 20px;
+  }
+
+  .section-body {
+    color: var(--muted);
+    font-size: 1.05rem;
+    line-height: 1.7;
+    max-width: 560px;
+  }
+
+  /* ─── HOW IT WORKS ─── */
+  .how {
+    padding: 120px 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .how-header {
+    text-align: center;
+    margin-bottom: 80px;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 2px;
+    background: var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .step {
+    background: var(--bg2);
+    padding: 36px 28px;
+    transition: background 0.2s;
+  }
+  .step:hover { background: var(--surface); }
+
+  .step-num {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--cyan);
+    letter-spacing: 0.1em;
+    margin-bottom: 16px;
+    opacity: 0.7;
+  }
+
+  .step-icon {
+    font-size: 1.8rem;
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  .step h3 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+
+  .step p {
+    font-size: 0.875rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ─── INVARIANTS / KEY FACTS ─── */
+  .invariants {
+    padding: 0 24px 120px;
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+
+  .inv-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+  }
+
+  .inv-rule {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .inv-rule:last-child { border-bottom: none; }
+
+  .inv-badge {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-weight: 500;
+  }
+  .blocking { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+  .warning  { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+  .advisory { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.25); }
+
+  .inv-rule p {
+    font-size: 0.875rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .inv-rule p strong { color: var(--text); font-weight: 500; }
+
+  /* ─── CAPABILITIES GRID ─── */
+  .caps {
+    padding: 0 24px 120px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .caps-header {
+    text-align: center;
+    margin-bottom: 60px;
+  }
+
+  .cap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+
+  .cap-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .cap-card:hover {
+    border-color: rgba(0,212,255,0.3);
+    transform: translateY(-2px);
+  }
+
+  .cap-icon { font-size: 1.5rem; margin-bottom: 12px; display: block; }
+
+  .cap-card h3 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  .cap-card p {
+    font-size: 0.83rem;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* ─── SOCIAL PROOF / STATS ─── */
+  .stats {
+    padding: 80px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .stats-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 40px;
+    text-align: center;
+  }
+
+  .stat-num {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 2.8rem;
+    letter-spacing: -0.04em;
+    color: var(--cyan);
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  .stat-label {
+    font-size: 0.83rem;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  /* ─── ANDROID SECTION ─── */
+  .android {
+    padding: 120px 24px;
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .install-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 48px;
+  }
+
+  .install-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 20px;
+    text-align: left;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.2s;
+  }
+  .install-card:hover { border-color: rgba(0,212,255,0.4); }
+
+  .install-card .ic-icon { font-size: 1.5rem; margin-bottom: 12px; display: block; }
+  .install-card h4 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .install-card p { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+  /* ─── CTA SECTION ─── */
+  .cta-section {
+    padding: 120px 24px;
+    text-align: center;
+  }
+
+  .cta-box {
+    max-width: 680px;
+    margin: 0 auto;
+    background: linear-gradient(135deg, rgba(0,212,255,0.06) 0%, rgba(123,97,255,0.06) 100%);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 20px;
+    padding: 64px 48px;
+  }
+
+  .cta-box h2 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(2rem, 4vw, 2.8rem);
+    letter-spacing: -0.03em;
+    margin-bottom: 16px;
+    line-height: 1.1;
+  }
+
+  .cta-box p {
+    color: var(--muted);
+    font-size: 1.05rem;
+    margin-bottom: 40px;
+    line-height: 1.6;
+  }
+
+  /* ─── FOOTER ─── */
+  footer {
+    position: relative;
+    z-index: 1;
+    border-top: 1px solid var(--border);
+    padding: 40px 40px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: gap;
+    gap: 20px;
+  }
+
+  .footer-left {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+  .footer-left strong { color: var(--cyan); }
+
+  .footer-links {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .footer-links a {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .footer-links a:hover { color: var(--text); }
+
+  /* ─── ANIMATIONS ─── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(32px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 768px) {
+    nav { padding: 12px 20px; }
+    .nav-links { display: none; }
+    .invariants { grid-template-columns: 1fr; }
+    footer { flex-direction: column; align-items: flex-start; }
+    .cta-box { padding: 40px 24px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#"><span>A</span>DAAD</a>
+  <div class="nav-links">
+    <a href="#how">How it works</a>
+    <a href="#capabilities">Capabilities</a>
+    <a href="#android">Android</a>
+    <a href="https://github.com/InnovativeAI-adaad/ADAAD">GitHub</a>
+    <a class="nav-cta" href="https://github.com/InnovativeAI-adaad/ADAAD#-start-in-60-seconds">Get started →</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="badge">
+    <span class="dot"></span>
+    v3.1.0-dev · Phase 6 active · Free &amp; open source
+  </div>
+
+  <h1>
+    AI that improves<br/>
+    your code.<br/>
+    <span class="accent2">Constitutionally.</span>
+  </h1>
+
+  <p class="hero-sub">
+    Three AI agents compete to improve your codebase every epoch.
+    Every change is gated, logged, and reversible.
+    Nothing ships without proof.
+  </p>
+
+  <div class="hero-actions">
+    <a class="btn-primary" href="https://github.com/InnovativeAI-adaad/ADAAD#-start-in-60-seconds">
+      ⚡ Start in 60 seconds
+    </a>
+    <a class="btn-secondary" href="https://github.com/InnovativeAI-adaad/ADAAD">
+      ☆ Star on GitHub
+    </a>
+  </div>
+
+  <div class="terminal">
+    <div class="terminal-bar">
+      <span class="tbar-dot r"></span>
+      <span class="tbar-dot y"></span>
+      <span class="tbar-dot g"></span>
+      <span class="tbar-label">adaad — epoch-042</span>
+    </div>
+    <div class="terminal-body">
+      <div><span class="t-prompt">$</span> <span class="t-cmd">python onboard.py</span></div>
+      <div class="t-ok">✔ Python 3.12.3</div>
+      <div class="t-ok">✔ Workspace initialized</div>
+      <div class="t-ok">✔ Governance schemas valid</div>
+      <div class="t-ok">✔ Dry-run complete — no files modified</div>
+      <br/>
+      <div><span class="t-prompt">$</span> <span class="t-cmd">python -m app.main --verbose</span></div>
+      <div class="t-info">⟳  Epoch 042 — 3 agents proposing...</div>
+      <div class="t-cyan">  Architect  → score 0.87  PASS</div>
+      <div class="t-cyan">  Dream      → score 0.74  PASS</div>
+      <div class="t-amber">  Beast      → score 0.62  WARN: complexity delta</div>
+      <div class="t-divider">  ────────────────────────────────</div>
+      <div class="t-ok">  GovernanceGate: 2 approved · 1 rejected</div>
+      <div class="t-ok">  Ledger: 2 entries appended (SHA-256 chained)</div>
+      <div class="t-info">  Next agent: Architect (UCB1 selection)</div>
+      <div><span class="cursor"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="how" id="how">
+  <div class="how-header reveal">
+    <div class="section-label">// how it works</div>
+    <h2 class="section-title">Five steps.<br/>One governed loop.</h2>
+    <p style="color:var(--muted);max-width:500px;margin:0 auto;font-size:1.05rem;line-height:1.7;">
+      Every epoch runs the same deterministic pipeline. No step is skippable. No gate is optional. No decision goes unrecorded.
+    </p>
+  </div>
+
+  <div class="steps reveal">
+    <div class="step">
+      <span class="step-num">01 / PROPOSE</span>
+      <span class="step-icon">🤖</span>
+      <h3>AI agents compete</h3>
+      <p>Architect, Dream, and Beast independently propose code improvements using Claude. Different philosophies. One shared goal.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">02 / EVOLVE</span>
+      <span class="step-icon">🧬</span>
+      <h3>Genetic selection</h3>
+      <p>Proposals compete in a BLX-alpha genetic algorithm. Best ideas survive. Cross-pollination creates stronger hybrids.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">03 / GATE</span>
+      <span class="step-icon">🛡️</span>
+      <h3>Constitutional gate</h3>
+      <p>16 deterministic rules. One failure = full halt. GovernanceGate is the only surface that can approve a mutation.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">04 / RECORD</span>
+      <span class="step-icon">🧾</span>
+      <h3>Permanent ledger</h3>
+      <p>Every decision is SHA-256 hash-chained, signed, and appended. Tamper the log and the chain breaks immediately.</p>
+    </div>
+    <div class="step">
+      <span class="step-num">05 / ADAPT</span>
+      <span class="step-icon">📈</span>
+      <h3>Weights self-calibrate</h3>
+      <p>Scoring weights shift via momentum gradient descent. What works gains influence. Underperformers decay automatically.</p>
+    </div>
+  </div>
+</section>
+
+<!-- INVARIANTS -->
+<section>
+  <div class="invariants reveal">
+    <div>
+      <div class="section-label">// constitutional rules</div>
+      <h2 class="section-title">The rules aren't<br/>suggestions.</h2>
+      <p class="section-body">
+        ADAAD operates under a written constitution: 16 rules with binding enforcement.
+        Blocking failures reject mutations outright — no exceptions, no workarounds.
+        The AI agents cannot modify the rules they operate under.
+      </p>
+      <br/>
+      <p class="section-body" style="font-size:0.875rem;">
+        The constitution itself can evolve — but only through a formal process requiring
+        human sign-off and producing its own audit trail.
+      </p>
+    </div>
+    <div class="inv-card">
+      <div class="inv-rule">
+        <span class="inv-badge blocking">BLOCKING</span>
+        <p><strong>ast_validity</strong> — Syntax errors are rejected before execution.</p>
+      </div>
+      <div class="inv-rule">
+        <span class="inv-badge blocking">BLOCKING</span>
+        <p><strong>no_banned_tokens</strong> — eval, exec, and dangerous primitives are prohibited.</p>
+      </div>
+      <div class="inv-rule">
+        <span class="inv-badge blocking">BLOCKING</span>
+        <p><strong>signature_required</strong> — Every mutation must carry cryptographic lineage.</p>
+      </div>
+      <div class="inv-rule">
+        <span class="inv-badge blocking">BLOCKING</span>
+        <p><strong>lineage_continuity</strong> — The audit chain cannot have gaps.</p>
+      </div>
+      <div class="inv-rule">
+        <span class="inv-badge blocking">BLOCKING</span>
+        <p><strong>federation_dual_gate</strong> — Cross-repo changes need approval in both repos.</p>
+      </div>
+      <div class="inv-rule">
+        <span class="inv-badge warning">WARNING</span>
+        <p><strong>max_complexity_delta</strong> — Large complexity increases are flagged for review.</p>
+      </div>
+      <div class="inv-rule">
+        <span class="inv-badge advisory">ADVISORY</span>
+        <p><strong>reviewer_calibration</strong> — Reviewer context captured in every audit record.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<div class="stats reveal">
+  <div class="stats-inner">
+    <div>
+      <div class="stat-num">16</div>
+      <div class="stat-label">Constitutional rules<br/>enforced per mutation</div>
+    </div>
+    <div>
+      <div class="stat-num">3</div>
+      <div class="stat-label">AI agent personas<br/>competing every epoch</div>
+    </div>
+    <div>
+      <div class="stat-num">0</div>
+      <div class="stat-label">Unsupervised changes<br/>to production ever</div>
+    </div>
+    <div>
+      <div class="stat-num">100%</div>
+      <div class="stat-label">Decisions replayed<br/>byte-identical</div>
+    </div>
+    <div>
+      <div class="stat-num">$0</div>
+      <div class="stat-label">Cost to install<br/>and run ADAAD</div>
+    </div>
+  </div>
+</div>
+
+<!-- CAPABILITIES -->
+<section class="caps" id="capabilities">
+  <div class="caps-header reveal">
+    <div class="section-label">// platform capabilities</div>
+    <h2 class="section-title">Everything you need.<br/>Nothing you don't.</h2>
+  </div>
+
+  <div class="cap-grid">
+    <div class="cap-card reveal">
+      <span class="cap-icon">🔁</span>
+      <h3>Deterministic Replay</h3>
+      <p>Every decision re-runs byte-identical. Divergence halts the pipeline and is logged. Your audit trail is real, not ceremonial.</p>
+    </div>
+    <div class="cap-card reveal">
+      <span class="cap-icon">🌐</span>
+      <h3>Multi-Repo Federation</h3>
+      <p>Cross-repo mutations with dual-gate enforcement. Source approval never binds the destination. Each repo governs itself.</p>
+    </div>
+    <div class="cap-card reveal">
+      <span class="cap-icon">📝</span>
+      <h3>Roadmap Self-Amendment</h3>
+      <p>The engine can propose changes to its own development plan. Humans approve. No auto-promote path exists — by constitutional invariant.</p>
+    </div>
+    <div class="cap-card reveal">
+      <span class="cap-icon">🐳</span>
+      <h3>Container Isolation</h3>
+      <p>cgroup v2 sandboxes, pool-managed and health-probed. Resource bounds are a blocking constitutional rule — not just a config option.</p>
+    </div>
+    <div class="cap-card reveal">
+      <span class="cap-icon">📊</span>
+      <h3>Fitness Landscape Memory</h3>
+      <p>Win/loss rates tracked per mutation type. Plateau detection triggers Thompson sampling exploration automatically.</p>
+    </div>
+    <div class="cap-card reveal">
+      <span class="cap-icon">🧪</span>
+      <h3>Policy Simulation</h3>
+      <p>Replay historical epochs under hypothetical governance constraints. Zero side-effects. Full audit trail. Safe to experiment.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ANDROID -->
+<section class="android reveal" id="android">
+  <div class="section-label">// android app</div>
+  <h2 class="section-title">Run it from your pocket.<br/>For free.</h2>
+  <p style="color:var(--muted);font-size:1.05rem;max-width:480px;margin:0 auto;line-height:1.7;">
+    No Play Store account. No purchase. No subscription.
+    Full Aponi dashboard on Android — four install tracks, all free, all governance-gated.
+  </p>
+
+  <div class="install-grid">
+    <a class="install-card" href="https://github.com/InnovativeAI-adaad/ADAAD/releases/latest">
+      <span class="ic-icon">⚡</span>
+      <h4>Direct APK</h4>
+      <p>Download from GitHub Releases. Tap to install. Fastest path.</p>
+    </a>
+    <a class="install-card" href="https://github.com/ImranR98/Obtainium/releases">
+      <span class="ic-icon">🏆</span>
+      <h4>Obtainium</h4>
+      <p>Paste the repo URL. Get automatic updates. Recommended.</p>
+    </a>
+    <a class="install-card" href="https://innovativeai-adaad.github.io/ADAAD/">
+      <span class="ic-icon">🌐</span>
+      <h4>Web App (PWA)</h4>
+      <p>Open in Chrome. Add to home screen. No download required.</p>
+    </a>
+    <a class="install-card" href="#">
+      <span class="ic-icon">📦</span>
+      <h4>F-Droid</h4>
+      <p>Reproducible builds. Privacy-respecting. Verifiable APK.</p>
+    </a>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-section reveal">
+  <div class="cta-box">
+    <h2>Ship better code.<br/>With proof.</h2>
+    <p>
+      ADAAD is free, open source, and running today.
+      Start in 60 seconds — or just read the constitution.
+      Either way, you'll understand why governance-first AI matters.
+    </p>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+      <a class="btn-primary" href="https://github.com/InnovativeAI-adaad/ADAAD">
+        View on GitHub →
+      </a>
+      <a class="btn-secondary" href="https://github.com/InnovativeAI-adaad/ADAAD/blob/main/docs/CONSTITUTION.md">
+        Read the Constitution
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">
+    <strong>ADAAD</strong> v3.1.0-dev · MIT License · InnovativeAI-adaad
+  </div>
+  <div class="footer-links">
+    <a href="https://github.com/InnovativeAI-adaad/ADAAD">GitHub</a>
+    <a href="https://github.com/InnovativeAI-adaad/ADAAD/blob/main/docs/CONSTITUTION.md">Constitution</a>
+    <a href="https://github.com/InnovativeAI-adaad/ADAAD/blob/main/ROADMAP.md">Roadmap</a>
+    <a href="https://github.com/InnovativeAI-adaad/ADAAD/blob/main/CHANGELOG.md">Changelog</a>
+    <a href="https://github.com/InnovativeAI-adaad/ADAAD/blob/main/docs/SECURITY.md">Security</a>
+    <a href="https://github.com/InnovativeAI-adaad/ADAAD/blob/main/CONTRIBUTING.md">Contribute</a>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
