@@ -354,3 +354,147 @@ class TestToFederationOrigin:
         assert isinstance(origin, FederationOrigin)
         assert origin.source_repo == _LOCAL_REPO
         assert origin.source_chain_digest == _CHAIN_DIGEST
+
+
+# ---------------------------------------------------------------------------
+# propagate_amendment — Phase 6 M6-04
+# ---------------------------------------------------------------------------
+
+
+def test_propagate_amendment_emits_contract_payload_and_applies_all() -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+    broker = _make_broker(audit=lambda et, payload: events.append((et, payload)))
+
+    destinations = [{"node_id": "peer-b"}, {"node_id": "peer-a"}]
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            broker,
+            "_default_destination_gate_evaluator",
+            lambda *_args, **_kwargs: {"approved": True, "decision_id": "dest-1", "decision": "approved"},
+        )
+
+        payload = broker.propagate_amendment(
+            proposal_id="proposal-001",
+            source_node="source-node",
+            destination_nodes=destinations,
+            mutation_payload={"mutation_id": "roadmap-001", "change": "delta"},
+            source_gate_decision_payload={"approved": True, "decision_id": "src-1"},
+            propagation_timestamp="2026-03-06T10:00:00Z",
+            evidence_bundle_hash="sha256:" + "b" * 64,
+            federation_hmac_key_path=__file__,
+        )
+
+    assert payload == {
+        "proposal_id": "proposal-001",
+        "source_node": "source-node",
+        "destination_nodes": ["peer-a", "peer-b"],
+        "propagation_timestamp": "2026-03-06T10:00:00Z",
+        "evidence_bundle_hash": "sha256:" + "b" * 64,
+    }
+    assert destinations[0]["applied_mutations"]
+    assert destinations[1]["applied_mutations"]
+    assert ("federated_amendment_propagated", payload) in events
+
+
+def test_propagate_amendment_fail_closed_when_hmac_key_missing() -> None:
+    broker = _make_broker()
+    with pytest.raises(FederationMutationBrokerError, match="federation_hmac_required"):
+        broker.propagate_amendment(
+            proposal_id="proposal-002",
+            source_node="source-node",
+            destination_nodes=[{"node_id": "peer-a"}],
+            mutation_payload={"mutation_id": "roadmap-002"},
+            source_gate_decision_payload={"approved": True},
+            propagation_timestamp="2026-03-06T10:01:00Z",
+            evidence_bundle_hash="sha256:" + "c" * 64,
+            federation_hmac_key_path="",
+        )
+
+
+def test_propagate_amendment_rejects_invalid_authority_level() -> None:
+    broker = _make_broker()
+    with pytest.raises(FederationMutationBrokerError, match="PHASE6_FEDERATED_AUTHORITY_VIOLATION"):
+        broker.propagate_amendment(
+            proposal_id="proposal-003",
+            source_node="source-node",
+            destination_nodes=[{"node_id": "peer-a"}],
+            mutation_payload={"mutation_id": "roadmap-003"},
+            source_gate_decision_payload={"approved": True},
+            propagation_timestamp="2026-03-06T10:02:00Z",
+            evidence_bundle_hash="sha256:" + "d" * 64,
+            federation_hmac_key_path=__file__,
+            authority_level="agent-review",
+        )
+
+
+def test_propagate_amendment_rejects_replay_lineage_inconsistency() -> None:
+    broker = _make_broker()
+    with pytest.raises(FederationMutationBrokerError, match="PHASE6_FEDERATED_REPLAY_LINEAGE_INCONSISTENT"):
+        broker.propagate_amendment(
+            proposal_id="proposal-004",
+            source_node="source-node",
+            destination_nodes=[{"node_id": "peer-a"}],
+            mutation_payload={"mutation_id": "roadmap-004"},
+            source_gate_decision_payload={"approved": True},
+            propagation_timestamp="2026-03-06T10:03:00Z",
+            evidence_bundle_hash="sha256:" + "e" * 64,
+            federation_hmac_key_path=__file__,
+            replay_lineage_consistent=False,
+        )
+
+
+def test_propagate_amendment_rolls_back_previously_applied_destinations() -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+    broker = _make_broker(audit=lambda et, payload: events.append((et, payload)))
+    destinations = [{"node_id": "peer-a"}, {"node_id": "peer-b"}]
+
+    def fail_second_destination(node: dict[str, Any], mutation_payload: dict[str, Any], destination_gate_payload: dict[str, Any]) -> None:
+        if node["node_id"] == "peer-b":
+            raise RuntimeError("simulated write failure")
+        broker._default_destination_mutation_writer(node, mutation_payload, destination_gate_payload)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            broker,
+            "_default_destination_gate_evaluator",
+            lambda *_args, **_kwargs: {"approved": True, "decision_id": "dest-1", "decision": "approved"},
+        )
+
+        with pytest.raises(FederationMutationBrokerError, match="federated_propagation_rolled_back"):
+            broker.propagate_amendment(
+                proposal_id="proposal-005",
+                source_node="source-node",
+                destination_nodes=destinations,
+                mutation_payload={"mutation_id": "roadmap-005"},
+                source_gate_decision_payload={"approved": True},
+                propagation_timestamp="2026-03-06T10:04:00Z",
+                evidence_bundle_hash="sha256:" + "f" * 64,
+                federation_hmac_key_path=__file__,
+                destination_mutation_writer=fail_second_destination,
+            )
+
+    assert "applied_mutations" not in destinations[0]
+    assert "applied_mutations" not in destinations[1]
+    rollback_event = [entry for entry in events if entry[0] == "federated_amendment_rollback"]
+    assert rollback_event
+
+
+def test_propagate_amendment_destination_gate_remains_independent() -> None:
+    broker = _make_broker()
+    with pytest.raises(FederationMutationBrokerError, match="federated_propagation_rolled_back"):
+        broker.propagate_amendment(
+            proposal_id="proposal-006",
+            source_node="source-node",
+            destination_nodes=[{"node_id": "peer-a"}],
+            mutation_payload={"mutation_id": "roadmap-006"},
+            source_gate_decision_payload={"approved": True, "decision_id": "source-approved"},
+            propagation_timestamp="2026-03-06T10:05:00Z",
+            evidence_bundle_hash="sha256:" + "1" * 64,
+            federation_hmac_key_path=__file__,
+            destination_gate_evaluator=lambda *_args, **_kwargs: {
+                "approved": False,
+                "decision": "rejected",
+                "decision_id": "destination-reject",
+            },
+        )

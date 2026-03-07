@@ -39,7 +39,9 @@ import hashlib
 import json
 import logging
 import uuid
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
@@ -427,6 +429,100 @@ class FederationMutationBroker:
         """Return proposals that failed validation or gate evaluation."""
         return list(self._quarantined)
 
+    def propagate_amendment(
+        self,
+        *,
+        proposal_id: str,
+        source_node: str,
+        destination_nodes: List[Any],
+        mutation_payload: Dict[str, Any],
+        source_gate_decision_payload: Dict[str, Any],
+        propagation_timestamp: str,
+        evidence_bundle_hash: str,
+        federation_hmac_key_path: str,
+        authority_level: str = "governor-review",
+        replay_lineage_consistent: bool = True,
+        destination_mutation_writer: Optional[Any] = None,
+        destination_state_reader: Optional[Any] = None,
+        destination_state_writer: Optional[Any] = None,
+        destination_gate_evaluator: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Propagate a Phase 6 roadmap amendment to destination nodes atomically.
+
+        Constitutional constraints
+        -------------------------
+        - **INVARIANT PHASE6-FED-0**: source-node approval is provenance only and
+          never binds destination nodes; each destination must evaluate through an
+          independent gate decision.
+        - **Phase 5 dual-gate invariant (unchanged)**: destination gate approval
+          remains mandatory per destination before any mutation write.
+        - **``federation_hmac_required`` behavior (unchanged)**: missing/invalid
+          federation HMAC key path is a fail-closed hard stop.
+        """
+        self._validate_federation_hmac_key_path(federation_hmac_key_path)
+
+        if authority_level != "governor-review":
+            raise FederationMutationBrokerError("PHASE6_FEDERATED_AUTHORITY_VIOLATION")
+        if not replay_lineage_consistent:
+            raise FederationMutationBrokerError("PHASE6_FEDERATED_REPLAY_LINEAGE_INCONSISTENT")
+
+        writer = destination_mutation_writer or self._default_destination_mutation_writer
+        state_reader = destination_state_reader or self._default_destination_state_reader
+        state_writer = destination_state_writer or self._default_destination_state_writer
+        gate_evaluator = destination_gate_evaluator or self._default_destination_gate_evaluator
+
+        ordered_destinations = self._ordered_destination_nodes(destination_nodes)
+        rollback_entries: List[Dict[str, Any]] = []
+        applied_destinations: List[str] = []
+
+        try:
+            for destination in ordered_destinations:
+                destination_id = self._destination_id(destination)
+                snapshot = state_reader(destination)
+
+                gate_payload = gate_evaluator(
+                    destination,
+                    mutation_payload,
+                    {
+                        "federation_source": source_node,
+                        "source_gate_approved": bool(source_gate_decision_payload.get("approved")),
+                        "phase6_invariant": "PHASE6-FED-0",
+                        "authority_level": authority_level,
+                    },
+                )
+                if not gate_payload.get("approved"):
+                    raise FederationDualGateError(
+                        f"destination_gate_rejected:{destination_id}:{gate_payload.get('decision', '')}"
+                    )
+
+                writer(destination, mutation_payload, gate_payload)
+                rollback_entries.append({"destination": destination, "snapshot": snapshot})
+                applied_destinations.append(destination_id)
+        except Exception as exc:  # noqa: BLE001
+            for rollback_entry in reversed(rollback_entries):
+                state_writer(rollback_entry["destination"], rollback_entry["snapshot"])
+
+            rollback_payload = {
+                "proposal_id": proposal_id,
+                "source_node": source_node,
+                "failed_destination": self._destination_id(destination) if "destination" in locals() else "unknown",
+                "rolled_back_destinations": sorted(applied_destinations),
+            }
+            self._emit_audit("federated_amendment_rollback", rollback_payload)
+            raise FederationMutationBrokerError(
+                f"federated_propagation_rolled_back:{proposal_id}:{exc}"
+            ) from exc
+
+        propagation_payload = {
+            "proposal_id": proposal_id,
+            "source_node": source_node,
+            "destination_nodes": [self._destination_id(node) for node in ordered_destinations],
+            "propagation_timestamp": propagation_timestamp,
+            "evidence_bundle_hash": evidence_bundle_hash,
+        }
+        self._emit_audit("federated_amendment_propagated", propagation_payload)
+        return propagation_payload
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -446,6 +542,74 @@ class FederationMutationBroker:
             self._audit(event_type, payload)
         except Exception as exc:  # noqa: BLE001 — audit writes are fail-open
             log.warning("FederationMutationBroker: audit write failed (%s) — %s", event_type, exc)
+
+    def _validate_federation_hmac_key_path(self, federation_hmac_key_path: str) -> None:
+        key_path = Path(federation_hmac_key_path) if federation_hmac_key_path else None
+        if key_path is None or not key_path.is_file():
+            raise FederationMutationBrokerError("federation_hmac_required")
+
+    def _ordered_destination_nodes(self, destination_nodes: List[Any]) -> List[Any]:
+        return sorted(destination_nodes, key=self._destination_id)
+
+    def _destination_id(self, destination_node: Any) -> str:
+        if isinstance(destination_node, str):
+            return destination_node
+        if isinstance(destination_node, dict):
+            return str(destination_node.get("node_id", destination_node.get("id", "unknown")))
+        return str(getattr(destination_node, "node_id", getattr(destination_node, "id", "unknown")))
+
+    def _default_destination_gate_evaluator(
+        self,
+        destination_node: Any,
+        mutation_payload: Dict[str, Any],
+        mutation_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        gate_decision = self._gate.approve_mutation(
+            mutation_id=mutation_payload.get("mutation_id", "federated-amendment"),
+            mutation_payload=mutation_payload,
+            mutation_context={**mutation_context, "destination_node": self._destination_id(destination_node)},
+        )
+        return gate_decision.to_payload() if hasattr(gate_decision, "to_payload") else dict(gate_decision)
+
+    def _default_destination_state_reader(self, destination_node: Any) -> Any:
+        return deepcopy(destination_node)
+
+    def _default_destination_state_writer(self, destination_node: Any, snapshot: Any) -> None:
+        if isinstance(destination_node, dict) and isinstance(snapshot, dict):
+            destination_node.clear()
+            destination_node.update(snapshot)
+            return
+        if isinstance(destination_node, list) and isinstance(snapshot, list):
+            destination_node[:] = snapshot
+            return
+        if hasattr(destination_node, "__dict__") and hasattr(snapshot, "__dict__"):
+            destination_node.__dict__.clear()
+            destination_node.__dict__.update(snapshot.__dict__)
+            return
+        raise FederationMutationBrokerError("destination_state_restore_unsupported")
+
+    def _default_destination_mutation_writer(
+        self,
+        destination_node: Any,
+        mutation_payload: Dict[str, Any],
+        destination_gate_payload: Dict[str, Any],
+    ) -> None:
+        if isinstance(destination_node, dict):
+            applied = destination_node.setdefault("applied_mutations", [])
+            applied.append(
+                {
+                    "mutation": mutation_payload,
+                    "destination_gate_decision_id": destination_gate_payload.get("decision_id", ""),
+                }
+            )
+            return
+        if hasattr(destination_node, "apply_federated_mutation"):
+            destination_node.apply_federated_mutation(
+                mutation_payload=mutation_payload,
+                destination_gate_payload=destination_gate_payload,
+            )
+            return
+        raise FederationMutationBrokerError("destination_mutation_writer_required")
 
 
 __all__ = [
