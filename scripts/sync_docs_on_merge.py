@@ -88,6 +88,7 @@ class SyncPlan:
     shipped_phases:   list[str]
     git_sha:          str
     git_branch:       str
+    git_tag:          str
     merged_files:     list[str]
     changes: list[dict[str, Any]] = field(default_factory=list)
 
@@ -184,6 +185,10 @@ def _git_sha() -> str:
 
 def _git_branch() -> str:
     return _git(["rev-parse", "--abbrev-ref", "HEAD"]) or "main"
+
+
+def _git_tag() -> str:
+    return _git(["describe", "--tags", "--exact-match"]) or "(none)"
 
 def _git_merged_files() -> list[str]:
     out = _git(["diff-tree", "--no-commit-id", "-r", "--name-only", "HEAD"])
@@ -284,6 +289,7 @@ def _update_arch_snapshot(content: str, plan: SyncPlan) -> tuple[str, list[str]]
         f"| Metric | Value |\n| --- | --- |\n"
         f"| Report version | `{plan.version}` |\n"
         f"| Branch | `{plan.git_branch}` |\n"
+        f"| Tag | `{plan.git_tag}` |\n"
         f"| Short SHA | `{plan.git_sha}` |\n"
         f"| Last sync | {plan.date_str} |\n\n"
         f"All future architecture snapshots MUST include branch, tag (if any), and short SHA.\n"
@@ -518,6 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     date_str     = date.today().isoformat()
     sha          = _git_sha()
     branch       = _git_branch()
+    tag          = _git_tag()
     merged_files = _git_merged_files()
     entry, caps, modules, phases = _read_changelog_entry(version)
 
@@ -525,12 +532,12 @@ def main(argv: list[str] | None = None) -> int:
         version=version, prev_version=prev_ver, date_str=date_str,
         changelog_entry=entry, new_capabilities=caps,
         new_modules=modules, shipped_phases=phases,
-        git_sha=sha, git_branch=branch, merged_files=merged_files,
+        git_sha=sha, git_branch=branch, git_tag=tag, merged_files=merged_files,
     )
 
     _emit("sync_start", {
         "version": version, "prev_version": prev_ver, "git_sha": sha,
-        "git_branch": branch, "merged_files": len(merged_files),
+        "git_branch": branch, "git_tag": tag, "merged_files": len(merged_files),
         "new_modules": modules, "shipped_phases": phases,
         "dry_run": args.dry_run,
     })
