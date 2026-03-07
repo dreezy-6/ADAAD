@@ -44,3 +44,12 @@ Legitimate exceptions require updating both `tools/lint_import_paths.py` and `do
 
 - `Orchestrator._check_key_rotation_status()` now validates `security/keys/rotation.json` via the key-rotation attestation path when the attestation file exists.
 - Environments without rotation attestations keep the existing mtime-based key freshness fallback for migration compatibility.
+
+
+## Module map (composition-root refactor)
+
+- `app/main.py` is the thin composition root and startup wire-up surface.
+- `app/boot_preflight.py` owns boot environment validation and storage-profile config loading.
+- `app/cli_args.py` owns CLI parser construction and replay-proof export argument flow.
+- `app/replay_verification.py` owns replay preflight execution/state projection.
+- `app/mutation_cycle.py` owns mutation cycle orchestration logic.
