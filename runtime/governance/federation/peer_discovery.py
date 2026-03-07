@@ -30,6 +30,7 @@ Invariants
 from __future__ import annotations
 
 import hashlib
+import math
 import json
 import logging
 import time
@@ -72,12 +73,24 @@ class GossipEvent:
     def build(*, origin_peer_id: str, event_type: str, payload: Dict[str, Any]) -> "GossipEvent":
         now = time.time()
         eid = f"gossip-{uuid.uuid4().hex[:12]}"
-        raw = json.dumps({"eid": eid, "origin": origin_peer_id, "type": event_type, "ts": now}, sort_keys=True)
-        digest = "sha256:" + hashlib.sha256(raw.encode()).hexdigest()
+        digest = GossipEvent.compute_lineage_digest(
+            event_id=eid,
+            origin_peer_id=origin_peer_id,
+            event_type=event_type,
+            emitted_at=now,
+        )
         return GossipEvent(
             event_id=eid, origin_peer_id=origin_peer_id, event_type=event_type,
             payload=payload, emitted_at=now, lineage_digest=digest,
         )
+
+    @staticmethod
+    def compute_lineage_digest(*, event_id: str, origin_peer_id: str, event_type: str, emitted_at: float) -> str:
+        raw = json.dumps(
+            {"eid": event_id, "origin": origin_peer_id, "type": event_type, "ts": emitted_at},
+            sort_keys=True,
+        )
+        return "sha256:" + hashlib.sha256(raw.encode()).hexdigest()
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -161,14 +174,65 @@ class GossipProtocol:
 
     def receive(self, raw: Dict[str, Any]) -> Optional[GossipEvent]:
         """Validate and enqueue an inbound gossip event."""
+        def _reject(reason_code: str) -> None:
+            log.warning("GossipProtocol: inbound event rejected", extra={"reason_code": reason_code})
+
+        if not isinstance(raw, dict):
+            _reject("raw_not_dict")
+            return None
+
         required = {"event_id", "origin_peer_id", "event_type", "payload", "emitted_at", "lineage_digest"}
         if not required.issubset(raw.keys()):
-            log.warning("GossipProtocol: malformed inbound event — missing fields")
+            _reject("missing_required_fields")
             return None
+
+        event_id = raw["event_id"]
+        origin_peer_id = raw["origin_peer_id"]
+        event_type = raw["event_type"]
+        payload = raw["payload"]
+        emitted_at = raw["emitted_at"]
+        lineage_digest = raw["lineage_digest"]
+
+        if not isinstance(event_id, str) or not event_id.strip():
+            _reject("invalid_event_id")
+            return None
+        if not isinstance(origin_peer_id, str) or not origin_peer_id.strip():
+            _reject("invalid_origin_peer_id")
+            return None
+        if not isinstance(event_type, str) or not event_type.strip():
+            _reject("invalid_event_type")
+            return None
+        if not isinstance(lineage_digest, str) or not lineage_digest.strip():
+            _reject("invalid_lineage_digest")
+            return None
+        if not isinstance(payload, dict):
+            _reject("payload_not_dict")
+            return None
+        if not isinstance(emitted_at, (int, float)) or isinstance(emitted_at, bool):
+            _reject("invalid_emitted_at_type")
+            return None
+        emitted_at_value = float(emitted_at)
+        if not math.isfinite(emitted_at_value) or emitted_at_value < 0:
+            _reject("invalid_emitted_at_value")
+            return None
+
+        expected_digest = GossipEvent.compute_lineage_digest(
+            event_id=event_id,
+            origin_peer_id=origin_peer_id,
+            event_type=event_type,
+            emitted_at=emitted_at_value,
+        )
+        if lineage_digest != expected_digest:
+            _reject("lineage_digest_mismatch")
+            return None
+
         event = GossipEvent(
-            event_id=str(raw["event_id"]), origin_peer_id=str(raw["origin_peer_id"]),
-            event_type=str(raw["event_type"]), payload=dict(raw.get("payload") or {}),
-            emitted_at=float(raw["emitted_at"]), lineage_digest=str(raw["lineage_digest"]),
+            event_id=event_id,
+            origin_peer_id=origin_peer_id,
+            event_type=event_type,
+            payload=payload,
+            emitted_at=emitted_at_value,
+            lineage_digest=lineage_digest,
         )
         self._inbound.append(event)
         return event
