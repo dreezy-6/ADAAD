@@ -45,7 +45,6 @@ class EvolutionRuntime:
         self.baseline_id = ""
         self.baseline_hash = ""
         self.epoch_cumulative_entropy_bits = 0
-        self._continuity_verified_epoch_id = ""
 
     @property
     def fail_closed(self) -> bool:
@@ -97,16 +96,11 @@ class EvolutionRuntime:
         return epoch.to_dict()
 
     def _verify_epoch_checkpoint_continuity(self) -> None:
-        if not self.current_epoch_id:
-            return
-        if self._continuity_verified_epoch_id == self.current_epoch_id:
-            return
         verify_epoch_checkpoint_continuity(
             self.ledger,
             current_epoch_id=self.current_epoch_id,
             provider=self.governor.provider,
         )
-        self._continuity_verified_epoch_id = self.current_epoch_id
 
     def before_mutation_cycle(self) -> Dict[str, Any]:
         self._verify_epoch_checkpoint_continuity()
@@ -115,7 +109,6 @@ class EvolutionRuntime:
             self.before_epoch_rotation(reason)
             rotated = self.after_epoch_rotation(reason)
             self._sync_from_epoch(rotated)
-            self._continuity_verified_epoch_id = ""
             return {"epoch_id": rotated["epoch_id"]}
 
         state = self.epoch_manager.increment_mutation_count()

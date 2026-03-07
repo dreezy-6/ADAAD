@@ -16,12 +16,12 @@ Deterministic orchestrator entrypoint.
 """
 
 import argparse
-import hashlib
 import json
+import logging
 import os
 import re
-import sys
 import time
+import sys
 from typing import Any, Dict, Optional
 
 from app import APP_ROOT
@@ -31,20 +31,77 @@ from app.agents.mutation_request import MutationRequest
 from app.beast_mode_loop import BeastModeLoop
 from app.dream_mode import DreamMode
 from app.mutation_executor import MutationExecutor
+from runtime.evolution import EvolutionRuntime
+from runtime.evolution.checkpoint_verifier import CheckpointVerificationError, CheckpointVerifier
+from runtime.evolution.replay_attestation import ReplayProofBuilder
+from runtime.evolution.replay_mode import ReplayMode, normalize_replay_mode
+from runtime.evolution.lineage_v2 import LineageIntegrityError
+from runtime.recovery.ledger_guardian import AutoRecoveryHook, SnapshotManager
+from runtime.recovery.tier_manager import RecoveryPolicy, RecoveryTierLevel, TierManager
+from runtime.platform.android_monitor import AndroidMonitor
+from runtime.platform.storage_manager import StorageManager
 from runtime import metrics
 from runtime.capability_graph import register_capability
+from runtime.manifest.generator import generate_tool_manifest
 from runtime.element_registry import dump, register
+from runtime.founders_law import (
+    RULE_ARCHITECT_SCAN,
+    RULE_CONSTITUTION_VERSION,
+    RULE_KEY_ROTATION,
+    RULE_LEDGER_INTEGRITY,
+    RULE_MUTATION_ENGINE,
+    RULE_PLATFORM_RESOURCES,
+    RULE_WARM_POOL,
+    enforce_law,
+)
 from runtime.invariants import verify_all
-from app.agents.discovery import agent_path_from_id
-from runtime.constitution import CONSTITUTION_VERSION, determine_tier, evaluate_mutation, get_forced_tier
+from app.agents.discovery import agent_path_from_id, iter_agent_dirs, resolve_agent_id
+from runtime.constitution import (
+    CONSTITUTION_VERSION,
+    determine_tier,
+    deterministic_envelope_scope,
+    evaluate_mutation,
+    get_forced_tier,
+)
 from runtime.fitness_v2 import score_mutation_enhanced
+from runtime.governance.foundation import default_provider
+from runtime.preflight import validate_boot_runtime_profile
 from runtime.timeutils import now_iso
 from runtime.warm_pool import WarmPool
-from runtime.tools.mutation_guard import _apply_ops
+from adaad.orchestrator.bootstrap import bootstrap_tool_registry
+from adaad.orchestrator.dispatcher import dispatch
 from security import cryovant
 from security.gatekeeper_protocol import run_gatekeeper
 from security.ledger import journal
+from security.ledger.journal import JournalIntegrityError
 from ui.aponi_dashboard import AponiDashboard
+
+
+ORCHESTRATOR_LOGGER = "adaad.orchestrator"
+
+
+def _get_orchestrator_logger() -> logging.Logger:
+    logger = logging.getLogger(ORCHESTRATOR_LOGGER)
+    if logger.handlers:
+        return logger
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    return logger
+
+
+def _governance_ci_mode_enabled() -> bool:
+    return os.getenv("ADAAD_GOVERNANCE_CI_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _apply_governance_ci_mode_defaults() -> None:
+    os.environ.setdefault("ADAAD_FORCE_DETERMINISTIC_PROVIDER", "1")
+    os.environ.setdefault("ADAAD_DETERMINISTIC_SEED", "adaad-governance-ci")
+    os.environ.setdefault("ADAAD_RESOURCE_MEMORY_MB", "2048")
+    os.environ.setdefault("ADAAD_RESOURCE_CPU_SECONDS", "30")
+    os.environ.setdefault("ADAAD_RESOURCE_WALL_SECONDS", "60")
 
 
 class Orchestrator:
@@ -52,8 +109,17 @@ class Orchestrator:
     Coordinates boot order and health checks.
     """
 
-    def __init__(self, *, dry_run: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        dry_run: bool = False,
+        replay_mode: str | bool | ReplayMode = ReplayMode.OFF,
+        replay_epoch: str = "",
+        exit_after_boot: bool = False,
+        verbose: bool = False,
+    ) -> None:
         self.state: Dict[str, Any] = {"status": "initializing", "mutation_enabled": False}
+        self.logger = _get_orchestrator_logger()
         self.agents_root = APP_ROOT / "agents"
         self.lineage_dir = self.agents_root / "lineage"
         self.warm_pool = WarmPool(size=2)
@@ -61,9 +127,27 @@ class Orchestrator:
         self.dream: Optional[DreamMode] = None
         self.beast: Optional[BeastModeLoop] = None
         self.dashboard = AponiDashboard()
-        self.executor = MutationExecutor(self.agents_root)
+        self.evolution_runtime = EvolutionRuntime()
+        self.snapshot_manager = SnapshotManager(APP_ROOT.parent / ".ledger_snapshots")
+        self.recovery_hook = AutoRecoveryHook(self.snapshot_manager)
+        self.tier_manager = TierManager()
+        self.resource_monitor = AndroidMonitor(APP_ROOT.parent)
+        self.storage_manager = StorageManager(APP_ROOT.parent)
+        self.executor = MutationExecutor(self.agents_root, evolution_runtime=self.evolution_runtime)
         self.mutation_engine = MutationEngine(metrics.METRICS_PATH)
         self.dry_run = dry_run
+        self.verbose = verbose
+        self.replay_mode = normalize_replay_mode(replay_mode)
+        self.replay_epoch = replay_epoch.strip()
+        self.exit_after_boot = exit_after_boot
+        self.evolution_runtime.set_replay_mode(self.replay_mode)
+
+    def _v(self, message: str) -> None:
+        if not self.verbose:
+            return
+        home = os.getenv("HOME", "")
+        safe_message = message.replace(home, "~") if home else message
+        self.logger.info(f"[ADAAD] {safe_message}")
 
     def _fail(self, reason: str) -> None:
         metrics.log(event_type="orchestrator_error", payload={"reason": reason}, level="ERROR")
@@ -88,28 +172,150 @@ class Orchestrator:
         sys.exit(1)
 
     def boot(self) -> None:
+        self._v(f"Replay mode normalized: {self.replay_mode.value}")
+        if self.dry_run and self.replay_mode == ReplayMode.STRICT:
+            self._v("Warning: dry-run + strict replay may not reflect production execution semantics.")
+        self._v("Starting governance spine initialization")
         metrics.log(event_type="orchestrator_start", payload={}, level="INFO")
+        gate = run_gatekeeper()
+        if not gate.get("ok"):
+            self._fail(f"gatekeeper_failed:{','.join(gate.get('missing', []))}")
+        self._v("Gatekeeper preflight passed")
+        boot_profile = validate_boot_runtime_profile(replay_mode=self.replay_mode.value)
+        if not boot_profile.get("ok"):
+            self._fail(f"boot_runtime_profile_failed:{boot_profile.get('reason', 'unknown')}")
+        self.state["runtime_profile"] = boot_profile.get("checks", {})
+        bootstrap_tool_registry()
+        self._register_elements()
+        self._init_runtime()
+        self._v("Runtime invariants passed")
+        self._init_cryovant()
+        self._v("Cryovant validation passed")
+        self._verify_checkpoint_chain()
+        self._v("Checkpoint chain verification passed")
+        epoch_state = self.evolution_runtime.boot()
+        self.state["epoch"] = epoch_state
+        self._v("Replay baseline initialized")
+        self.dream = DreamMode(
+            self.agents_root,
+            self.lineage_dir,
+            replay_mode=self.replay_mode.value,
+            recovery_tier=self.evolution_runtime.governor.recovery_tier.value,
+        )
+        self.beast = BeastModeLoop(self.agents_root, self.lineage_dir)
+        # Health-First Mode: run architect/dream/beast checks and safe-boot gating
+        # before any mutation cycle to enforce boot invariants.
+        self._health_check_architect()
+        self._health_check_dream()
+        self._health_check_beast()
+        self._run_replay_preflight()
+        self._v(f"Replay decision: {self.state.get('replay_decision')}")
+        self._v(f"Fail-closed state: {self.evolution_runtime.fail_closed}")
+        self._v(f"Replay aggregate score: {self.state.get('replay_score')}")
+        if self.state.get("mutation_enabled"):
+            if self.evolution_runtime.fail_closed:
+                self.state["replay_divergence"] = True
+                journal.write_entry(agent_id="system", action="mutation_blocked_fail_closed", payload={"epoch_id": self.evolution_runtime.current_epoch_id, "ts": now_iso()})
+            elif self._governance_gate():
+                if self.exit_after_boot:
+                    self.state["mutation_cycle_skipped"] = "exit_after_boot"
+                else:
+                    self._run_mutation_cycle()
+        self._v(f"Mutation cycle status: {'enabled' if self.state.get('mutation_enabled') else 'disabled'}")
+        self._register_capabilities()
+        self._v("Capability registration complete")
+        self.state["status"] = "ready"
+        self._v("Boot sequence complete (status=ready)")
+        metrics.log(event_type="orchestrator_ready", payload=self.state, level="INFO")
+        journal.write_entry(agent_id="system", action="orchestrator_ready", payload=self.state)
+        dump()
+        if self.exit_after_boot:
+            self.logger.info("ADAAD_BOOT_OK")
+            sys.exit(0)
+        self._init_ui()
+        self._v("Aponi dashboard started")
+
+    def _run_replay_preflight(self, *, verify_only: bool = False) -> Dict[str, Any]:
+        mode = self.replay_mode
+        preflight = self.evolution_runtime.replay_preflight(mode, epoch_id=self.replay_epoch or None)
+        has_divergence = bool(preflight.get("has_divergence"))
+        self.state["replay_mode"] = mode.value
+        self.state["replay_target"] = preflight.get("verify_target")
+        self.state["replay_decision"] = preflight.get("decision")
+        self.state["replay_results"] = preflight.get("results", [])
+        self.state["replay_divergence"] = has_divergence
+        self.state["status"] = "replay_warning" if has_divergence else "replay_verified"
+        replay_score = self._aggregate_replay_score(preflight.get("results", []))
+        self.state["replay_score"] = replay_score
+        outcome = {
+            "mode": mode.value,
+            "verify_only": verify_only,
+            "ok": not has_divergence,
+            "decision": preflight.get("decision"),
+            "target": preflight.get("verify_target"),
+            "divergence": has_divergence,
+            "results": preflight.get("results", []),
+            "replay_score": replay_score,
+            "ts": now_iso(),
+        }
+        journal.write_entry(agent_id="system", action="replay_verified", payload=outcome)
+        try:
+            manifest_path = self.write_replay_manifest(outcome)
+            self._v(f"Replay manifest written: {manifest_path}")
+        except Exception as exc:
+            metrics.log(
+                event_type="replay_manifest_write_failed",
+                payload={"error": str(exc), "mode": outcome["mode"], "target": outcome.get("target")},
+                level="WARN",
+            )
+        if has_divergence and mode.fail_closed:
+            self._fail("replay_divergence")
+        self._v("Replay Summary:")
+        self._v(f"  Mode: {mode.value}")
+        self._v(f"  Target: {preflight.get('verify_target')}")
+        self._v(f"  Divergence: {has_divergence}")
+        self._v(f"  Score: {replay_score}")
+        if verify_only:
+            dump()
+            return {"verify_only": True, **outcome}
+        return {"verify_only": False, **outcome}
+
+    @staticmethod
+    def _aggregate_replay_score(results: list[Dict[str, Any]]) -> float:
+        if not results:
+            return 1.0
+        scores = [float(result.get("replay_score", 0.0)) for result in results]
+        return round(sum(scores) / len(scores), 4)
+
+
+    def write_replay_manifest(self, outcome: Dict[str, Any]) -> os.PathLike[str]:
+        manifests_dir = APP_ROOT.parent / "security" / "replay_manifests"
+        manifests_dir.mkdir(parents=True, exist_ok=True)
+
+        def _sanitize_component(value: Any) -> str:
+            normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "unknown")).strip("-._")
+            return normalized or "unknown"
+
+        mode_component = _sanitize_component(outcome.get("mode"))
+        target_component = _sanitize_component(outcome.get("target"))
+        timestamp_component = _sanitize_component(outcome.get("ts"))
+        manifest_path = manifests_dir / f"{mode_component}__{target_component}__{timestamp_component}.json"
+        manifest_path.write_text(json.dumps(outcome, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return manifest_path
+
+    def verify_replay_only(self) -> None:
+        self._v("Running replay verification-only mode")
+        metrics.log(event_type="orchestrator_start", payload={"verify_only": True}, level="INFO")
         gate = run_gatekeeper()
         if not gate.get("ok"):
             self._fail(f"gatekeeper_failed:{','.join(gate.get('missing', []))}")
         self._register_elements()
         self._init_runtime()
         self._init_cryovant()
-        self.dream = DreamMode(self.agents_root, self.lineage_dir)
-        self.beast = BeastModeLoop(self.agents_root, self.lineage_dir)
-        # Health-First Mode: run architect/dream checks and safe-boot gating
-        # before any mutation cycle to enforce boot invariants.
-        self._health_check_architect()
-        self._health_check_dream()
-        if self.state.get("mutation_enabled"):
-            if self._governance_gate():
-                self._run_mutation_cycle()
-        self._register_capabilities()
-        self._init_ui()
-        self.state["status"] = "ready"
-        metrics.log(event_type="orchestrator_ready", payload=self.state, level="INFO")
-        journal.write_entry(agent_id="system", action="orchestrator_ready", payload=self.state)
-        dump()
+        self._verify_checkpoint_chain()
+        epoch_state = self.evolution_runtime.boot()
+        self.state["epoch"] = epoch_state
+        self._run_replay_preflight(verify_only=True)
 
     def _register_elements(self) -> None:
         register("Earth", "runtime.metrics")
@@ -127,6 +333,29 @@ class Orchestrator:
         ok, failures = verify_all()
         if not ok:
             self._fail(f"invariants_failed:{','.join(failures)}")
+
+    def _verify_checkpoint_chain(self) -> None:
+        try:
+            verification = CheckpointVerifier.verify_all_checkpoints(self.evolution_runtime.ledger.ledger_path)
+        except CheckpointVerificationError as exc:
+            journal.write_entry(
+                agent_id="system",
+                action="checkpoint_chain_violated",
+                payload={"reason": str(exc), "ts": now_iso()},
+            )
+            self._fail(f"checkpoint_chain_violated:{exc}")
+            return
+        journal.write_entry(
+            agent_id="system",
+            action="checkpoint_chain_verified",
+            payload={**verification, "ts": now_iso()},
+        )
+
+    def _verify_checkpoint_chain_stage(self) -> None:
+        try:
+            CheckpointVerifier.verify_chain(self.evolution_runtime.ledger, provider=self.evolution_runtime.governor.provider)
+        except CheckpointVerificationError as exc:
+            self._fail(f"checkpoint_chain_violated:{exc}")
 
     def _init_cryovant(self) -> None:
         if not cryovant.validate_environment():
@@ -152,41 +381,65 @@ class Orchestrator:
         self.state["mutation_enabled"] = True
         self.state["safe_boot"] = False
 
+    def _health_check_beast(self) -> None:
+        assert self.beast is not None
+        staging_root = self.lineage_dir / "_staging"
+        if not staging_root.exists():
+            try:
+                staging_root.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                self._fail("beast_staging_unavailable")
+        invalid_agents = []
+        for agent_dir in iter_agent_dirs(self.agents_root):
+            agent_id = resolve_agent_id(agent_dir, self.agents_root)
+            if not cryovant.validate_ancestry(agent_id):
+                invalid_agents.append(agent_id)
+        if invalid_agents:
+            self._fail(f"beast_ancestry_invalid:{','.join(invalid_agents)}")
+        metrics.log(
+            event_type="beast_health_ok",
+            payload={"staging_root": str(staging_root), "validated_agents": len(invalid_agents) == 0},
+            level="INFO",
+        )
+
     def _governance_gate(self) -> bool:
-        failures: list[dict[str, str]] = []
+        checks = [
+            ("constitution_version", RULE_CONSTITUTION_VERSION, *self._check_constitution_version()),
+            ("key_rotation", RULE_KEY_ROTATION, *self._check_key_rotation_status()),
+            ("ledger_integrity", RULE_LEDGER_INTEGRITY, *self._check_ledger_integrity()),
+            ("mutation_engine", RULE_MUTATION_ENGINE, *self._check_mutation_engine_health()),
+            ("warm_pool", RULE_WARM_POOL, *self._check_warm_pool_ready()),
+            ("architect_invariants", RULE_ARCHITECT_SCAN, *self._check_architect_invariants()),
+            ("platform_resources", RULE_PLATFORM_RESOURCES, *self._check_platform_resources()),
+        ]
+        decision = enforce_law(
+            {
+                "mutation_id": f"governance-gate-{self.evolution_runtime.current_epoch_id or 'boot'}",
+                "trust_mode": os.getenv("ADAAD_TRUST_MODE", "dev").strip().lower(),
+                "checks": [{"rule_id": rule_id, "ok": ok, "reason": reason} for _, rule_id, ok, reason in checks],
+            }
+        )
 
-        constitution_ok, constitution_reason = self._check_constitution_version()
-        if not constitution_ok:
-            failures.append({"check": "constitution_version", "reason": constitution_reason})
-
-        key_ok, key_reason = self._check_key_rotation_status()
-        if not key_ok:
-            failures.append({"check": "key_rotation", "reason": key_reason})
-
-        ledger_ok, ledger_reason = self._check_ledger_integrity()
-        if not ledger_ok:
-            failures.append({"check": "ledger_integrity", "reason": ledger_reason})
-
-        mutation_ok, mutation_reason = self._check_mutation_engine_health()
-        if not mutation_ok:
-            failures.append({"check": "mutation_engine", "reason": mutation_reason})
-
-        warm_ok, warm_reason = self._check_warm_pool_ready()
-        if not warm_ok:
-            failures.append({"check": "warm_pool", "reason": warm_reason})
-
-        architect_ok, architect_reason = self._check_architect_invariants()
-        if not architect_ok:
-            failures.append({"check": "architect_invariants", "reason": architect_reason})
-
-        if failures:
+        failures = [{"check": check_name, "reason": reason} for check_name, _, ok, reason in checks if not ok]
+        if not decision.passed:
+            tier = self.tier_manager.evaluate_escalation(
+                governance_violations=len(failures),
+                ledger_errors=sum(1 for f in failures if f.get("check") == "ledger_integrity"),
+                mutation_failures=sum(1 for f in failures if f.get("check") == "mutation_engine"),
+                metric_anomalies=0,
+            )
+            policy = RecoveryPolicy.for_tier(tier)
+            self.tier_manager.apply(tier, "governance_gate_failed")
             metrics.log(
                 event_type="governance_gate_failed",
-                payload={"failures": failures},
+                payload={"failures": failures, "recovery_tier": tier.value, "recovery_policy": policy.__dict__},
                 level="ERROR",
             )
             self.state["mutation_enabled"] = False
             self.state["governance_gate_failed"] = failures
+            self.state["recovery_tier"] = tier.value
+            if policy.fail_close and tier in {RecoveryTierLevel.GOVERNANCE, RecoveryTierLevel.CRITICAL}:
+                self._fail(f"recovery_tier_{tier.value}")
             return False
 
         metrics.log(event_type="governance_gate_passed", payload={}, level="INFO")
@@ -200,6 +453,24 @@ class Orchestrator:
             expected = self._load_constitution_doc_version() or CONSTITUTION_VERSION
         if expected != CONSTITUTION_VERSION:
             return False, f"constitution_version_mismatch:{CONSTITUTION_VERSION}!={expected}"
+        return True, "ok"
+
+    def _check_platform_resources(self) -> tuple[bool, str]:
+        snapshot = self.resource_monitor.snapshot()
+        prune_result = self.storage_manager.check_and_prune()
+        metrics.log(
+            event_type="platform_resource_snapshot",
+            payload={
+                "battery_percent": snapshot.battery_percent,
+                "memory_mb": round(snapshot.memory_mb, 2),
+                "storage_mb": round(snapshot.storage_mb, 2),
+                "cpu_percent": round(snapshot.cpu_percent, 2),
+                "prune": prune_result,
+            },
+            level="INFO",
+        )
+        if snapshot.is_constrained():
+            return False, "resource_constrained"
         return True, "ok"
 
     def _load_constitution_doc_version(self) -> str:
@@ -229,38 +500,27 @@ class Orchestrator:
             return False, "no_signing_keys"
         max_age_days = int(os.getenv("ADAAD_KEY_ROTATION_MAX_AGE_DAYS", "90"))
         newest_mtime = max(path.stat().st_mtime for path in key_files)
-        age_days = (time.time() - newest_mtime) / 86400
+        age_days = (default_provider().now_utc().timestamp() - newest_mtime) / 86400
         if age_days > max_age_days:
             return False, f"keys_stale:{age_days:.1f}d>{max_age_days}d"
         return True, "ok"
 
     def _check_ledger_integrity(self) -> tuple[bool, str]:
+        self.snapshot_manager.create_snapshot(journal.JOURNAL_PATH)
+        self.snapshot_manager.create_snapshot(self.evolution_runtime.ledger.ledger_path)
         try:
-            journal.ensure_journal()
-            journal_path = journal.JOURNAL_PATH
-            if not journal_path.exists():
-                return False, "journal_missing"
-            lines = journal_path.read_text(encoding="utf-8").splitlines()
+            journal.verify_journal_integrity(recovery_hook=self.recovery_hook)
+        except JournalIntegrityError as exc:
+            return False, str(exc)
         except Exception as exc:
             return False, f"journal_unreadable:{exc}"
-        prev_hash = "0" * 64
-        for index, line in enumerate(lines, start=1):
-            if not line.strip():
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError as exc:
-                return False, f"journal_invalid_json:line{index}:{exc}"
-            entry_prev = str(entry.get("prev_hash") or "")
-            entry_hash = str(entry.get("hash") or "")
-            if entry_prev != prev_hash:
-                return False, f"journal_prev_hash_mismatch:line{index}"
-            payload = {key: value for key, value in entry.items() if key != "hash"}
-            material = (prev_hash + json.dumps(payload, ensure_ascii=False, sort_keys=True)).encode("utf-8")
-            computed = hashlib.sha256(material).hexdigest()
-            if computed != entry_hash:
-                return False, f"journal_hash_mismatch:line{index}"
-            prev_hash = entry_hash
+
+        try:
+            self.evolution_runtime.ledger.verify_integrity(recovery_hook=self.recovery_hook)
+        except LineageIntegrityError as exc:
+            return False, str(exc)
+        except Exception as exc:
+            return False, f"lineage_unreadable:{exc}"
         return True, "ok"
 
     def _check_mutation_engine_health(self) -> tuple[bool, str]:
@@ -290,14 +550,23 @@ class Orchestrator:
         """
         Execute one architect → mutation engine → executor cycle.
         """
-        proposals = self.architect.propose_mutations()
-        if not proposals:
-            metrics.log(event_type="mutation_cycle_skipped", payload={"reason": "no proposals"}, level="INFO")
+        if self.evolution_runtime.fail_closed:
+            metrics.log(event_type="mutation_cycle_blocked", payload={"reason": "replay_fail_closed", "epoch_id": self.evolution_runtime.current_epoch_id}, level="ERROR")
             return
+        hook_before = self.evolution_runtime.before_mutation_cycle()
+        active_epoch_id = hook_before.get("epoch_id")
+        epoch_meta = {"epoch_id": active_epoch_id, "epoch_start_ts": self.evolution_runtime.epoch_start_ts, "epoch_mutation_count": self.evolution_runtime.epoch_mutation_count}
+        proposals = self.architect.propose_mutations()
+        for proposal in proposals:
+            proposal.epoch_id = active_epoch_id
+        if not proposals:
+            metrics.log(event_type="mutation_cycle_skipped", payload={"reason": "no proposals", "epoch_id": active_epoch_id}, level="INFO")
+            return
+        self.mutation_engine.refresh_state_from_metrics()
         selected, scores = self.mutation_engine.select(proposals)
-        metrics.log(event_type="mutation_strategy_scores", payload={"scores": scores}, level="INFO")
+        metrics.log(event_type="mutation_strategy_scores", payload={"scores": scores, **epoch_meta}, level="INFO")
         if not selected:
-            metrics.log(event_type="mutation_cycle_skipped", payload={"reason": "no selection"}, level="INFO")
+            metrics.log(event_type="mutation_cycle_skipped", payload={"reason": "no selection", "epoch_id": active_epoch_id}, level="INFO")
             return
         forced_tier = get_forced_tier()
         tier = forced_tier or determine_tier(selected.agent_id)
@@ -307,17 +576,83 @@ class Orchestrator:
                 payload={"agent_id": selected.agent_id, "tier": tier.name},
                 level="INFO",
             )
-        constitutional_verdict = evaluate_mutation(selected, tier)
+        platform_snapshot = self.resource_monitor.snapshot()
+        eval_wall_start = time.monotonic()
+        eval_cpu_start = time.process_time()
+        envelope_state = {
+            "epoch_id": active_epoch_id,
+            "epoch_entropy_bits": int(getattr(self.evolution_runtime, "epoch_cumulative_entropy_bits", 0) or 0),
+            "observed_entropy_bits": 0,
+            "platform_telemetry": {
+                "battery_percent": round(platform_snapshot.battery_percent, 4),
+                "memory_mb": round(platform_snapshot.memory_mb, 4),
+                "storage_mb": round(platform_snapshot.storage_mb, 4),
+                "cpu_percent": round(platform_snapshot.cpu_percent, 4),
+            },
+            # Pre-evaluation snapshot for headroom checks: resource_bounds validates
+            # platform capacity here, while post-evaluation timing is logged separately.
+            "resource_measurements": {
+                "wall_seconds": 0.0,
+                "cpu_seconds": 0.0,
+                "peak_rss_mb": round(platform_snapshot.memory_mb, 4),
+            },
+        }
+        with deterministic_envelope_scope(envelope_state):
+            constitutional_verdict = evaluate_mutation(selected, tier)
+        eval_wall_elapsed = max(0.0, time.monotonic() - eval_wall_start)
+        eval_cpu_elapsed = max(0.0, time.process_time() - eval_cpu_start)
+        metrics.log(
+            event_type="constitutional_evaluation_resource_measurements",
+            payload={
+                "epoch_id": active_epoch_id,
+                "agent_id": selected.agent_id,
+                "wall_seconds": round(eval_wall_elapsed, 6),
+                "cpu_seconds": round(eval_cpu_elapsed, 6),
+                "peak_rss_mb": round(platform_snapshot.memory_mb, 4),
+            },
+            level="INFO",
+        )
         if not constitutional_verdict.get("passed"):
+            entropy_budget_verdict = next(
+                (
+                    item
+                    for item in constitutional_verdict.get("verdicts", [])
+                    if isinstance(item, dict) and item.get("rule") == "entropy_budget_limit"
+                ),
+                {},
+            )
+            entropy_details = entropy_budget_verdict.get("details") if isinstance(entropy_budget_verdict, dict) else {}
+            entropy_details = entropy_details if isinstance(entropy_details, dict) else {}
+            if isinstance(entropy_details.get("details"), dict):
+                entropy_details = dict(entropy_details["details"])
+            if "entropy_budget_limit" in constitutional_verdict.get("blocking_failures", []):
+                metrics.log(
+                    event_type="mutation_rejected_entropy",
+                    payload={
+                        "agent_id": selected.agent_id,
+                        "epoch_id": active_epoch_id,
+                        "rule": "entropy_budget_limit",
+                        "reason": entropy_details.get("reason") or entropy_budget_verdict.get("reason", "entropy_budget_limit"),
+                        "max_mutation_entropy_bits": entropy_details.get("max_mutation_entropy_bits"),
+                        "epoch_entropy_bits": entropy_details.get("epoch_entropy_bits"),
+                        "constitutional_verdict": constitutional_verdict,
+                        "evidence": {
+                            "rule": "entropy_budget_limit",
+                            "details": entropy_details,
+                            "blocking_failures": constitutional_verdict.get("blocking_failures", []),
+                        },
+                    },
+                    level="ERROR",
+                )
             metrics.log(
                 event_type="mutation_rejected_constitutional",
-                payload=constitutional_verdict,
+                payload={**constitutional_verdict, "epoch_id": active_epoch_id, "decision": "rejected", "evidence": constitutional_verdict},
                 level="ERROR",
             )
             journal.write_entry(
                 agent_id=selected.agent_id,
                 action="mutation_rejected_constitutional",
-                payload=constitutional_verdict,
+                payload={**constitutional_verdict, "epoch_id": active_epoch_id, "decision": "rejected", "evidence": constitutional_verdict},
             )
             if self.dry_run:
                 bias = self.mutation_engine.bias_details(selected)
@@ -339,6 +674,7 @@ class Orchestrator:
                     agent_id=selected.agent_id,
                     action="mutation_dry_run",
                     payload={
+                        "epoch_id": active_epoch_id,
                         "strategy_id": selected.intent or "default",
                         "tier": tier.name,
                         "constitutional_verdict": constitutional_verdict,
@@ -353,6 +689,7 @@ class Orchestrator:
             event_type="mutation_approved_constitutional",
             payload={
                 "agent_id": selected.agent_id,
+                **epoch_meta,
                 "tier": tier.name,
                 "constitution_version": constitutional_verdict.get("constitution_version"),
                 "warnings": constitutional_verdict.get("warnings", []),
@@ -366,6 +703,7 @@ class Orchestrator:
                 event_type="mutation_dry_run",
                 payload={
                     "agent_id": selected.agent_id,
+                    "epoch_id": active_epoch_id,
                     "strategy_id": selected.intent or "default",
                     "tier": tier.name,
                     "constitution_version": constitutional_verdict.get("constitution_version"),
@@ -380,6 +718,7 @@ class Orchestrator:
                 agent_id=selected.agent_id,
                 action="mutation_dry_run",
                 payload={
+                    "epoch_id": active_epoch_id,
                     "strategy_id": selected.intent or "default",
                     "tier": tier.name,
                     "constitutional_verdict": constitutional_verdict,
@@ -398,17 +737,26 @@ class Orchestrator:
             payload={
                 "result": result,
                 "constitutional_verdict": constitutional_verdict,
+                "epoch_id": active_epoch_id,
+                "epoch_start_ts": self.evolution_runtime.epoch_start_ts,
+                "epoch_mutation_count": self.evolution_runtime.epoch_mutation_count,
+                "replay": result.get("evolution", {}).get("replay", {}),
                 "ts": now_iso(),
             },
         )
 
     def _register_capabilities(self) -> None:
-        register_capability("orchestrator.boot", "0.65.0", 1.0, "Earth")
-        register_capability("cryovant.gate", "0.65.0", 1.0, "Water")
-        register_capability("architect.scan", "0.65.0", 1.0, "Wood")
-        register_capability("dream.cycle", "0.65.0", 1.0, "Fire")
-        register_capability("beast.evaluate", "0.65.0", 1.0, "Fire")
-        register_capability("ui.dashboard", "0.65.0", 1.0, "Metal")
+        registrations = [
+            ("orchestrator.boot", "0.65.0", "Earth"),
+            ("cryovant.gate", "0.65.0", "Water"),
+            ("architect.scan", "0.65.0", "Wood"),
+            ("dream.cycle", "0.65.0", "Fire"),
+            ("beast.evaluate", "0.65.0", "Fire"),
+            ("ui.dashboard", "0.65.0", "Metal"),
+        ]
+        for capability_name, capability_version, owner in registrations:
+            identity = generate_tool_manifest(__name__, capability_name, capability_version)
+            register_capability(capability_name, capability_version, 1.0, owner, identity=identity)
 
     def _init_ui(self) -> None:
         self.dashboard.start(self.state)
@@ -420,7 +768,12 @@ class Orchestrator:
         if dna_path.exists():
             dna = json.loads(dna_path.read_text(encoding="utf-8"))
         simulated = json.loads(json.dumps(dna))
-        _apply_ops(simulated, request.ops)
+        if request.targets:
+            for target in request.targets:
+                if target.path == "dna.json":
+                    dispatch("mutation.apply_ops", simulated, target.ops)
+        else:
+            dispatch("mutation.apply_ops", simulated, request.ops)
         payload = {
             "parent": dna.get("lineage") or "dry_run",
             "intent": request.intent,
@@ -431,11 +784,61 @@ class Orchestrator:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ADAAD orchestrator")
+    parser.add_argument("--verbose", action="store_true", help="Print boot stage diagnostics to stdout.")
     parser.add_argument("--dry-run", action="store_true", help="Evaluate mutations without applying them.")
+    parser.add_argument(
+        "--replay",
+        default="off",
+        help=(
+            "Replay mode: off (skip replay), audit (verify and continue), strict (verify and fail-close). "
+            "Deprecated aliases: full->audit, true->audit, false->off."
+        ),
+    )
+    parser.add_argument("--replay-epoch", default="", help="Replay a specific epoch id as the verification target.")
+    parser.add_argument("--epoch", default="", help="Epoch identifier used for replay-proof export or replay targeting.")
+    parser.add_argument("--verify-replay", action="store_true", help="Run replay verification and exit after reporting result.")
+    parser.add_argument(
+        "--exit-after-boot",
+        action="store_true",
+        help="Complete one governed boot (including replay audit) and exit before any mutation cycle.",
+    )
+    parser.add_argument(
+        "--export-replay-proof",
+        action="store_true",
+        help="Export a signed replay proof bundle for --epoch and exit.",
+    )
     args = parser.parse_args()
 
     dry_run_env = os.getenv("ADAAD_DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
-    orchestrator = Orchestrator(dry_run=args.dry_run or dry_run_env)
+    try:
+        replay_mode = normalize_replay_mode(args.replay)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    if _governance_ci_mode_enabled():
+        _apply_governance_ci_mode_defaults()
+
+    selected_epoch = (args.epoch or args.replay_epoch).strip()
+    if args.epoch and args.replay_epoch and args.epoch.strip() != args.replay_epoch.strip():
+        logging.warning("Both --epoch (%s) and --replay-epoch (%s) were provided; using --epoch.", args.epoch, args.replay_epoch)
+
+    if args.export_replay_proof:
+        if not selected_epoch:
+            parser.error("--export-replay-proof requires --epoch <id>")
+        proof_path = ReplayProofBuilder().write_bundle(selected_epoch)
+        print(proof_path.as_posix())
+        return
+
+    orchestrator = Orchestrator(
+        dry_run=args.dry_run or dry_run_env,
+        replay_mode=replay_mode,
+        replay_epoch=selected_epoch,
+        exit_after_boot=args.exit_after_boot,
+        verbose=args.verbose,
+    )
+    if args.verify_replay:
+        orchestrator.verify_replay_only()
+        return
     orchestrator.boot()
 
 
