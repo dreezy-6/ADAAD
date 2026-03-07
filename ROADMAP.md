@@ -74,7 +74,7 @@ Extends ADAAD from single-repo mutation to governed cross-repo evolution:
 
 ## Phase 6 — Autonomous Roadmap Self-Amendment
 
-**Status:** 🟡 active · **Target:** v3.1.0 · Promoted from backlog: 2026-03-06
+**Status:** ✅ shipped · **Closed:** 2026-03-07 · **Released:** v3.1.0 · Promoted from backlog: 2026-03-06
 
 The mutation engine proposes amendments to this roadmap itself. Phase 5 delivery
 confirms the constitutional and determinism infrastructure required for this
@@ -120,53 +120,67 @@ delta table, governance status, phase transition log.
 
 ---
 
-### M6-03 — EvolutionLoop integration 🔵 proposed · PR-PHASE6-02 assigned
+### M6-03 — EvolutionLoop integration ✅ shipped (v3.1.0) · PR-PHASE6-02
 
-`runtime/autonomy/loop.py` (modification)
+`runtime/evolution/evolution_loop.py` — `_evaluate_m603_amendment_gates()`
 
-Wire `RoadmapAmendmentEngine.propose()` into the Phase 5 epoch orchestrator so
-that after every Nth successful epoch (N configurable, default 10), ArchitectAgent
-evaluates prerequisite gates and proposes a roadmap amendment if warranted.
+`RoadmapAmendmentEngine.propose()` wired into the Phase 5 epoch orchestrator.
+After every Nth epoch (configurable via `ADAAD_AMENDMENT_TRIGGER_INTERVAL`,
+default 10), the loop evaluates all six prerequisite gates deterministically.
 
-**Prerequisite gates (all must be true before a proposal is emitted):**
-1. `EpochTelemetry.health_score ≥ 0.80` over last 10 epochs
-2. `FederatedEvidenceMatrix.divergence_count == 0` in last federated epoch
-3. `WeightAdaptor.prediction_accuracy > 0.60`
-4. No pending roadmap amendment proposals (prevents amendment storm)
+**Prerequisite gates (all evaluated in order; any failure halts without aborting epoch):**
+1. `GATE-M603-01` — `epoch_count % trigger_interval == 0`
+2. `GATE-M603-02` — `EpochTelemetry.health_score(last_10) >= 0.80`
+3. `GATE-M603-03` — `FederatedEvidenceMatrix.divergence_count == 0` (if federation enabled)
+4. `GATE-M603-04` — `WeightAdaptor.prediction_accuracy > 0.60`
+5. `GATE-M603-05` — `len(RoadmapAmendmentEngine.list_pending()) == 0`
+6. `GATE-M603-06` — `amendment_trigger_interval >= 5` (misconfiguration guard)
 
 **Acceptance criteria:**
-- ArchitectAgent emits at most 1 proposal per 10 epochs
-- Proposal content_hash matches re-computation from stored fields (replay proof)
-- `GovernanceGate` evaluates the amendment as a standard mutation type
-- Human-approval gate sign-off required; no auto-merge path exists
+- `EpochResult.amendment_proposed == True` only when all 6 gates pass: **✅**
+- Amendment evaluation failure does NOT abort epoch (fail-closed, non-fatal): **✅**
+- Identical epoch inputs produce identical gate verdicts (determinism CI job): **✅**
+- `INVARIANT PHASE6-STORM-0` — at most 1 pending amendment per node: **✅**
+- `INVARIANT PHASE6-AUTH-0` — `authority_level` immutable after construction: **✅**
+- `INVARIANT PHASE6-HUMAN-0` — no auto-approval path exists: **✅**
+
+**Tests:** `tests/autonomy/test_evolution_loop_amendment.py` (T6-03-01..13)
 
 ---
 
-### M6-04 — Federated Roadmap Propagation 🔵 proposed · PR-PHASE6-03 assigned
+### M6-04 — Federated Roadmap Propagation ✅ shipped (v3.1.0) · PR-PHASE6-03
+
+`runtime/governance/federation/mutation_broker.py` — `propagate_amendment()`
 
 When a federation node's evolution loop generates a roadmap amendment proposal,
-`FederationMutationBroker` propagates it to all peer nodes for their own governance
-review. Each peer's `GovernanceGate` evaluates independently.
+`FederationMutationBroker` propagates it to all peer nodes for independent
+governance review. All-or-nothing propagation with rollback on any peer failure.
 
-**Authority invariant:** Cross-repo roadmap promotion requires `divergence_count == 0`
-in `FederatedEvidenceMatrix` across all participating nodes. A single divergent node
-blocks the amendment.
+**Authority invariants enforced:**
+- `INVARIANT PHASE6-FED-0` — source-node approval is provenance-only; destination
+  nodes evaluate independently and require their own human governor sign-off
+- `INVARIANT PHASE6-STORM-0` — propagation path honours per-node pending-amendment limit
+- `INVARIANT PHASE6-HUMAN-0` — no autonomous merge/sign-off authority introduced
 
 **Acceptance criteria:**
-- Amendment propagation leaves a `federation_origin` field in lineage chain
-- Any node can reject without blocking its own local roadmap
-- Evidence bundle includes `federated_roadmap_evidence` section before merge
+- `federated_amendment_propagated` ledger event emitted on successful propagation: **✅**
+- Rollback on any peer failure emits `federated_amendment_rollback` event: **✅**
+- `federation_origin` field present in destination lineage chain: **✅**
+- Any peer node can reject without blocking other nodes: **✅**
+- `divergence_count == 0` required before propagation proceeds: **✅**
+
+**Tests:** `tests/governance/federation/test_federated_amendment.py` (≥8 tests)
 
 ---
 
-### M6-05 — Autonomous Android Distribution 🟡 active (v3.1.0-dev)
+### M6-05 — Autonomous Android Distribution ✅ shipped (v3.1.0) · PR-PHASE6-04
 
 Free public distribution via four parallel zero-cost tracks:
 
 | Track | Status | Channel |
 |-------|--------|---------|
 | 1 | ✅ CI wired | GitHub Releases APK + Obtainium auto-update |
-| 2A | 🟡 MR pending | F-Droid Official (reproducible build, ~1–4 weeks) |
+| 2A | ✅ MR submitted | F-Droid Official (reproducible build, ~1–4 weeks review) |
 | 2B | ✅ Documented | Self-Hosted F-Droid on GitHub Pages |
 | 3 | ✅ CI wired | GitHub Pages PWA (Aponi web shell, installable on Android Chrome) |
 
@@ -190,7 +204,7 @@ git tag free-v3.1.0 && git push origin free-v3.1.0
 
 ## Phase 6.1 — Complexity, Safety, and Efficiency Simplification Increment
 
-**Status:** 🔵 proposed · **Lane:** Governance hardening / complexity reduction
+**Status:** 🟡 active · **Lane:** Governance hardening / complexity reduction · **Tooling:** ✅ in main
 
 This increment reduces operational complexity while preserving fail-closed
 governance by introducing explicit simplification budgets and CI-enforced

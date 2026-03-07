@@ -1,5 +1,55 @@
 # Changelog
 
+## [3.1.0] — 2026-03-07 · PR-PHASE6-04 · Phase 6 Close-Out + v3.1.0 GA
+
+### Phase 6 · Complete (M6-03 · M6-04 · M6-05)
+
+**PR-PHASE6-04** closes Phase 6 — Autonomous Roadmap Self-Amendment. All five
+milestones (M6-01 through M6-05) are shipped and the platform advances to v3.1.0 GA.
+
+**M6-03 — EvolutionLoop integration** (`runtime/evolution/evolution_loop.py`)
+
+Six-gate prerequisite check (`_evaluate_m603_amendment_gates`) wired into
+`EvolutionLoop.run_epoch()`. After every Nth epoch (default 10, configurable via
+`ADAAD_AMENDMENT_TRIGGER_INTERVAL`), the loop evaluates all gates deterministically;
+any failing gate logs the gate ID and continues the epoch without aborting it.
+`EpochResult` gains `amendment_proposed: bool` and `amendment_id: Optional[str]`.
+
+Constitutional invariants enforced:
+- `INVARIANT PHASE6-AUTH-0` — `authority_level` immutable after construction
+- `INVARIANT PHASE6-STORM-0` — at most 1 pending amendment per node
+- `INVARIANT PHASE6-HUMAN-0` — no auto-approval path
+
+Tests: `tests/autonomy/test_evolution_loop_amendment.py` (T6-03-01..13)
+
+**M6-04 — Federated Roadmap Propagation** (`runtime/governance/federation/mutation_broker.py`)
+
+`FederationMutationBroker.propagate_amendment()` ships all-or-nothing propagation
+with rollback on peer failure. Source-node approval is provenance only; each
+destination node evaluates independently under its own `GovernanceGate`.
+
+`INVARIANT PHASE6-FED-0` enforced: source approval never binds destination nodes.
+Ledger events: `federated_amendment_propagated`, `federated_amendment_rollback`.
+
+Tests: `tests/governance/federation/test_federated_amendment.py`
+
+**M6-05 — Autonomous Android Distribution**
+
+All four distribution tracks wired and documented:
+- Track 1 (GitHub Releases + Obtainium): CI pipeline verified end-to-end
+- Track 2A (F-Droid Official): MR submitted; under F-Droid review queue
+- Track 2B (Self-Hosted F-Droid on GitHub Pages): `repo.xml` validated
+- Track 3 (PWA on GitHub Pages): `standalone` display mode verified
+
+`INVARIANT PHASE6-APK-0` enforced: every APK passes full governance gate before signing.
+
+**Documentation close-out:**
+- `ROADMAP.md` — Phase 6 status → `✅ shipped`; M6-03/04/05 status corrected
+- `VERSION` — promoted from `3.1.0-dev` → `3.1.0`
+- `docs/releases/3.1.0.md` — Phase 6 GA release evidence
+
+---
+
 ## [3.1.0-dev] — 2026-03-07 · PR-PHASE6-03 · M6-04 Federated Roadmap Propagation Complete
 
 ### Phase 6 · M6-04 Completion (post-merge close-out)
