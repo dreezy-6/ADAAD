@@ -1,120 +1,132 @@
-# SPDX-License-Identifier: Apache-2.0
-"""
-Guarded DNA mutation helpers used by the mutation executor.
-
-The helper intentionally constrains mutations to the agent dna.json file and
-supports a minimal JSONPatch-style surface (set/add/replace/remove) for
-top-level and nested keys. Unknown operations are skipped, and callers always
-receive lineage metadata describing what happened.
-"""
-
 from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+import os
 from typing import Any, Dict, List, Tuple
 
-from runtime import ROOT_DIR
-from runtime.timeutils import now_iso
+
+def _sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
 
 
-AGENTS_ROOT = ROOT_DIR / "app" / "agents"
+def _read_bytes(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read()
 
 
-def _dna_path(agent_fs_id: str) -> Path:
-    return AGENTS_ROOT / agent_fs_id / "dna.json"
-
-
-def _load_dna(path: Path) -> Dict[str, Any]:
-    if not path.exists():
-        return {}
+def _fsync_dir(dir_path: str) -> None:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        fd = os.open(dir_path, os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
     except Exception:
-        return {}
+        pass
 
 
-def _checksum(payload: Dict[str, Any]) -> str:
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+def _atomic_write_bytes(path: str, data: bytes) -> None:
+    dir_path = os.path.dirname(path)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    _fsync_dir(dir_path)
 
 
-def _apply_ops(dna: Dict[str, Any], ops: List[Dict[str, Any]]) -> Tuple[int, int]:
-    applied = 0
-    skipped = 0
-    for op in ops:
-        if not isinstance(op, dict):
-            skipped += 1
-            continue
-        path = op.get("path") or op.get("key")
-        if not isinstance(path, str) or not path.strip():
-            skipped += 1
-            continue
+def _ensure_agent_dir(agent_id: str) -> str:
+    agent_dir = os.path.join("app", "agents", agent_id)
+    real = os.path.realpath(agent_dir)
+    root = os.path.realpath(os.path.join("app", "agents"))
+    if not real.startswith(root + os.sep) and real != root:
+        raise PermissionError("Mutation outside app/agents blocked.")
+    return agent_dir
 
-        op_name = (op.get("op") or "set").lower()
-        value = op.get("value")
-        parts = [segment for segment in path.strip("/").split("/") if segment]
+
+def _apply_ops(dna_obj: Dict[str, Any], ops: List[Dict[str, Any]]) -> Dict[str, Any]:
+    import copy
+
+    out = copy.deepcopy(dna_obj)
+
+    def parse_ptr(p: str) -> List[str]:
+        if not p.startswith("/"):
+            raise ValueError("JSON pointer must start with '/'.")
+        parts = p.split("/")[1:]
+        return [x.replace("~1", "/").replace("~0", "~") for x in parts]
+
+    def resolve_parent(obj: Any, parts: List[str]) -> Tuple[Any, str]:
         if not parts:
-            skipped += 1
-            continue
+            raise ValueError("Path empty.")
+        cur = obj
+        for k in parts[:-1]:
+            if isinstance(cur, list):
+                cur = cur[int(k)]
+            else:
+                cur = cur[k]
+        return cur, parts[-1]
 
-        target: Dict[str, Any] = dna
-        valid_path = True
-        for segment in parts[:-1]:
-            current = target.get(segment)
-            if current is None:
-                current = {}
-                target[segment] = current
-            if not isinstance(current, dict):
-                valid_path = False
-                break
-            target = current
-        if not valid_path:
-            skipped += 1
-            continue
+    for op in ops:
+        kind = op["op"]
+        path = op["path"]
+        value = op.get("value")
+        parts = parse_ptr(path)
+        parent, leaf = resolve_parent(out, parts)
 
-        final_key = parts[-1]
-        if op_name in {"add", "replace", "set"}:
-            target[final_key] = value
-            applied += 1
-        elif op_name == "remove":
-            if final_key in target:
-                target.pop(final_key)
-            applied += 1
+        if kind in ("add", "replace"):
+            if isinstance(parent, list):
+                idx = int(leaf)
+                if kind == "add":
+                    parent.insert(idx, value)
+                else:
+                    parent[idx] = value
+            else:
+                parent[leaf] = value
+        elif kind == "remove":
+            if isinstance(parent, list):
+                del parent[int(leaf)]
+            else:
+                del parent[leaf]
         else:
-            skipped += 1
+            raise ValueError(f"Unsupported op: {kind}")
 
-    return applied, skipped
+    return out
 
 
-def apply_dna_mutation(agent_fs_id: str, ops: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Apply mutation operations to an agent's dna.json file in a guarded manner.
+def validate_he65_subset(dna_obj: Dict[str, Any]) -> None:
+    if not isinstance(dna_obj, dict):
+        raise ValueError("dna.json must be an object.")
 
-    The helper treats the mutation request as best-effort: invalid ops are
-    skipped, the dna file is created if missing, and a lineage summary with a
-    content checksum is returned regardless of whether any mutations were
-    applied.
-    """
 
-    dna_file = _dna_path(agent_fs_id)
-    dna_file.parent.mkdir(parents=True, exist_ok=True)
-    dna_data = _load_dna(dna_file)
+def apply_dna_mutation(agent_id: str, ops: List[Dict[str, Any]]) -> Dict[str, Any]:
+    agent_dir = _ensure_agent_dir(agent_id)
+    dna_path = os.path.join(agent_dir, "dna.json")
 
-    applied, skipped = _apply_ops(dna_data, ops)
-    if applied or not dna_file.exists():
-        dna_file.write_text(json.dumps(dna_data, indent=2), encoding="utf-8")
+    if not os.path.exists(dna_path):
+        raise FileNotFoundError(f"Agent {agent_id} DNA not found.")
 
-    checksum = _checksum(dna_data)
+    old_bytes = _read_bytes(dna_path)
+    parent_lineage = _sha256_bytes(old_bytes)
+
+    old_obj = json.loads(old_bytes.decode("utf-8"))
+    new_obj = _apply_ops(old_obj, ops)
+    validate_he65_subset(new_obj)
+
+    new_bytes = json.dumps(new_obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    child_lineage = _sha256_bytes(new_bytes)
+
+    _atomic_write_bytes(dna_path, new_bytes)
+
     return {
-        "agent": agent_fs_id,
-        "applied": applied,
-        "skipped": skipped,
-        "checksum": checksum,
-        "updated_at": now_iso(),
-        "path": str(dna_file),
+        "agent_id": agent_id,
+        "parent_lineage": parent_lineage,
+        "child_lineage": child_lineage,
     }
 
 
-__all__ = ["apply_dna_mutation"]
+__all__ = [
+    "apply_dna_mutation",
+    "validate_he65_subset",
+]

@@ -29,10 +29,6 @@ from typing import Any, Dict, List
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-import logging
-
-logger = logging.getLogger(__name__)
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = BASE_DIR / "data"
@@ -132,9 +128,8 @@ def _gate_state() -> Dict[str, Any]:
             contents = GATE_LOCK_FILE.read_text(encoding="utf-8").strip()
             if contents:
                 reason = contents
-        except Exception as exc:
-            # Failed to read gate lock reason; keep gate locked but log for diagnostics.
-            logger.warning("Failed to read gate lock file '%s': %s", GATE_LOCK_FILE, exc)
+        except Exception:
+            reason = reason
 
     if reason:
         reason = reason[:280]
@@ -238,8 +233,8 @@ def nexus_protocol() -> Dict[str, Any]:
 
 @app.get("/api/nexus/agents")
 def nexus_agents() -> Dict[str, Any]:
-    _assert_gate_open()
-    agents_dir = ROOT / "app" / "agents"
+    gate = _assert_gate_open()
+    agents_dir = BASE_DIR / "app" / "agents"
     agents: List[Dict[str, Any]] = []
     if agents_dir.exists():
         for entry in sorted(agents_dir.iterdir(), key=lambda p: p.name):
