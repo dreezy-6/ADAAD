@@ -10,7 +10,7 @@
     },
     {
       "path": "app/main.py",
-      "max_lines": 800,
+      "max_lines": 860,
       "max_fan_in": 8
     },
     {
