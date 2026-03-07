@@ -59,3 +59,13 @@ def test_verify_session_unknown_env_rejected(monkeypatch: pytest.MonkeyPatch) ->
 
     with pytest.raises(GovernanceTokenError):
         verify_session("any-token")
+
+
+def test_verify_session_dev_mode_rejected_when_legacy_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ADAAD_ENV", "dev")
+    monkeypatch.setenv("CRYOVANT_DEV_MODE", "1")
+    monkeypatch.setenv("CRYOVANT_DEV_TOKEN", "dev-token")
+    monkeypatch.setenv("ADAAD_ENABLE_LEGACY_VERIFY_SESSION", "0")
+
+    with pytest.raises(GovernanceTokenError, match="verify_session_legacy_flag_disabled"):
+        verify_session("dev-token")

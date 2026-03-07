@@ -128,6 +128,22 @@ class CryovantDevSignatureTest(unittest.TestCase):
             )
         )
 
+    def test_verify_payload_signature_static_fallback_disabled_in_strict_context(self) -> None:
+        payload = b"governance-envelope"
+        digest = "sha256:" + cryovant.hashlib.sha256(payload).hexdigest()
+        os.environ["ADAAD_ENV"] = "dev"
+        os.environ["ADAAD_REPLAY_MODE"] = "strict"
+        os.environ["CRYOVANT_DEV_MODE"] = "1"
+        os.environ.pop("ADAAD_ENABLE_LEGACY_STATIC_SIGNATURES", None)
+        self.addCleanup(os.environ.pop, "ADAAD_REPLAY_MODE", None)
+        self.assertFalse(
+            cryovant.verify_payload_signature(
+                payload,
+                f"cryovant-static-{digest}",
+                "policy-key",
+            )
+        )
+
     def test_verify_payload_signature_accepts_hmac_signature(self) -> None:
         payload = b"replay-proof-digest"
         digest = "sha256:" + cryovant.hashlib.sha256(payload).hexdigest()
@@ -154,6 +170,7 @@ class CryovantDevSignatureTest(unittest.TestCase):
         metrics_log.assert_not_called()
 
     def test_verify_hmac_digest_signature_accepts_legacy_unprefixed_signature(self) -> None:
+        os.environ["ADAAD_ENV"] = "dev"
         signature = cryovant.sign_hmac_digest(
             key_id="k1",
             signed_digest="sha256:" + ("a" * 64),
@@ -196,12 +213,21 @@ class CryovantDevSignatureTest(unittest.TestCase):
         self.assertTrue(cryovant._valid_signature(signature, agent_dir=agent_dir))
 
     def test_valid_signature_legacy_fallback_logs_warning(self) -> None:
+        os.environ["ADAAD_ENV"] = "dev"
         with mock.patch("security.cryovant.metrics.log") as metrics_log:
             self.assertTrue(cryovant._valid_signature("cryovant-static-legacy"))
 
         metrics_log.assert_called_once()
         self.assertEqual(metrics_log.call_args.kwargs["event_type"], "cryovant_legacy_signature_accepted")
         self.assertEqual(metrics_log.call_args.kwargs["level"], "WARNING")
+
+    def test_valid_signature_legacy_fallback_disabled_by_default_in_strict_context(self) -> None:
+        os.environ["ADAAD_ENV"] = "dev"
+        os.environ["ADAAD_REPLAY_MODE"] = "strict"
+        os.environ.pop("ADAAD_ENABLE_LEGACY_STATIC_SIGNATURES", None)
+        self.addCleanup(os.environ.pop, "ADAAD_REPLAY_MODE", None)
+
+        self.assertFalse(cryovant._valid_signature("cryovant-static-legacy"))
 
 
     def test_certify_agents_reuses_lineage_hash_per_agent(self) -> None:
@@ -253,6 +279,18 @@ class CryovantDevSignatureTest(unittest.TestCase):
         os.environ["ADAAD_ENV"] = "dev"
         os.environ["CRYOVANT_DEV_MODE"] = "1"
         self.assertTrue(cryovant.verify_governance_token("dev-token"))
+
+    def test_verify_governance_token_rejects_dev_override_when_legacy_flag_disabled(self) -> None:
+        os.environ["CRYOVANT_DEV_TOKEN"] = "dev-token"
+        os.environ["ADAAD_ENV"] = "dev"
+        os.environ["CRYOVANT_DEV_MODE"] = "1"
+        os.environ["ADAAD_ENABLE_LEGACY_DEV_TOKEN_OVERRIDE"] = "0"
+        self.addCleanup(os.environ.pop, "CRYOVANT_DEV_TOKEN", None)
+        self.addCleanup(os.environ.pop, "ADAAD_ENV", None)
+        self.addCleanup(os.environ.pop, "CRYOVANT_DEV_MODE", None)
+        self.addCleanup(os.environ.pop, "ADAAD_ENABLE_LEGACY_DEV_TOKEN_OVERRIDE", None)
+
+        self.assertFalse(cryovant.verify_governance_token("dev-token"))
 
 
     def test_sign_governance_token_rejects_delimiter_in_fields(self) -> None:

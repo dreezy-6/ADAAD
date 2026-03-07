@@ -148,3 +148,33 @@ def test_validate_mutation_proposal_schema_rejects_unexpected_fields() -> None:
     assert result["ok"] is False
     assert result["reason"] == "invalid_mutation_proposal_schema"
     assert "$.unexpected:additional_property" in result["errors"]
+
+
+def test_validate_mutation_fail_closed_when_legacy_preflight_disabled_in_strict_context(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "noop.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    request = _request_for_target(target)
+
+    monkeypatch.setenv("ADAAD_ENV", "dev")
+    monkeypatch.setenv("ADAAD_REPLAY_MODE", "strict")
+    monkeypatch.delenv("ADAAD_ENABLE_LEGACY_MUTATION_PREFLIGHT", raising=False)
+
+    result = preflight.validate_mutation(request, tier=None)
+
+    assert result["ok"] is False
+    assert result["reason"] == "legacy_mutation_preflight_disabled"
+    assert result["operation_class"] == "governance-critical"
+
+
+def test_validate_mutation_allows_legacy_preflight_with_explicit_flag(tmp_path: Path, monkeypatch) -> None:
+    target = tmp_path / "noop.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    request = _request_for_target(target)
+
+    monkeypatch.setenv("ADAAD_REPLAY_MODE", "strict")
+    monkeypatch.setenv("ADAAD_ENABLE_LEGACY_MUTATION_PREFLIGHT", "1")
+
+    result = preflight.validate_mutation(request, tier=None)
+
+    assert result["ok"] is True
+    assert result["reason"] == "ok"
