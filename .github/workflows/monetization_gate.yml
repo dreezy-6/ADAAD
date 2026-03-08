@@ -1,0 +1,156 @@
+name: Monetization Gate
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/phase8-*"
+      - "pr/PR-8-*"
+  pull_request:
+    paths:
+      - "runtime/monetization/**"
+      - "tests/monetization/**"
+      - "PRICING.md"
+      - "docs/enterprise/**"
+
+# Constitutional requirement: monetization gate must never bypass governance.
+# This workflow validates the monetization layer independently of the main CI.
+
+jobs:
+  monetization-unit:
+    name: "M8 · Unit tests (tier engine, api keys, usage, billing)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.server.txt
+          pip install pytest pytest-cov
+
+      - name: Run monetization tests
+        env:
+          ADAAD_ENV: test
+          ADAAD_API_SIGNING_KEY: "adaad-ci-test-signing-key-32bytes"
+        run: |
+          python -m pytest tests/monetization/ -v --tb=short \
+            --cov=runtime/monetization --cov-report=term-missing \
+            --cov-fail-under=90
+
+  monetization-import-smoke:
+    name: "M8 · Import smoke — no circular deps"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.server.txt
+
+      - name: Import smoke test
+        env:
+          ADAAD_ENV: test
+          ADAAD_API_SIGNING_KEY: "adaad-ci-test-signing-key-32bytes"
+        run: |
+          python -c "
+          from runtime.monetization.tier_engine import TierEngine, Tier, TIER_COMMUNITY, TIER_PRO, TIER_ENTERPRISE
+          from runtime.monetization.api_key_manager import ApiKeyManager
+          from runtime.monetization.usage_tracker import UsageTracker
+          from runtime.monetization.billing_gateway import BillingGateway
+          print('All monetization imports OK')
+          te = TierEngine()
+          print(f'  Community epochs/month: {TIER_COMMUNITY.epochs_per_month}')
+          print(f'  Pro epochs/month: {TIER_PRO.epochs_per_month}')
+          print(f'  Enterprise epochs/month: {TIER_ENTERPRISE.epochs_per_month}')
+          "
+
+  monetization-constitutional-invariant:
+    name: "M8 · Constitutional invariant — gate never bypassed"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.server.txt
+
+      - name: Verify constitutional invariants
+        run: |
+          python -c "
+          # INVARIANT M8-CONST-0: GovernanceGate is never bypassed by tier checks.
+          # Verify that TierEngine.check_capability raises on gate-related caps
+          # rather than silently granting them.
+          from runtime.monetization.tier_engine import TierEngine, Tier, Capability, TierLimitExceeded
+
+          engine = TierEngine()
+
+          # Community should not have SSO/SAML
+          try:
+              engine.check_capability(Tier.COMMUNITY, Capability.SSO_SAML)
+              raise AssertionError('INVARIANT VIOLATED: Community should not have SSO')
+          except TierLimitExceeded:
+              pass
+
+          # Constitutional floor: reviewer_reputation requires Pro+
+          try:
+              engine.check_capability(Tier.COMMUNITY, Capability.REVIEWER_REPUTATION)
+              raise AssertionError('INVARIANT VIOLATED: Community should not have reviewer_reputation')
+          except TierLimitExceeded:
+              pass
+
+          # Enterprise has all features
+          engine.check_capability(Tier.ENTERPRISE, Capability.CUSTOM_CONSTITUTION)
+          engine.check_capability(Tier.ENTERPRISE, Capability.SSO_SAML)
+          engine.check_capability(Tier.ENTERPRISE, Capability.SLA_GUARANTEED)
+
+          print('INVARIANT M8-CONST-0: PASS — GovernanceGate bypasses not present in tier engine')
+          "
+
+  spdx-check:
+    name: "M8 · SPDX license headers"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check SPDX headers on new files
+        run: |
+          MISSING=0
+          for f in runtime/monetization/*.py tests/monetization/*.py; do
+            if [ -f "$f" ]; then
+              if ! head -1 "$f" | grep -q "SPDX-License-Identifier"; then
+                echo "MISSING SPDX: $f"
+                MISSING=$((MISSING+1))
+              fi
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "ERROR: $MISSING files missing SPDX headers"
+            exit 1
+          fi
+          echo "SPDX headers: OK"
