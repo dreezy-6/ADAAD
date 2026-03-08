@@ -67,6 +67,101 @@
 
 # Changelog
 
+## [3.2.0] — 2026-03-08 · feat/phase8-saas-monetization-v320 · Phase 8 — Enterprise SaaS Monetization Layer
+
+### Phase 8 · Enterprise SaaS Monetization — M8-01..M8-05
+
+Transforms ADAAD from an open-source project into a revenue-generating SaaS platform
+for InnovativeAI LLC, while preserving all constitutional governance invariants.
+**No tier ever bypasses the GovernanceGate or weakens constitutional enforcement.**
+
+#### M8-01 · Tier Engine (`runtime/monetization/tier_engine.py`)
+
+Three-tier SaaS access model with deterministic, replay-safe capability enforcement:
+
+| Tier | Price | Epochs/mo | Key unlock |
+|---|---|---|---|
+| Community | Free | 50 | Full governance engine, Android app |
+| Pro | $49/mo | 500 | Reviewer reputation, simulation DSL, Aponi IDE, federation (3 nodes) |
+| Enterprise | $499/mo | Unlimited | SSO/SAML, SLA, custom constitutional rules, unlimited federation |
+
+- `TierEngine.check_capability()` — primary enforcement surface; raises `TierLimitExceeded` with upgrade URL
+- `Capability` enum — 15 feature flags, all checked via pure/deterministic functions
+- `tier_gte()` — ordinal comparison for upgrade path resolution
+- `TierConfig` — frozen dataclass, single source of truth per tier
+- Constitutional invariant: `CONSTITUTIONAL_FLOOR_MIN_REVIEWERS = 1` is never reduced by tier
+
+#### M8-02 · API Key Manager (`runtime/monetization/api_key_manager.py`)
+
+HMAC-SHA256 signed bearer tokens — offline validation, no database lookup required:
+
+- Key format: `adaad_<tier_prefix>_<base64url_payload>_<hmac_tag>`
+- Tier prefixes: `cm` (community), `pr` (pro), `en` (enterprise)
+- Payload: `{v, kid, t, org, iat, exp}` — JSON, deterministic serialisation
+- `ApiKeyManager.generate()` — caller supplies `issued_at` for replay safety
+- `ApiKeyManager.validate()` — constant-time HMAC comparison, expiry check, revocation check
+- `ApiKeyManager.revoke()` — thread-safe in-memory revocation set
+- Replay-safe: no `time.time()` calls in core validation logic
+
+#### M8-03 · Usage Tracker (`runtime/monetization/usage_tracker.py`)
+
+Append-only, thread-safe metering with per-tier quota enforcement:
+
+- Five event types: `epoch_run`, `api_call`, `mutation_apply`, `audit_export`, `federation_op`
+- SHA-256 content hash on every `UsageEvent` — tamper-evident metering
+- `UsageTracker.record()` — atomic record + quota check; quota failure is atomic reject
+- `UsageTracker.flush_events()` — caller-managed persistence boundary
+- Community epoch cap: 50/mo; Pro: 500/mo; Enterprise: unlimited
+
+#### M8-04 · Billing Gateway (`runtime/monetization/billing_gateway.py`)
+
+Stripe webhook integration with governance-auditable tier lifecycle events:
+
+- Handles 5 Stripe event types: subscription created/updated/deleted, payment failed/succeeded
+- HMAC-SHA256 Stripe signature verification (fail-closed, constant-time)
+- Idempotency guard: same `stripe_event_id` processed at most once
+- `BillingLifecycleEvent` — structured lifecycle event for governance ledger integration
+- Tier resolution from Stripe price IDs (configured via env vars, no hardcoded IDs)
+- Grace period: 7 days after payment failure before tier revert
+
+#### M8-05 · Monetization Middleware + API Routes (`runtime/monetization/middleware.py`)
+
+FastAPI middleware and REST endpoints for SaaS operation:
+
+- `MonetizationMiddleware` — authentication, tier enforcement, rate limiting on `/api/**`
+- Sliding-window rate limiter: 10/min (Community), 60/min (Pro), 600/min (Enterprise)
+- Response headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-ADAAD-Tier`
+- New endpoints:
+  - `GET /api/monetization/tiers` — capability summary for all tiers
+  - `GET /api/monetization/pricing` — structured pricing for storefront integration
+  - `GET /api/monetization/usage/{org_id}` — org usage by billing period
+- Public paths exempt from auth: `/`, `/health`, `/docs`, `/governance/reviewer-calibration`
+
+### Supporting additions
+
+- `PRICING.md` — canonical pricing documentation with FAQ and key format reference
+- `docs/enterprise/ENTERPRISE_GUIDE.md` — enterprise deployment, SSO, federation, custom rules
+- `.github/workflows/monetization_gate.yml` — CI gate: unit tests (≥90% coverage), import smoke,
+  constitutional invariant check, SPDX header enforcement
+- `tests/monetization/test_monetization_phase8.py` — 15 test classes, T8-01..T8-15
+- `VERSION` bumped `3.1.1` → `3.2.0`
+- `server.py` updated to register `build_monetization_router()` alongside existing routes
+
+### Invariants (architecturally enforced)
+
+- `INVARIANT M8-CONST-0` — GovernanceGate and constitutional rules are never bypassed
+  or weakened by tier checks. Tier enforcement gates access before reaching governance.
+- `INVARIANT M8-AUTH-0` — All `/api/**` routes require a valid Bearer token in production.
+  Unauthenticated requests are rejected before any governance logic executes.
+- `INVARIANT M8-QUOTA-0` — Quota checks are fail-closed. Ambiguous state → reject.
+  In-progress epochs are never halted mid-run; quota fires before the epoch begins.
+- `INVARIANT M8-KEY-0` — API key signing key is loaded from env var only (fail-closed
+  without it). No fallback to a default or hardcoded key in production mode.
+- `INVARIANT M8-BILLING-0` — All tier transitions are emitted as governance lifecycle
+  events before taking effect. No silent tier changes.
+
+---
+
 ## [3.1.1] — 2026-03-07 · chore/phase6-closeout-docs-v311 · Phase 6.1 GA + Roadmap + Doc Sync
 
 ### Phase 6.1 GA Closeout
