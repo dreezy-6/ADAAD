@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.1.1] — 2026-03-07 · chore/phase6-closeout-docs-v311 · Phase 6.1 GA + Roadmap + Doc Sync
+
+### Phase 6.1 GA Closeout
+
+- Phase 6.1 status promoted from 🟡 active → ✅ shipped in `ROADMAP.md`
+- All Phase 6 M6-01..M6-05 milestones confirmed ✅ shipped in `README.md`
+- `VERSION` bumped `3.1.0` → `3.1.1`
+- `docs/releases/3.1.1.md` created with full milestone evidence and governance invariants
+- README version badge, phase badge, nav link, active-phase section, phase history table,
+  and version infobox all updated to reflect `v3.1.1` / Phase 6.1 state
+
+### Phase 7 Roadmap Published
+
+`ROADMAP.md` now includes Phase 7 — Reviewer Reputation & Adaptive Governance
+Calibration (`v3.2.0` target):
+- M7-01 Reviewer Reputation Ledger
+- M7-02 Reputation Scoring Engine
+- M7-03 Tier Calibration Engine
+- M7-04 Constitution v0.3.0 (`reviewer_calibration` advisory rule)
+- M7-05 Aponi Reviewer Calibration Endpoint
+- Planned PR sequence: PR-7-01 → PR-7-05
+
+---
+
 ## [3.1.1] — 2026-03-07 · feat/phase6-1-simplification-enforcement · Phase 6.1 — Simplification Contract Enforcement
 
 ### Phase 6.1 · Simplification Contract Enforcement (Legacy Reduction + Budget Lock)

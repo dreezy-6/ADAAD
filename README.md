@@ -7,8 +7,8 @@
     <img alt="CI" src="https://github.com/InnovativeAI-adaad/ADAAD/actions/workflows/ci.yml/badge.svg"/>
   </a>
   &nbsp;
-  <img alt="Version" src="https://img.shields.io/badge/version-3.1.0--dev-00d4ff?style=flat-square&labelColor=060d14"/>
-  <img alt="Phase" src="https://img.shields.io/badge/phase-6%20active-f59e0b?style=flat-square&labelColor=060d14"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-3.1.1-00d4ff?style=flat-square&labelColor=060d14"/>
+  <img alt="Phase" src="https://img.shields.io/badge/phase-6.1%20active-f59e0b?style=flat-square&labelColor=060d14"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11.9-7b61ff?style=flat-square&labelColor=060d14"/>
   <img alt="Android" src="https://img.shields.io/badge/android-free-3ddc84?style=flat-square&labelColor=060d14"/>
   &nbsp;
@@ -34,7 +34,7 @@
   <a href="#-start-in-60-seconds"><strong>Quick Start</strong></a> ·
   <a href="#how-the-loop-works"><strong>How It Works</strong></a> ·
   <a href="#-android-app--free"><strong>Android App</strong></a> ·
-  <a href="#whats-active-v310-dev-phase-6"><strong>Phase 6 Status</strong></a> ·
+  <a href="#whats-active-v311-phase-61"><strong>Phase 6.1 Status</strong></a> ·
   <a href="docs/CONSTITUTION.md"><strong>Constitution</strong></a> ·
   <a href="ROADMAP.md"><strong>Roadmap</strong></a>
 </p>
@@ -203,17 +203,27 @@ print(f"Duration:    {result.duration_seconds:.1f}s")
 
 ---
 
-## What's active: v3.1.0-dev (Phase 6)
+## What's active: v3.1.1 (Phase 6.1)
 
-**Phase 6 — Autonomous Roadmap Self-Amendment** is now active. The system can propose, score, and submit governed amendments to its own roadmap — each one evaluated identically to a code mutation.
+**Phase 6 — Autonomous Roadmap Self-Amendment** is complete (`v3.1.0`). All milestones shipped and governed.
 
 | Milestone | Status | Module |
 |:---|:---:|:---|
 | M6-01 `RoadmapAmendmentEngine` | ✅ shipped | `runtime/autonomy/roadmap_amendment_engine.py` |
 | M6-02 `ProposalDiffRenderer` | ✅ shipped | `runtime/autonomy/proposal_diff_renderer.py` |
-| M6-03 EvolutionLoop wire | 🔵 PR-PHASE6-02 | `runtime/autonomy/loop.py` |
-| M6-04 Federated propagation | 🔵 PR-PHASE6-03 | `runtime/governance/federation/mutation_broker.py` |
-| M6-05 Android distribution | 🟡 active | `.github/workflows/android-free-release.yml` |
+| M6-03 EvolutionLoop wire | ✅ shipped | `runtime/evolution/evolution_loop.py` |
+| M6-04 Federated propagation | ✅ shipped | `runtime/governance/federation/mutation_broker.py` |
+| M6-05 Android distribution | ✅ shipped | `.github/workflows/android-free-release.yml` |
+
+**Phase 6.1 — Simplification Contract Enforcement** is the active lane (`v3.1.1`). Complexity budgets are now CI-enforced; legacy branch count is fail-closed at ≤ 6.
+
+| Target | Baseline | Enforced Cap | CI Gate | Status |
+|:---|:---:|:---:|:---|:---:|
+| Legacy branch count | 23 | ≤ 6 | `simplification-contract-gate` | ✅ |
+| `runtime/constitution.py` max lines | 2200 | 2100 | `simplification-contract-gate` | ✅ |
+| `app/main.py` max lines | 1200 | 800 | `simplification-contract-gate` | ✅ |
+| `security/cryovant.py` max fan-in | 6 | 5 | `simplification-contract-gate` | ✅ |
+| Metrics-schema producer coverage | — | 100% | `simplification-contract-gate` | ✅ |
 
 > [!TIP]
 > **Constitutional principle:** ADAAD proposes. Humans approve. The roadmap never self-promotes without a human governor sign-off recorded in the governance ledger. This cannot be delegated or automated.
@@ -225,7 +235,8 @@ print(f"Duration:    {result.duration_seconds:.1f}s")
 
 | Version | Phase | What shipped |
 |:---|:---:|:---|
-| **v3.1.0-dev** | 6 | Roadmap Self-Amendment · ArchitectAgent Spec v3.1.0 · Free Android Distribution |
+| **v3.1.1** | 6.1 | Simplification Contract Enforcement · Legacy reduction (23→6) · CI budget gates |
+| **v3.1.0** | 6 | Roadmap Self-Amendment · ArchitectAgent Spec v3.1.0 · Free Android Distribution |
 | **v3.0.0** | 5 | Multi-Repo Federation — dual-gate, `FederatedEvidenceMatrix`, HMAC key registry |
 | **v2.3.0** | 4 | AST-aware semantic scoring (`SemanticDiffEngine`) + pipeline fast-path primitives |
 | **v2.2.0** | 4 | `MutationRouteOptimizer`, `EntropyFastGate`, `ParallelGovernanceGate` |
@@ -369,12 +380,12 @@ Full reference: [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md)
 
 | Field | Value |
 |:---|:---|
-| **Current version** | `3.1.0-dev` |
-| **Released** | 2026-03-06 |
-| **Git SHA** | `16d7acf` |
+| **Current version** | `3.1.1` |
+| **Released** | 2026-03-07 |
+| **Git SHA** | `a205ca4` |
 | **Branch** | `main` |
 
-**New in this release:** Phase 6 — Autonomous Roadmap Self-Amendment · ArchitectAgent Spec v3.1.0 · Free Android Distribution
+**New in this release:** Phase 6.1 — Simplification Contract Enforcement · Legacy branch reduction (23→6, CI-enforced) · Critical file complexity budgets tightened
 
 <!-- ADAAD_VERSION_INFOBOX:END -->
 
