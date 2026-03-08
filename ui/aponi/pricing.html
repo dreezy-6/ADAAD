@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>ADAAD · Pricing & Plans · InnovativeAI LLC</title>
+  <meta name="description" content="ADAAD governed AI — transparent pricing for teams building with constitutional governance." />
+  <meta name="color-scheme" content="dark" />
+  <style>
+    :root{
+      --bg:#050b14;
+      --panel:#0f1724;
+      --panel2:#0b1220;
+      --border:rgba(255,255,255,.08);
+      --text:#e6edf6;
+      --muted:#8aa0b8;
+      --ok:#22c55e;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+      --accent:#7c3aed;
+      --accent2:#3b82f6;
+      --shadow:0 14px 50px rgba(0,0,0,.45);
+      --shadow2:0 10px 30px rgba(0,0,0,.35);
+      --r:16px;
+      --r2:12px;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      --sans:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      --glass:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+      --glow:radial-gradient(800px 420px at 12% -10%,rgba(124,58,237,.28),transparent 60%),
+             radial-gradient(900px 480px at 110% 0%,rgba(59,130,246,.22),transparent 55%),
+             radial-gradient(700px 400px at 70% 120%,rgba(34,197,94,.10),transparent 60%);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{
+      background:var(--glow),var(--bg);
+      color:var(--text);
+      font-family:var(--sans);
+      -webkit-font-smoothing:antialiased;
+    }
+    a{color:inherit;text-decoration:none}
+
+    /* ── Header ── */
+    .wrap{max-width:1100px;margin:0 auto;padding:18px 18px 100px}
+    header{
+      display:flex;gap:12px;align-items:center;justify-content:space-between;
+      padding:14px 18px;
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      background:var(--glass);
+      box-shadow:var(--shadow);
+      position:sticky;top:10px;z-index:50;
+      backdrop-filter:blur(12px);
+      margin-bottom:60px;
+    }
+    .brand{display:flex;gap:12px;align-items:center}
+    .logo{
+      width:38px;height:38px;border-radius:14px;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      box-shadow:0 8px 28px rgba(124,58,237,.32);
+      position:relative;overflow:hidden;flex:0 0 auto;
+    }
+    .logo:before{
+      content:"";position:absolute;inset:-40%;
+      background:conic-gradient(from 200deg,rgba(255,255,255,0),rgba(255,255,255,.35),rgba(255,255,255,0));
+      animation:spin 6s linear infinite;opacity:.45;
+    }
+    .logo:after{
+      content:"";position:absolute;inset:9px;border-radius:12px;
+      border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.12);
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .brand-text h1{margin:0;font-size:13px;letter-spacing:.18em;text-transform:uppercase;font-weight:700}
+    .brand-text p{margin:4px 0 0;color:var(--muted);font-size:12px}
+    .hdr-links{display:flex;gap:14px;align-items:center}
+    .hdr-link{color:var(--muted);font-size:13px;transition:color .2s}
+    .hdr-link:hover{color:var(--text)}
+    .btn-sm{
+      padding:6px 16px;border-radius:8px;font-size:13px;font-weight:600;
+      border:1px solid var(--border);background:var(--glass);cursor:pointer;
+      color:var(--text);transition:all .2s;
+    }
+    .btn-sm:hover{border-color:var(--accent);box-shadow:0 0 14px rgba(124,58,237,.22)}
+
+    /* ── Hero ── */
+    .hero{text-align:center;padding:0 0 64px}
+    .hero-badge{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:6px 14px;border-radius:20px;
+      border:1px solid rgba(124,58,237,.35);
+      background:rgba(124,58,237,.08);
+      font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+      color:rgba(167,139,250,1);
+      margin-bottom:28px;
+    }
+    .hero h2{
+      margin:0 0 20px;
+      font-size:clamp(2rem,5vw,3.4rem);
+      font-weight:800;letter-spacing:-.03em;line-height:1.1;
+    }
+    .hero h2 span{
+      background:linear-gradient(135deg,#a78bfa,#60a5fa,#34d399);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    }
+    .hero p{
+      margin:0 auto 40px;max-width:560px;
+      font-size:1.1rem;color:var(--muted);line-height:1.65;
+    }
+    .trust-strip{
+      display:flex;gap:28px;justify-content:center;flex-wrap:wrap;
+      font-size:12px;color:var(--muted);
+    }
+    .trust-item{display:flex;align-items:center;gap:6px}
+    .trust-item .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+
+    /* ── Pricing cards ── */
+    .plans{
+      display:grid;grid-template-columns:repeat(3,1fr);gap:24px;
+      margin:0 auto 72px;max-width:1000px;
+    }
+    @media(max-width:700px){.plans{grid-template-columns:1fr}}
+
+    .plan{
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      padding:32px 28px;
+      background:linear-gradient(180deg,var(--panel),var(--panel2));
+      box-shadow:var(--shadow2);
+      position:relative;
+      display:flex;flex-direction:column;
+      transition:transform .2s,box-shadow .2s;
+    }
+    .plan:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+
+    .plan.featured{
+      border-color:rgba(124,58,237,.45);
+      background:linear-gradient(165deg,rgba(124,58,237,.09),var(--panel2) 60%);
+      box-shadow:0 0 0 1px rgba(124,58,237,.2),var(--shadow);
+    }
+    .plan-badge{
+      position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+      padding:4px 14px;border-radius:12px;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+      white-space:nowrap;
+    }
+
+    .plan-name{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin:0 0 12px}
+    .plan-price{margin:0 0 6px;font-size:3rem;font-weight:800;letter-spacing:-.03em;line-height:1}
+    .plan-price sup{font-size:1.2rem;font-weight:600;vertical-align:top;margin-top:8px;opacity:.8}
+    .plan-period{font-size:13px;color:var(--muted);margin:0 0 22px}
+    .plan-tagline{font-size:14px;color:var(--muted);line-height:1.55;margin:0 0 28px;min-height:44px}
+
+    .plan-features{flex:1;margin:0 0 28px;padding:0;list-style:none}
+    .plan-features li{
+      display:flex;align-items:flex-start;gap:10px;
+      padding:9px 0;border-bottom:1px solid var(--border);
+      font-size:14px;line-height:1.45;
+    }
+    .plan-features li:last-child{border-bottom:none}
+    .feat-icon{flex:0 0 18px;margin-top:1px;font-size:13px}
+
+    .plan-btn{
+      display:block;text-align:center;padding:13px 24px;
+      border-radius:10px;font-size:14px;font-weight:700;
+      border:1px solid var(--border);
+      background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03));
+      cursor:pointer;color:var(--text);
+      transition:all .2s;width:100%;
+    }
+    .plan-btn:hover{border-color:rgba(255,255,255,.25);transform:translateY(-1px)}
+    .plan-btn.primary{
+      background:linear-gradient(135deg,var(--accent),#5b21b6);
+      border-color:rgba(124,58,237,.5);
+      box-shadow:0 4px 24px rgba(124,58,237,.3);
+    }
+    .plan-btn.primary:hover{box-shadow:0 6px 32px rgba(124,58,237,.45);transform:translateY(-2px)}
+    .plan-btn.secondary{
+      background:linear-gradient(135deg,rgba(59,130,246,.18),rgba(59,130,246,.08));
+      border-color:rgba(59,130,246,.3);
+    }
+    .plan-btn.secondary:hover{border-color:rgba(59,130,246,.55)}
+
+    /* ── Onboarding form ── */
+    #onboard-section{
+      max-width:520px;margin:0 auto 72px;
+      border:1px solid var(--border);border-radius:var(--r);
+      padding:36px 36px;
+      background:linear-gradient(180deg,var(--panel),var(--panel2));
+      box-shadow:var(--shadow);
+      display:none;
+    }
+    #onboard-section h3{margin:0 0 6px;font-size:1.2rem;font-weight:700}
+    #onboard-section p{margin:0 0 24px;font-size:14px;color:var(--muted)}
+    .field{margin-bottom:16px}
+    .field label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--muted)}
+    .field input,.field select{
+      width:100%;padding:10px 14px;
+      border-radius:8px;border:1px solid var(--border);
+      background:rgba(255,255,255,.04);color:var(--text);
+      font-size:14px;font-family:var(--sans);
+      transition:border-color .2s;
+    }
+    .field input:focus,.field select:focus{
+      outline:none;border-color:rgba(124,58,237,.55);
+      box-shadow:0 0 0 3px rgba(124,58,237,.12);
+    }
+    .form-btn{
+      width:100%;padding:13px 24px;margin-top:8px;
+      border-radius:10px;font-size:15px;font-weight:700;
+      background:linear-gradient(135deg,var(--accent),#5b21b6);
+      border:1px solid rgba(124,58,237,.4);
+      box-shadow:0 4px 24px rgba(124,58,237,.3);
+      cursor:pointer;color:#fff;transition:all .2s;
+    }
+    .form-btn:hover{box-shadow:0 6px 32px rgba(124,58,237,.45);transform:translateY(-1px)}
+    .form-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+    #key-reveal{
+      display:none;margin-top:20px;
+      border:1px solid rgba(34,197,94,.25);border-radius:10px;
+      background:rgba(34,197,94,.05);padding:20px;
+    }
+    #key-reveal h4{margin:0 0 8px;color:var(--ok);font-size:14px}
+    #key-reveal .key-value{
+      font-family:var(--mono);font-size:12px;
+      word-break:break-all;background:rgba(0,0,0,.35);
+      border:1px solid var(--border);border-radius:8px;
+      padding:12px;color:#e2e8f0;line-height:1.6;
+    }
+    #key-reveal p{margin:10px 0 0;font-size:13px;color:var(--warn)}
+    #form-error{
+      display:none;margin-top:12px;padding:12px 14px;
+      border-radius:8px;border:1px solid rgba(239,68,68,.3);
+      background:rgba(239,68,68,.08);font-size:13px;color:var(--bad);
+    }
+
+    /* ── Feature table ── */
+    .feature-table-wrap{max-width:900px;margin:0 auto 72px}
+    .feature-table-wrap h3{text-align:center;font-size:1.4rem;font-weight:700;margin:0 0 32px}
+    .ft{width:100%;border-collapse:collapse}
+    .ft th,.ft td{
+      padding:14px 18px;text-align:left;
+      border-bottom:1px solid var(--border);font-size:14px;
+    }
+    .ft th{color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+    .ft tr:last-child td{border-bottom:none}
+    .ft tr:hover td{background:rgba(255,255,255,.018)}
+    .ft .check{color:var(--ok)}
+    .ft .cross{color:rgba(255,255,255,.2)}
+    .ft .partial{color:var(--warn)}
+    .ft .cat{
+      font-weight:700;font-size:13px;letter-spacing:.05em;
+      background:rgba(255,255,255,.025);color:var(--muted);
+    }
+
+    /* ── FAQ ── */
+    .faq{max-width:700px;margin:0 auto 72px}
+    .faq h3{text-align:center;font-size:1.4rem;font-weight:700;margin:0 0 32px}
+    .faq-item{
+      border:1px solid var(--border);border-radius:var(--r2);
+      padding:18px 22px;margin-bottom:12px;
+      background:linear-gradient(180deg,var(--panel),var(--panel2));
+    }
+    .faq-q{font-weight:700;font-size:14px;margin:0 0 8px;cursor:pointer}
+    .faq-a{font-size:14px;color:var(--muted);line-height:1.6;margin:0}
+
+    /* ── Footer ── */
+    .pricing-footer{
+      text-align:center;padding:40px 0 0;
+      border-top:1px solid var(--border);
+      color:var(--muted);font-size:13px;
+    }
+    .pricing-footer a{color:var(--accent);opacity:.8}
+    .pricing-footer a:hover{opacity:1}
+    .footer-links{display:flex;gap:20px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <header>
+    <a class="brand" href="/">
+      <div class="logo"></div>
+      <div class="brand-text">
+        <h1>ADAAD</h1>
+        <p>InnovativeAI LLC · Governed AI Platform</p>
+      </div>
+    </a>
+    <div class="hdr-links">
+      <a class="hdr-link" href="/docs">Docs</a>
+      <a class="hdr-link" href="/">Dashboard</a>
+      <button class="btn-sm" onclick="scrollTo('#onboard-section','community')">Get started free</button>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-badge">
+      <span>🔒</span>
+      <span>Constitutional AI · Append-only governance ledger</span>
+    </div>
+    <h2>Transparent pricing for<br><span>governed AI systems</span></h2>
+    <p>ADAAD enforces constitutional constraints at the epoch level. Every mutation is
+       audited, every decision is traceable. Start free — upgrade when your team needs
+       federation, compliance exports, or dedicated SLAs.</p>
+    <div class="trust-strip">
+      <div class="trust-item"><span class="dot"></span>No vendor lock-in</div>
+      <div class="trust-item"><span class="dot"></span>Append-only audit ledger</div>
+      <div class="trust-item"><span class="dot"></span>Cancel anytime</div>
+      <div class="trust-item"><span class="dot"></span>SOC2-ready architecture</div>
+    </div>
+  </section>
+
+  <!-- Pricing cards -->
+  <div class="plans">
+
+    <!-- Community -->
+    <div class="plan">
+      <p class="plan-name">Community</p>
+      <p class="plan-price"><sup>$</sup>0</p>
+      <p class="plan-period">Free forever</p>
+      <p class="plan-tagline">For individuals and open-source projects exploring governed AI.</p>
+      <ul class="plan-features">
+        <li><span class="feat-icon">✅</span>50 governance epochs / month</li>
+        <li><span class="feat-icon">✅</span>Constitutional linter</li>
+        <li><span class="feat-icon">✅</span>Append-only audit ledger</li>
+        <li><span class="feat-icon">✅</span>Mutation proposal editor</li>
+        <li><span class="feat-icon">✅</span>Aponi governance dashboard</li>
+        <li><span class="feat-icon">🔒</span>Federation: not included</li>
+        <li><span class="feat-icon">🔒</span>Compliance exports: not included</li>
+      </ul>
+      <button class="plan-btn" onclick="scrollTo('#onboard-section','community')">
+        Get started free
+      </button>
+    </div>
+
+    <!-- Pro (featured) -->
+    <div class="plan featured">
+      <div class="plan-badge">Most popular</div>
+      <p class="plan-name">Pro</p>
+      <p class="plan-price"><sup>$</sup>49</p>
+      <p class="plan-period">per month · billed monthly</p>
+      <p class="plan-tagline">For teams shipping governed AI to production.</p>
+      <ul class="plan-features">
+        <li><span class="feat-icon">✅</span>500 governance epochs / month</li>
+        <li><span class="feat-icon">✅</span>Everything in Community</li>
+        <li><span class="feat-icon">✅</span>3 federation nodes</li>
+        <li><span class="feat-icon">✅</span>Simulation DSL sandbox</li>
+        <li><span class="feat-icon">✅</span>Reviewer reputation system</li>
+        <li><span class="feat-icon">✅</span>60 API calls / min</li>
+        <li><span class="feat-icon">✅</span>Priority email support</li>
+      </ul>
+      <button class="plan-btn primary" onclick="beginCheckout('pro')">
+        Upgrade to Pro — $49/mo
+      </button>
+    </div>
+
+    <!-- Enterprise -->
+    <div class="plan">
+      <p class="plan-name">Enterprise</p>
+      <p class="plan-price"><sup>$</sup>499</p>
+      <p class="plan-period">per month · custom contracts available</p>
+      <p class="plan-tagline">For regulated industries and large-scale autonomous systems.</p>
+      <ul class="plan-features">
+        <li><span class="feat-icon">✅</span>Unlimited epochs</li>
+        <li><span class="feat-icon">✅</span>Unlimited federation nodes</li>
+        <li><span class="feat-icon">✅</span>SOC2 compliance export</li>
+        <li><span class="feat-icon">✅</span>SSO / SAML integration</li>
+        <li><span class="feat-icon">✅</span>Custom constitutional rules</li>
+        <li><span class="feat-icon">✅</span>SLA: 99.9% uptime + 4hr response</li>
+        <li><span class="feat-icon">✅</span>Dedicated Slack channel</li>
+      </ul>
+      <button class="plan-btn secondary" onclick="beginCheckout('enterprise')">
+        Upgrade to Enterprise
+      </button>
+    </div>
+  </div>
+
+  <!-- Onboarding form (community) or Checkout (paid) -->
+  <div id="onboard-section">
+    <h3 id="onboard-title">Create your free ADAAD account</h3>
+    <p id="onboard-desc">Get a governed AI API key in 30 seconds. No credit card required for Community.</p>
+    <div class="field">
+      <label for="field-org-id">Organisation ID <span style="color:var(--muted);font-weight:400">(lowercase, hyphens OK)</span></label>
+      <input type="text" id="field-org-id" placeholder="my-startup" pattern="[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]" />
+    </div>
+    <div class="field">
+      <label for="field-name">Organisation name</label>
+      <input type="text" id="field-name" placeholder="My Startup Inc." />
+    </div>
+    <div class="field">
+      <label for="field-email">Your email <span style="color:var(--muted);font-weight:400">(for key delivery)</span></label>
+      <input type="email" id="field-email" placeholder="you@company.com" />
+    </div>
+    <input type="hidden" id="field-tier" value="community" />
+    <button class="form-btn" id="onboard-btn" onclick="submitOnboard()">
+      Create account & get API key
+    </button>
+    <div id="form-error"></div>
+    <div id="key-reveal">
+      <h4>🎉 Your ADAAD API key</h4>
+      <div class="key-value" id="key-value"></div>
+      <p>⚠️ <strong>Copy this key now.</strong> It will not be shown again. Set it as <code style="font-size:11px;background:rgba(0,0,0,.4);padding:2px 6px;border-radius:4px">ADAAD_API_KEY</code> in your environment.</p>
+    </div>
+  </div>
+
+  <!-- Feature comparison table -->
+  <div class="feature-table-wrap">
+    <h3>Full feature comparison</h3>
+    <table class="ft">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>Community</th>
+          <th>Pro</th>
+          <th>Enterprise</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="cat" colspan="4">Core governance</td></tr>
+        <tr><td>Governance epochs / month</td><td>50</td><td>500</td><td>Unlimited</td></tr>
+        <tr><td>Constitutional linter</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Append-only audit ledger</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Mutation proposal editor</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Evidence bundle viewer</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Replay inspector</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td class="cat" colspan="4">Developer experience</td></tr>
+        <tr><td>Aponi governance dashboard</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Simulation DSL sandbox</td><td class="cross">—</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>API rate limit</td><td>10 req/min</td><td>60 req/min</td><td>600 req/min</td></tr>
+        <tr><td>Reviewer reputation system</td><td class="cross">—</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td class="cat" colspan="4">Scale & federation</td></tr>
+        <tr><td>Federation nodes</td><td class="cross">—</td><td>3 nodes</td><td>Unlimited</td></tr>
+        <tr><td>Cross-node budget arbitration</td><td class="cross">—</td><td class="partial">Limited</td><td class="check">✅</td></tr>
+        <tr><td>Federated signal broker</td><td class="cross">—</td><td class="cross">—</td><td class="check">✅</td></tr>
+        <tr><td class="cat" colspan="4">Compliance & security</td></tr>
+        <tr><td>Compliance export (CSV/JSON)</td><td class="cross">—</td><td class="cross">—</td><td class="check">✅</td></tr>
+        <tr><td>SOC2 audit package</td><td class="cross">—</td><td class="cross">—</td><td class="check">✅</td></tr>
+        <tr><td>SSO / SAML</td><td class="cross">—</td><td class="cross">—</td><td class="check">✅</td></tr>
+        <tr><td>Custom constitutional rules</td><td class="cross">—</td><td class="cross">—</td><td class="check">✅</td></tr>
+        <tr><td class="cat" colspan="4">Support</td></tr>
+        <tr><td>Community forum</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Priority email support</td><td class="cross">—</td><td class="check">✅ (48h SLA)</td><td class="check">✅ (4h SLA)</td></tr>
+        <tr><td>Dedicated Slack channel</td><td class="cross">—</td><td class="cross">—</td><td class="check">✅</td></tr>
+        <tr><td>SLA uptime guarantee</td><td class="cross">—</td><td class="cross">—</td><td class="check">99.9%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FAQ -->
+  <div class="faq">
+    <h3>Frequently asked questions</h3>
+    <div class="faq-item">
+      <p class="faq-q">What is a "governance epoch"?</p>
+      <p class="faq-a">An epoch is one complete cycle of the ADAAD evolution loop: agents propose mutations, the constitutional linter evaluates them, the GovernanceGate makes a verdict, and the audit ledger records the result. Community orgs get 50 per month; Pro orgs get 500.</p>
+    </div>
+    <div class="faq-item">
+      <p class="faq-q">Can I upgrade or downgrade at any time?</p>
+      <p class="faq-a">Yes. Upgrades take effect immediately. Downgrades take effect at the end of your current billing period. No lock-in, no cancellation fees.</p>
+    </div>
+    <div class="faq-item">
+      <p class="faq-q">What happens if I exceed my epoch quota?</p>
+      <p class="faq-a">The API returns a 429 with an upgrade URL. Your existing governance state, ledger, and audit trail are never affected — only new epoch runs are blocked until the next billing window or an upgrade.</p>
+    </div>
+    <div class="faq-item">
+      <p class="faq-q">How does federation work on Pro?</p>
+      <p class="faq-a">Pro includes 3 federation nodes: peer discovery via gossip protocol, epoch synchronisation, and cross-node fitness comparison. Enterprise unlocks unlimited nodes, the federated signal broker, and cross-node budget arbitration for globally distributed autonomous systems.</p>
+    </div>
+    <div class="faq-item">
+      <p class="faq-q">Is my governance data private?</p>
+      <p class="faq-a">Yes. Your constitutional rules, mutation history, and audit ledger are logically isolated per organisation. InnovativeAI LLC never accesses your governance data without explicit written consent for support purposes.</p>
+    </div>
+    <div class="faq-item">
+      <p class="faq-q">Do you offer annual billing or custom contracts?</p>
+      <p class="faq-a">Yes — annual billing available at 20% discount. Enterprise custom contracts (custom SLAs, volume pricing, procurement paperwork) available via <a href="mailto:enterprise@innovativeai.io" style="color:var(--accent)">enterprise@innovativeai.io</a>.</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="pricing-footer">
+    <div class="footer-links">
+      <a href="/docs">Documentation</a>
+      <a href="https://github.com/InnovativeAI-adaad/ADAAD">GitHub</a>
+      <a href="mailto:support@innovativeai.io">Support</a>
+      <a href="mailto:enterprise@innovativeai.io">Enterprise</a>
+      <a href="/governance/reviewer-calibration">Governance API</a>
+    </div>
+    <p>© 2026 InnovativeAI LLC · Blackwell, Oklahoma · Dustin L. Reid, Founder</p>
+    <p style="margin-top:8px;font-size:11px;opacity:.6">ADAAD: Autonomous Decision Architecture & Audit Daemon</p>
+  </div>
+
+</div>
+
+<script>
+  'use strict';
+
+  // Track which plan triggered the form
+  let _activePlan = 'community';
+
+  function scrollTo(sel, plan) {
+    _activePlan = plan || 'community';
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const tier = document.getElementById('field-tier');
+    if (tier) tier.value = _activePlan;
+
+    const title = document.getElementById('onboard-title');
+    const desc  = document.getElementById('onboard-desc');
+    const btn   = document.getElementById('onboard-btn');
+    if (_activePlan === 'community') {
+      if (title) title.textContent = 'Create your free ADAAD account';
+      if (desc)  desc.textContent  = 'Get a governed AI API key in 30 seconds. No credit card required.';
+      if (btn)   btn.textContent   = 'Create account & get API key';
+    } else if (_activePlan === 'pro') {
+      if (title) title.textContent = 'Start your Pro trial';
+      if (desc)  desc.textContent  = 'Create your org first, then complete payment via Stripe.';
+      if (btn)   btn.textContent   = 'Continue to Pro checkout — $49/mo';
+    } else {
+      if (title) title.textContent = 'Enterprise onboarding';
+      if (desc)  desc.textContent  = 'Create your org and proceed to Enterprise checkout.';
+      if (btn)   btn.textContent   = 'Continue to Enterprise checkout — $499/mo';
+    }
+  }
+
+  function beginCheckout(plan) {
+    scrollTo('#onboard-section', plan);
+  }
+
+  async function submitOnboard() {
+    const orgId   = document.getElementById('field-org-id').value.trim();
+    const name    = document.getElementById('field-name').value.trim();
+    const email   = document.getElementById('field-email').value.trim();
+    const tier    = document.getElementById('field-tier').value;
+    const errEl   = document.getElementById('form-error');
+    const btn     = document.getElementById('onboard-btn');
+
+    // Client validation
+    if (!orgId || !/^[a-z0-9][a-z0-9\-]{1,61}[a-z0-9]$/.test(orgId)) {
+      showError('Organisation ID must be 3–63 chars, lowercase letters, numbers, and hyphens only.');
+      return;
+    }
+    if (!name) { showError('Organisation name is required.'); return; }
+    if (!email || !email.includes('@')) { showError('A valid email is required.'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    hideError();
+
+    try {
+      if (tier === 'community') {
+        // Direct API call — Community org created immediately
+        const res = await fetch('/api/orgs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ org_id: orgId, display_name: name, tier: 'community' }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showError(data.detail || 'Org creation failed. Please try again.');
+          return;
+        }
+        // Reveal the key
+        document.getElementById('key-value').textContent = data.api_key;
+        document.getElementById('key-reveal').style.display = 'block';
+        btn.textContent = '✅ Account created!';
+
+      } else {
+        // Paid tier — create checkout session and redirect to Stripe
+        const res = await fetch('/api/checkout/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan: tier, org_id: orgId, email }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showError(data.detail || 'Checkout session creation failed. Contact support@innovativeai.io');
+          return;
+        }
+        btn.textContent = 'Redirecting to Stripe…';
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      showError('Network error — please check your connection and try again.');
+    } finally {
+      if (btn.textContent !== '✅ Account created!' && btn.textContent !== 'Redirecting to Stripe…') {
+        btn.disabled = false;
+        btn.textContent = tier === 'community'
+          ? 'Create account & get API key'
+          : `Continue to ${tier.charAt(0).toUpperCase() + tier.slice(1)} checkout`;
+      }
+    }
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('form-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+    document.getElementById('onboard-btn').disabled = false;
+    document.getElementById('onboard-btn').textContent =
+      _activePlan === 'community' ? 'Create account & get API key' : 'Continue to checkout';
+  }
+
+  function hideError() {
+    document.getElementById('form-error').style.display = 'none';
+  }
+</script>
+</body>
+</html>
