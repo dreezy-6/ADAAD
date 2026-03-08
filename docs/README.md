@@ -61,8 +61,7 @@
 |---|---|
 | [**ArchitectAgent Spec v3.1.0**](governance/ARCHITECT_SPEC_v3.1.0.md) | Canonical spec v3.1.0 for the Phase 6 governance baseline; Phase 6.1 active hardening lane |
 | [ArchitectAgent Spec v2.0.0](governance/ARCHITECT_SPEC_v2.0.0.md) | Historical baseline (superseded by v3.1.0 for canonical sequence control) |
-| [Phase state anchors](../README.md#whats-active-v311-phase-61) · [VERSION](../VERSION) · [PR Procession](governance/ADAAD_PR_PROCESSION_2026-03.md) | Operational state source of truth: README “What’s active: v3.1.1 (Phase 6.1)”, semantic version pin, and canonical Phase 6 procession closure |
-| [Constitution](CONSTITUTION.md) | Hard governance constraints; 14 rules; cannot be overridden |
+| [Constitution](CONSTITUTION.md) | Hard governance constraints; rule set is versioned (see Constitution + governance artifact for current count); cannot be overridden |
 | [Architecture Contract](ARCHITECTURE_CONTRACT.md) | Interface and boundary contracts |
 | [Security](SECURITY.md) | Auth, signing, fail-closed controls |
 | [Threat model](THREAT_MODEL.md) | Attack surfaces and mitigations |

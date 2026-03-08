@@ -36,7 +36,7 @@ Here's how the loop works:
 
 2/ Proposals compete in a genetic algorithm — best ideas survive, can be cross-bred
 
-3/ Winners face 16 constitutional rules. ONE failure = full halt.
+3/ Winners face a versioned constitutional rule set (see Constitution + governance artifact for current count). ONE failure = full halt.
 
 4/ Everything is SHA-256 hash-chained permanently
 

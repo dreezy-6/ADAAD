@@ -16,7 +16,7 @@
 ```
 ADAAD-6 · Stable Release (v1.0.0)          ✅ COMPLETE
     │
-    │  HMAC remediation · all 11 constitutional rules enforced
+    │  HMAC remediation · v0.2.0 constitutional rule set enforced
     │  MCP co-pilot · Android resource_bounds · lock file ownership
     │  forensic service parameterization · 170 verified test files
     │
@@ -53,7 +53,7 @@ ADAAD-9 · Developer Experience (v1.3)       ✅ COMPLETE — 2026-03-05
 | Advancement | Status |
 |---|---|
 | HMAC verification stub remediated (Cryovant) | ✅ |
-| All 11 constitutional rules enforced (v0.2.0) | ✅ |
+| Constitutional rule set enforced (v0.2.0, version-qualified) | ✅ |
 | FastAPI lifespan migrated | ✅ |
 | MCP co-pilot integration (4 servers) | ✅ |
 | Android platform monitor + `resource_bounds` enforcement | ✅ |

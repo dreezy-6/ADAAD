@@ -30,7 +30,14 @@ Every mutation passes through constitutional evaluation. Every rule is versioned
 
 ---
 
-## The Fourteen Rules
+## Constitutional Rule Set (Versioned)
+
+Canonical rule-count wording source:
+
+- Human-readable: `docs/CONSTITUTION.md`
+- Machine-readable: `governance/constitutional_rule_count.json` (derived from `runtime/governance/constitution.yaml`)
+
+Rule count is versioned. Downstream docs should avoid hard-coded totals and instead reference the canonical sources above for the current count.
 
 | Rule | Enabled | Severity | Purpose |
 |------|---------|----------|---------|
@@ -63,7 +70,7 @@ Every mutation passes through constitutional evaluation. Every rule is versioned
 
 ## Phase 5 Federation Extensions (v0.3.0)
 
-Two new BLOCKING rules were added in v0.3.0 to enforce constitutional governance over multi-repo federation:
+v0.3.0 introduced two additional BLOCKING federation rules. Rule count is versioned and canonicalized by `runtime/governance/constitution.yaml` (`rules` array) and this Constitution; avoid hard-coding totals in downstream docs.
 
 ### `federation_dual_gate`
 Every federated mutation must receive `GovernanceGate.approve_mutation()` approval in **both** the source repository and the destination repository before any cross-repo propagation may execute. A gate failure in either repo rejects the federated proposal unconditionally (fail-closed). Enforced in `runtime/governance/federation/mutation_broker.py`.

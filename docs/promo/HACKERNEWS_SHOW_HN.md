@@ -19,7 +19,7 @@ The problem I was trying to solve: AI code suggestion tools are great at volume,
 **How the loop works:**
 1. Three agents independently propose mutations each epoch
 2. Proposals compete in a BLX-alpha genetic algorithm population
-3. Winners face 16 deterministic constitutional rules — one blocking failure halts everything
+3. Winners face a versioned deterministic constitutional rule set — one blocking failure halts everything
 4. Approved changes are SHA-256 hash-chained into an append-only evidence ledger
 5. Scoring weights self-calibrate via momentum gradient descent across epochs
 
