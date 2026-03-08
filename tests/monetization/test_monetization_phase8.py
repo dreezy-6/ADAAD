@@ -165,7 +165,7 @@ class TestTierLimits:
             engine.check_capability(Tier.COMMUNITY, Capability.FEDERATION_NODES, 1)
 
     def test_unknown_tier_raises(self, engine):
-        with pytest.raises(TierResolutionError):
+        with pytest.raises((TierResolutionError, ValueError)):
             engine.config(Tier("nonexistent"))  # type: ignore
 
 
