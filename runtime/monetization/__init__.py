@@ -1,64 +1,68 @@
 # SPDX-License-Identifier: Apache-2.0
-"""ADAAD Phase 8 — Enterprise SaaS Monetization Layer.
+"""ADAAD Monetization Package — Phase 8.
 
-This package governs API access tiers, usage metering, license validation,
-and billing integration for InnovativeAI LLC's commercial ADAAD offering.
-
-Architectural invariants:
-- All monetization gates are fail-closed: unauthenticated or over-quota
-  requests are rejected before reaching the governance pipeline.
-- Tier limits are deterministic and replay-safe (no wall-clock in core logic).
-- The constitutional governance pipeline is NEVER bypassed for any tier.
-- Enterprise licenses are validated via HMAC-signed tokens, not database lookups.
-- Usage events are append-only and hash-chained (mirrors ledger architecture).
-
-Tier hierarchy (ascending capability):
-  COMMUNITY → PRO → ENTERPRISE
-
-Founder: Dustin L. Reid · InnovativeAI LLC · Blackwell, Oklahoma
+Exports the complete commercial layer:
+  M8-01 · TierEngine           — three-tier capability enforcement
+  M8-02 · ApiKeyManager        — HMAC-signed bearer tokens
+  M8-03 · UsageTracker         — append-only epoch metering
+  M8-04 · BillingGateway       — Stripe webhook processor
+  M8-05 · MonetizationMiddleware — FastAPI middleware + API routes
+  M8-06 · OrgRegistry          — event-sourced org store
+  M8-07 · NotificationDispatcher — Slack/PagerDuty/webhook outbound
+  M8-08 · OnboardingService    — self-serve org creation + key provisioning
 """
-
-from __future__ import annotations
 
 from runtime.monetization.tier_engine import (
     Tier,
+    Capability,
     TierConfig,
+    TierEngine,
+    TierLimitExceeded,
     TIER_COMMUNITY,
     TIER_PRO,
     TIER_ENTERPRISE,
-    TierEngine,
-    TierLimitExceeded,
-    TierResolutionError,
+    ALL_TIERS,
+    tier_gte,
 )
-from runtime.monetization.api_key_manager import (
-    ApiKey,
-    ApiKeyManager,
-    ApiKeyValidationError,
-    KeyStatus,
+from runtime.monetization.api_key_manager import ApiKeyManager, ApiKey
+from runtime.monetization.usage_tracker import UsageTracker, UsageEvent, QuotaExceededError
+from runtime.monetization.billing_gateway import BillingGateway, BillingLifecycleEvent, BillingEventType
+from runtime.monetization.middleware import build_monetization_router
+from runtime.monetization.org_registry import (
+    OrgRegistry,
+    Organisation,
+    OrgStatus,
+    OrgLifecycleEvent,
+    OrgNotFound,
+    OrgAlreadyExists,
 )
-from runtime.monetization.usage_tracker import (
-    UsageEvent,
-    UsageTracker,
-    QuotaExceededError,
+from runtime.monetization.notification_dispatcher import (
+    NotificationDispatcher,
+    NotificationPayload,
+    NotifiableEvent,
+    ChannelConfig,
+    ChannelType,
 )
+from runtime.monetization.onboarding_service import OnboardingService, OnboardingResult
 
 __all__ = [
     # Tiers
-    "Tier",
-    "TierConfig",
-    "TIER_COMMUNITY",
-    "TIER_PRO",
-    "TIER_ENTERPRISE",
-    "TierEngine",
-    "TierLimitExceeded",
-    "TierResolutionError",
-    # API Keys
-    "ApiKey",
-    "ApiKeyManager",
-    "ApiKeyValidationError",
-    "KeyStatus",
+    "Tier", "Capability", "TierConfig", "TierEngine", "TierLimitExceeded",
+    "TIER_COMMUNITY", "TIER_PRO", "TIER_ENTERPRISE", "ALL_TIERS", "tier_gte",
+    # Keys
+    "ApiKeyManager", "ApiKey",
     # Usage
-    "UsageEvent",
-    "UsageTracker",
-    "QuotaExceededError",
+    "UsageTracker", "UsageEvent", "QuotaExceededError",
+    # Billing
+    "BillingGateway", "BillingLifecycleEvent", "BillingEventType",
+    # Middleware
+    "build_monetization_router",
+    # Orgs
+    "OrgRegistry", "Organisation", "OrgStatus", "OrgLifecycleEvent",
+    "OrgNotFound", "OrgAlreadyExists",
+    # Notifications
+    "NotificationDispatcher", "NotificationPayload", "NotifiableEvent",
+    "ChannelConfig", "ChannelType",
+    # Onboarding
+    "OnboardingService", "OnboardingResult",
 ]

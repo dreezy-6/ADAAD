@@ -1,0 +1,152 @@
+name: Phase 8 · Commercial Wiring Gate
+
+on:
+  push:
+    branches:
+      - "feat/phase8-full-commercial-v320"
+      - main
+  pull_request:
+    paths:
+      - "runtime/monetization/**"
+      - "app/api/**"
+      - "tools/adaad_admin.py"
+      - "ui/aponi/pricing.html"
+      - "server.py"
+      - "tests/monetization/**"
+
+jobs:
+  # ── Job 1: Full unit test suite ──────────────────────────────────────────
+  unit-tests:
+    name: "Monetization unit tests (71 required)"
+    runs-on: ubuntu-latest
+    env:
+      ADAAD_ENV: test
+      ADAAD_API_SIGNING_KEY: "adaad-ci-test-signing-key-32bytes"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.server.txt pytest pytest-cov
+      - name: Run monetization tests with coverage
+        run: |
+          python -m pytest tests/monetization/ \
+            --tb=short -q \
+            --cov=runtime/monetization \
+            --cov=app/api \
+            --cov-report=term-missing \
+            --cov-fail-under=85
+      - name: Assert 71 tests collected
+        run: |
+          COUNT=$(python -m pytest tests/monetization/ --collect-only -q 2>&1 | grep "selected" | grep -oE '[0-9]+' | head -1)
+          echo "Collected: $COUNT tests"
+          [ "$COUNT" -ge 71 ] || (echo "Expected ≥71 tests, got $COUNT" && exit 1)
+
+  # ── Job 2: Server import smoke ───────────────────────────────────────────
+  import-smoke:
+    name: "Server import smoke test"
+    runs-on: ubuntu-latest
+    env:
+      ADAAD_API_SIGNING_KEY: "smoke-test-signing-key-32bytesXX"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.server.txt
+      - name: All Phase 8 modules import cleanly
+        run: |
+          python -c "
+          from runtime.monetization import (
+              TierEngine, ApiKeyManager, UsageTracker, BillingGateway,
+              OrgRegistry, OnboardingService, NotificationDispatcher,
+              build_monetization_router,
+          )
+          from app.api.webhooks import build_webhook_router
+          from app.api.admin import build_admin_router
+          from app.api.orgs import build_orgs_router
+          from app.api.checkout import build_checkout_router
+          print('All Phase 8 imports OK')
+          "
+
+  # ── Job 3: Admin CLI smoke ───────────────────────────────────────────────
+  admin-cli:
+    name: "Admin CLI smoke test"
+    runs-on: ubuntu-latest
+    env:
+      ADAAD_API_SIGNING_KEY: "adaad-ci-test-signing-key-32bytes"
+      ADAAD_ADMIN_TOKEN: "ci-admin-token"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.server.txt
+      - name: CLI help renders
+        run: python tools/adaad_admin.py --help
+      - name: CLI health check
+        run: python tools/adaad_admin.py health
+
+  # ── Job 4: Invariant check — GovernanceGate never bypassed ───────────────
+  governance-invariant:
+    name: "INVARIANT · GovernanceGate never bypassed by tier logic"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Scan monetization modules for GovernanceGate bypass patterns
+        run: |
+          # No monetization code may skip/bypass GovernanceGate
+          VIOLATIONS=$(grep -rn \
+            "bypass\|skip_governance\|no_gate\|gate=False\|gate_disabled" \
+            runtime/monetization/ app/api/ \
+            --include="*.py" 2>/dev/null | grep -v "test_\|#" | wc -l)
+          echo "Potential bypass patterns: $VIOLATIONS"
+          [ "$VIOLATIONS" -eq 0 ] || (echo "INVARIANT M8-CONST-0 VIOLATED" && exit 1)
+
+  # ── Job 5: Pricing page sanity ───────────────────────────────────────────
+  pricing-page:
+    name: "Pricing page HTML sanity"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pricing page contains all three tier names
+        run: |
+          grep -q "Community" ui/aponi/pricing.html
+          grep -q "Pro"       ui/aponi/pricing.html
+          grep -q "\$49"      ui/aponi/pricing.html
+          grep -q "\$499"     ui/aponi/pricing.html
+          grep -q "submitOnboard" ui/aponi/pricing.html
+          grep -q "beginCheckout" ui/aponi/pricing.html
+          echo "Pricing page sanity OK"
+
+  # ── Job 6: SPDX headers ─────────────────────────────────────────────────
+  spdx-headers:
+    name: "SPDX-License-Identifier headers"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SPDX headers in new modules
+        run: |
+          MISSING=0
+          for f in \
+            runtime/monetization/org_registry.py \
+            runtime/monetization/notification_dispatcher.py \
+            runtime/monetization/onboarding_service.py \
+            app/api/webhooks.py \
+            app/api/admin.py \
+            app/api/orgs.py \
+            app/api/checkout.py \
+            tools/adaad_admin.py; do
+            if ! grep -q "SPDX-License-Identifier" "$f"; then
+              echo "MISSING SPDX header: $f"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          [ "$MISSING" -eq 0 ] || exit 1
+          echo "SPDX headers OK"

@@ -4,13 +4,55 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.api.nexus.mutate import router as mutate_router
 from runtime.monetization.middleware import build_monetization_router
+
+# ---------------------------------------------------------------------------
+# Phase 8 — Monetization & integration layer
+# ---------------------------------------------------------------------------
+
+from runtime.monetization.middleware import build_monetization_router
+from runtime.monetization.tier_engine import TierEngine
+from runtime.monetization.api_key_manager import ApiKeyManager
+from runtime.monetization.usage_tracker import UsageTracker
+from runtime.monetization.org_registry import OrgRegistry
+from runtime.monetization.onboarding_service import OnboardingService
+from runtime.monetization.notification_dispatcher import NotificationDispatcher
+from runtime.monetization.billing_gateway import BillingGateway
+from app.api.webhooks import build_webhook_router, _handle_billing_lifecycle
+from app.api.admin import build_admin_router
+from app.api.orgs import build_orgs_router
+from app.api.checkout import build_checkout_router
+
+# ---------------------------------------------------------------------------
+# Shared service singletons (initialised at import time)
+# ---------------------------------------------------------------------------
+
+_tier_engine   = TierEngine()
+_usage_tracker = UsageTracker()
+_org_registry  = OrgRegistry()
+_notifications = NotificationDispatcher(on_result=None)
+
+_signing_key_env = os.environ.get(ApiKeyManager.ENV_SIGNING_KEY, "")
+_key_manager: Optional[ApiKeyManager] = (
+    ApiKeyManager(signing_key=_signing_key_env.encode())
+    if _signing_key_env else None
+)
+_onboarding: Optional[OnboardingService] = (
+    OnboardingService(_org_registry, _key_manager)
+    if _key_manager else None
+)
+_billing_gateway = BillingGateway(
+    on_lifecycle_event = _handle_billing_lifecycle,
+    webhook_secret     = os.environ.get("ADAAD_STRIPE_WEBHOOK_SECRET", ""),
+    price_pro          = os.environ.get("ADAAD_STRIPE_PRICE_PRO", ""),
+    price_enterprise   = os.environ.get("ADAAD_STRIPE_PRICE_ENTERPRISE", ""),
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -38,8 +80,30 @@ class SPAStaticFiles(StaticFiles):
         return FileResponse(str(self._index_path))
 
 app = FastAPI(title="InnovativeAI-adaad Unified Server")
+
+# Core mutation router
 app.include_router(mutate_router)
 app.include_router(build_monetization_router())
+
+# Phase 8 — Monetization, webhooks, admin, self-serve orgs
+app.include_router(build_monetization_router())
+
+app.include_router(build_webhook_router(
+    billing_gateway = _billing_gateway,
+    org_registry    = _org_registry,
+    onboarding      = _onboarding,
+    notifications   = _notifications,
+))
+
+if _onboarding is not None:
+    app.include_router(build_orgs_router(_org_registry, _onboarding, _tier_engine))
+    app.include_router(build_admin_router(
+        _org_registry, _onboarding, _usage_tracker, _tier_engine
+    ))
+
+# Checkout (Stripe) — always registered; returns 503 if keys not configured
+app.include_router(build_checkout_router())
+
 
 
 @app.on_event("startup")
@@ -252,6 +316,15 @@ def governance_reviewer_calibration(
     calibration["constitutional_floor"] = "enforced"
 
     return {"schema_version": "1.0", "authn": authn, "data": calibration}
+
+@app.get("/pricing")
+def pricing_page() -> FileResponse:
+    """Serve the ADAAD pricing / upgrade page."""
+    pricing = APONI_DIR / "pricing.html"
+    if not pricing.exists():
+        raise HTTPException(status_code=404, detail="Pricing page not found")
+    return FileResponse(str(pricing), media_type="text/html")
+
 
 # Must be last so it can handle deep-link fallbacks after API routes
 app.mount("/", SPAStaticFiles(directory=str(APONI_DIR), html=True, index_path=INDEX), name="aponi")

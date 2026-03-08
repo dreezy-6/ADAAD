@@ -1,3 +1,70 @@
+## [3.3.0] — 2026-03-08  Phase 8 Commercial Wiring Layer
+
+### Added
+
+**M8-06 · OrgRegistry** (`runtime/monetization/org_registry.py`)
+- Event-sourced, thread-safe organisation store with full lifecycle (create/tier/status/delete)
+- Immutable `OrgLifecycleEvent` records with SHA-256 content hashes
+- `get_by_stripe()` for Stripe customer ID correlation
+- `flush_events()` for persistence boundary (Redis/Postgres-ready)
+
+**M8-07 · NotificationDispatcher** (`runtime/monetization/notification_dispatcher.py`)
+- Fire-and-forget Slack / PagerDuty / generic HTTP webhook outbound notifications
+- Subscribed-event filtering, HMAC signatures on generic webhooks
+- One-retry with 1.5 s backoff; failures logged, never silent
+- 8 `NotifiableEvent` types: `tier_changed`, `payment_failed`, `gate_halt`, `epoch_quota_exceeded`, etc.
+
+**M8-08 · OnboardingService** (`runtime/monetization/onboarding_service.py`)
+- Atomic self-serve org creation + API key provisioning in single governed transaction
+- Org ID slug validation (RFC-compliant, 3-63 chars, lowercase alphanumeric + hyphens)
+- `rotate_key()` — new key issued, old key stays valid until explicitly revoked
+
+**M8-09 · Webhook Router** (`app/api/webhooks.py`)
+- `POST /webhooks/stripe` — Stripe billing lifecycle → tier transitions via BillingGateway
+- `POST /webhooks/github` — GitHub App events → governance gate triggers
+- Auto-onboards org on `subscription.created` if org_id not yet registered
+- Both endpoints fail-closed on invalid/missing HMAC signatures
+
+**M8-10 · Admin Router** (`app/api/admin.py`)
+- `GET  /api/admin/dashboard` — MRR, ARR, active org counts
+- `GET  /api/admin/orgs` — filterable org listing
+- `POST /api/admin/orgs` — provision org + key
+- `PUT  /api/admin/orgs/{id}/tier` — tier override
+- `PUT  /api/admin/orgs/{id}/status` — status override
+- `POST /api/admin/orgs/{id}/keys/rotate` — key rotation
+- `GET  /api/admin/revenue` — MRR/ARR breakdown by tier
+- Gated behind `ADAAD_ADMIN_TOKEN` env var (constant-time comparison)
+
+**M8-11 · Public Orgs Router** (`app/api/orgs.py`)
+- `POST /api/orgs` — self-serve org creation (Community: immediate key; Paid: Stripe redirect)
+- `GET  /api/orgs/{id}/capabilities` — tier capability summary
+- IP-based creation rate limiter (3 creates / 5 min)
+
+**M8-12 · Stripe Checkout Router** (`app/api/checkout.py`)
+- `POST /api/checkout/session` — creates Stripe Checkout session, returns hosted URL
+- `GET  /api/checkout/success` — post-payment landing confirmation
+- `GET  /api/checkout/portal` — Stripe Customer Portal session (self-serve billing mgmt)
+- Graceful 503 when Stripe keys not configured (dev mode safe)
+
+**Pricing & Conversion Page** (`ui/aponi/pricing.html`)
+- Full pricing/upgrade landing page matching Aponi design language
+- Interactive tier comparison table, FAQ, self-serve Community onboarding form
+- Stripe Checkout redirect for Pro/Enterprise
+- Served at `GET /pricing`
+
+**Admin CLI** (`tools/adaad_admin.py`)
+- `org create|list|tier|delete` — full org lifecycle from terminal
+- `key generate|rotate|verify` — key management
+- `revenue` — MRR/ARR dashboard in terminal
+- `health` — environment variable checklist
+
+### Modified
+- `server.py` — all Phase 8 routers wired; shared service singletons initialised at startup
+- `runtime/monetization/__init__.py` — all new symbols exported
+
+### Tests
+- 71 tests total (36 new: T8-16..T8-31), all passing
+
 # Changelog
 
 ## [3.2.0] — 2026-03-08 · feat/phase8-saas-monetization-v320 · Phase 8 — Enterprise SaaS Monetization Layer
