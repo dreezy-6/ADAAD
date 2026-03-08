@@ -1,45 +1,59 @@
 # SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
-from tools import fix_import_boundaries
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 
-def _issue(rule: str, path: str = "app/main.py", line: int = 1) -> fix_import_boundaries.FixIssue:
-    return fix_import_boundaries.FixIssue(path=path, line=line, column=0, message="m", rule=rule)
+def _run_tool(tmp_path: Path, source: str, *, mode: str = "auto") -> tuple[dict, str]:
+    target = tmp_path / "sample.py"
+    target.write_text(source, encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, "fix_import_boundaries.py", str(target), "--mode", mode, "--format", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(proc.stdout), target.read_text(encoding="utf-8")
 
 
-def test_app_runtime_internal_violation_rewrites_runtime_to_runtime_api() -> None:
-    issue = _issue("app_runtime_internal_violation")
-    new_line, outcome = fix_import_boundaries._handle_app_runtime_internal_violation(issue, "from runtime.core import Engine\n")
-    assert new_line == "from runtime.api.core import Engine\n"
-    assert outcome.status == "fixed"
+def test_auto_mode_moves_import_to_single_consumer(tmp_path: Path) -> None:
+    payload = """
+import os
 
 
-def test_legacy_agent_namespace_violation_rewrites_namespace() -> None:
-    issue = _issue("legacy_agent_namespace_violation")
-    new_line, outcome = fix_import_boundaries._handle_legacy_agent_namespace_violation(issue, "import app.agents.scheduler as scheduler\n")
-    assert new_line == "import adaad.agents.scheduler as scheduler\n"
-    assert outcome.status == "fixed"
+def build():
+    return os.path.join("a", "b")
+""".lstrip()
+
+    report, updated = _run_tool(tmp_path, payload, mode="auto")
+
+    assert report["applied_fix_count"] == 1
+    assert report["suggested_fix_count"] == 0
+    assert report["verification"]["verified_applied_fix_count"] == 1
+    assert "#" not in updated
+    assert "def build():\n    import os\n" in updated
+    assert not updated.startswith("import os\n")
 
 
-def test_runtime_imports_app_violation_uses_explicit_mapping_only() -> None:
-    issue = _issue("runtime_imports_app_violation", path="runtime/engine.py")
-    new_line, outcome = fix_import_boundaries._handle_runtime_imports_app_violation(issue, "from app.agents.router import Router\n")
-    assert new_line == "from adaad.agents.router import Router\n"
-    assert outcome.status == "fixed"
+def test_auto_mode_keeps_source_when_fix_is_manual(tmp_path: Path) -> None:
+    payload = """
+import os
+
+ROOT = os.getcwd()
 
 
+def build():
+    return os.path.join(ROOT, "x")
+""".lstrip()
 
-def test_runtime_imports_app_violation_requires_manual_when_unknown() -> None:
-    issue = _issue("runtime_imports_app_violation", path="runtime/engine.py")
-    new_line, outcome = fix_import_boundaries._handle_runtime_imports_app_violation(issue, "from app.main import create_app\n")
-    assert new_line == "from app.main import create_app\n"
-    assert outcome.status == "manual-required"
+    report, updated = _run_tool(tmp_path, payload, mode="auto")
 
-
-def test_layer_boundary_violation_requires_explicit_scope_mapping() -> None:
-    issue = _issue("layer_boundary_violation", path="adaad/orchestrator/run.py")
-    new_line, outcome = fix_import_boundaries._handle_layer_boundary_violation(issue, "from app.main import bootstrap\n")
-    assert new_line == "from app.main import bootstrap\n"
-    assert outcome.status == "manual-required"
-    assert "LAYER_BOUNDARY_MANUAL_MAPPINGS" in outcome.detail
+    assert report["applied_fix_count"] == 0
+    assert report["suggested_fix_count"] == 1
+    assert report["verification"]["verified_applied_fix_count"] == 0
+    assert updated == payload
+    assert report["suggested"][0]["classification"] == "manual"
