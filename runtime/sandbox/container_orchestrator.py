@@ -209,7 +209,15 @@ class ContainerOrchestrator:
             self._journal(_EVENT_JOB_ORPHAN_RECOVERED, {"job_id": job_id, "worker_id": worker_id})
         leased = self._job_queue.lease_next(worker_id=worker_id, now_ts=now_ts)
         if leased is not None:
-            self._journal(_EVENT_JOB_LEASED, {"job_id": leased["job_id"], "worker_id": worker_id})
+            self._journal(
+                _EVENT_JOB_LEASED,
+                {
+                    "job_id": leased["job_id"],
+                    "worker_id": worker_id,
+                    "lease_id": leased.get("lease_id", ""),
+                    "lease_expires_at": leased.get("lease_expires_at"),
+                },
+            )
         return leased
 
     def heartbeat_job(self, *, job_id: str, worker_id: str, now_ts: float | None = None) -> bool:
@@ -217,14 +225,31 @@ class ContainerOrchestrator:
             return False
         ok = self._job_queue.heartbeat(job_id=job_id, worker_id=worker_id, now_ts=now_ts)
         if ok:
-            self._journal(_EVENT_JOB_HEARTBEAT, {"job_id": job_id, "worker_id": worker_id})
+            row = self._job_queue.get(job_id)
+            self._journal(
+                _EVENT_JOB_HEARTBEAT,
+                {
+                    "job_id": job_id,
+                    "worker_id": worker_id,
+                    "heartbeat_at": None if row is None else row.get("heartbeat_at"),
+                    "lease_expires_at": None if row is None else row.get("lease_expires_at"),
+                },
+            )
         return ok
 
-    def complete_job(self, *, job_id: str, succeeded: bool, error: str = "", now_ts: float | None = None) -> bool:
+    def complete_job(
+        self,
+        *,
+        job_id: str,
+        succeeded: bool,
+        worker_id: str = "",
+        error: str = "",
+        now_ts: float | None = None,
+    ) -> bool:
         if self._job_queue is None:
             return False
         state = "succeeded" if succeeded else "failed"
-        return self._job_queue.complete(job_id=job_id, state=state, error=error, now_ts=now_ts)
+        return self._job_queue.complete(job_id=job_id, state=state, worker_id=worker_id, error=error, now_ts=now_ts)
 
     def pool_status(self) -> Dict[str, Any]:
         return {

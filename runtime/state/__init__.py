@@ -16,6 +16,7 @@ from runtime.state.migration import (
     migrate_registry_json_to_sqlite,
 )
 from runtime.state.mutation_job_queue import MutationJobQueueStore
+from runtime.state.mutation_job_transitions import MutationJobTransitionStore
 from runtime.state.registry_store import CryovantRegistryStore
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "migrate_registry_json_to_sqlite",
     "migrate_ledger_json_to_sqlite",
     "MutationJobQueueStore",
+    "MutationJobTransitionStore",
 ]
