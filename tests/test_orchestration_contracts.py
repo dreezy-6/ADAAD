@@ -152,3 +152,75 @@ def test_mutation_orchestration_blocked_payload_isolation() -> None:
         exit_after_boot=False,
     )
     assert second.payload == {"run_cycle": False}
+
+
+def test_mutation_orchestration_enqueue_and_dispatch_idempotent(tmp_path: Path) -> None:
+    from runtime.state.mutation_job_queue import MutationJobQueueStore
+    from runtime.sandbox.container_orchestrator import ContainerOrchestrator
+
+    queue = MutationJobQueueStore(tmp_path / "jobs.json", backend="json")
+    orchestrator = ContainerOrchestrator(job_queue=queue)
+    service = MutationOrchestrationService(queue_store=queue, orchestrator=orchestrator)
+
+    payload = {"mutation": "m-9", "epoch": "e-9"}
+    first = service.enqueue_mutation_job(payload, dedupe_key="demo", now_ts=1.0)
+    second = service.enqueue_mutation_job(payload, dedupe_key="demo", now_ts=2.0)
+    dispatched = service.dispatch_next_job(worker_id="worker-1", now_ts=3.0)
+    duplicate_dispatch = service.dispatch_next_job(worker_id="worker-2", now_ts=3.1)
+
+    assert first.payload["job_id"] == second.payload["job_id"]
+    assert dispatched.reason == "job_dispatched"
+    assert duplicate_dispatch.reason == "no_queued_jobs"
+
+
+def test_mutation_orchestration_worker_crash_recovery_retry(tmp_path: Path) -> None:
+    from runtime.state.mutation_job_queue import MutationJobQueueStore
+    from runtime.sandbox.container_orchestrator import ContainerOrchestrator
+
+    queue = MutationJobQueueStore(tmp_path / "jobs.json", backend="json", lease_timeout_s=5)
+    orchestrator = ContainerOrchestrator(job_queue=queue)
+    service = MutationOrchestrationService(queue_store=queue, orchestrator=orchestrator)
+
+    enqueued = service.enqueue_mutation_job({"mutation": "m-crash"}, now_ts=10.0)
+    job_id = enqueued.payload["job_id"]
+    service.dispatch_next_job(worker_id="worker-a", now_ts=11.0)
+
+    recovered = queue.recover_orphans(now_ts=20.0)
+    assert job_id in recovered
+    assert queue.get(job_id)["state"] == "queued"
+
+
+def test_orchestrator_heartbeat_updates_explicit_lease_fields(tmp_path: Path) -> None:
+    from runtime.state.mutation_job_queue import MutationJobQueueStore
+    from runtime.sandbox.container_orchestrator import ContainerOrchestrator
+
+    events: list[tuple[str, dict[str, object]]] = []
+    queue = MutationJobQueueStore(tmp_path / "jobs.json", backend="json", lease_timeout_s=10)
+    queue.enqueue({"mutation": "m-heartbeat"}, now_ts=1.0)
+    orchestrator = ContainerOrchestrator(job_queue=queue, journal_fn=lambda t, p: events.append((t, p)))
+
+    leased = orchestrator.lease_next_job(worker_id="worker-a", now_ts=2.0)
+    assert leased is not None
+    assert orchestrator.heartbeat_job(job_id=leased["job_id"], worker_id="worker-a", now_ts=5.0)
+
+    heartbeat_events = [payload for et, payload in events if et == "mutation_job_heartbeat.v1"]
+    assert heartbeat_events
+    assert heartbeat_events[-1]["lease_expires_at"] == 15.0
+    assert heartbeat_events[-1]["heartbeat_at"] == 5.0
+
+
+def test_mutation_orchestration_exactly_once_completion(tmp_path: Path) -> None:
+    from runtime.state.mutation_job_queue import MutationJobQueueStore
+    from runtime.sandbox.container_orchestrator import ContainerOrchestrator
+
+    queue = MutationJobQueueStore(tmp_path / "jobs.json", backend="json", lease_timeout_s=5)
+    orchestrator = ContainerOrchestrator(job_queue=queue)
+    service = MutationOrchestrationService(queue_store=queue, orchestrator=orchestrator)
+
+    enqueued = service.enqueue_mutation_job({"mutation": "m-once"}, now_ts=1.0)
+    job_id = enqueued.payload["job_id"]
+    service.dispatch_next_job(worker_id="worker-a", now_ts=2.0)
+
+    assert orchestrator.complete_job(job_id=job_id, succeeded=True, worker_id="worker-a", now_ts=3.0)
+    assert not orchestrator.complete_job(job_id=job_id, succeeded=False, worker_id="worker-b", now_ts=3.5)
+    assert queue.get(job_id)["state"] == "succeeded"

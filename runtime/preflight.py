@@ -37,6 +37,21 @@ _MUTATION_PROPOSAL_SCHEMA_PATH = ROOT_DIR / "schemas" / "llm_mutation_proposal.v
 _RUNTIME_PROFILE_PATH = ROOT_DIR / "governance_runtime_profile.lock.json"
 
 
+_STRICT_GOVERNANCE_MODES = frozenset({"strict", "audit"})
+
+
+def _legacy_mutation_validation_enabled() -> bool:
+    configured = os.getenv("ADAAD_ENABLE_LEGACY_MUTATION_PREFLIGHT")
+    if configured is not None:
+        return _is_truthy_env(configured)
+    env = (os.getenv("ADAAD_ENV") or "").strip().lower()
+    replay_mode = (os.getenv("ADAAD_REPLAY_MODE") or "").strip().lower()
+    recovery_tier = (os.getenv("ADAAD_RECOVERY_TIER") or "").strip().lower()
+    strict_override = _is_truthy_env(os.getenv("ADAAD_GOVERNANCE_STRICT", ""))
+    governance_strict = env in {"staging", "production", "prod"} or replay_mode in _STRICT_GOVERNANCE_MODES or recovery_tier in _STRICT_GOVERNANCE_MODES or strict_override
+    return not governance_strict
+
+
 def _is_truthy_env(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -453,6 +468,14 @@ def validate_mutation(request: MutationRequest, tier: Optional[Any] = None) -> D
     Preflight validation - delegates to constitutional evaluation when tier is provided.
     """
     if tier is None:
+        if not _legacy_mutation_validation_enabled():
+            return {
+                "ok": False,
+                "reason": "legacy_mutation_preflight_disabled",
+                "reason_code": "legacy_mutation_preflight_disabled",
+                "operation_class": "governance-critical",
+                "context": {"hint": "provide tier or set ADAAD_ENABLE_LEGACY_MUTATION_PREFLIGHT=1"},
+            }
         return _legacy_validate_mutation(request)
     from runtime.constitution import evaluate_mutation
 

@@ -92,10 +92,9 @@ def main() -> int:
     args = parser.parse_args()
 
     content = SNAPSHOT_DOC.read_text(encoding="utf-8")
-    block = _metadata_block()
-    updated = _replace_managed_block(content, block)
-
     if args.write:
+        block = _metadata_block()
+        updated = _replace_managed_block(content, block)
         SNAPSHOT_DOC.write_text(updated, encoding="utf-8")
         print(f"updated {SNAPSHOT_DOC.relative_to(ROOT)}")
         return 0

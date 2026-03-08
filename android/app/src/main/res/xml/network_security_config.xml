@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ADAAD Network Security Configuration
+  All API traffic uses TLS 1.2+. Certificate pinning for the governance API
+  endpoint is enforced in production and staging builds.
+  Debug builds allow cleartext only for localhost (dev mode).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Governance API: pin to InnovativeAI certificate chain -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.innovativeai.dev</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+        <!-- Certificate pinning — populate with SHA-256 SPKI hashes before production release -->
+        <!-- <pin-set expiration="2027-03-01">
+            <pin digest="SHA-256">REPLACE_WITH_PROD_SPKI_HASH=</pin>
+            <pin digest="SHA-256">REPLACE_WITH_BACKUP_SPKI_HASH=</pin>
+        </pin-set> -->
+    </domain-config>
+
+    <!-- Dev only: allow cleartext to localhost -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

@@ -8,6 +8,8 @@ This page catalogs `ADAAD_*` environment variables currently read by executable 
 
 - **`ADAAD_ROOT`**: pin this explicitly in production service units to a trusted, immutable deployment root. Mis-pointing it can make maintenance jobs execute against the wrong tree or data directory.
 
+- **`ADAAD_FEDERATION_HMAC_KEY`**: required when federation is enabled. The platform boot-halts fail-closed if this is absent or below minimum length. Supply via a secret manager in every federation-enabled deployment.
+
 - Secrets (`*_KEY*`, `*_TOKEN*`, `*_SECRET*`) should come from a secret manager, not checked-in env files.
 
 - Boolean flags in ADAAD generally treat `1/true/yes/on` as enabled; any other value is treated as disabled unless code documents a stricter parser.
@@ -59,6 +61,7 @@ This page catalogs `ADAAD_*` environment variables currently read by executable 
 | `ADAAD_EVIDENCE_BUNDLE_SIGNING_ALGO` | `unset` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/evidence_bundle.py` |
 | `ADAAD_EVIDENCE_BUNDLE_SIGNING_KEY` | `'', unset` | secret string; required in secured deployments | runtime/governance engine | `runtime/evolution/evidence_bundle.py` |
 | `ADAAD_FEDERATION_ENABLED` | `'false'` | boolean-like: `1|true|yes|on` enables | runtime/governance engine | `runtime/governance/federation/coordination.py` |
+| `ADAAD_FEDERATION_HMAC_KEY` | `unset` | secret string; **required** when `ADAAD_FEDERATION_ENABLED=true`. Minimum length enforced at boot; absent or undersized key raises `FederationKeyError` (fail-closed). Must be sourced from a secret manager. | runtime/governance engine | `runtime/governance/federation/key_registry.py` |
 | `ADAAD_FEDERATION_LOCK_TTL` | `'120'` | numeric string parsed as int/float | runtime/governance engine | `runtime/governance/federation/coordination.py` |
 | `ADAAD_FEDERATION_MANIFEST_TTL` | `'300'` | numeric string parsed as int/float | runtime/governance engine | `runtime/governance/federation/coordination.py` |
 | `ADAAD_FITNESS_CACHE_MAXSIZE` | `'2048'` | numeric string parsed as int/float | application orchestration (app) | `app/main.py` |
@@ -86,12 +89,12 @@ This page catalogs `ADAAD_*` environment variables currently read by executable 
 | `ADAAD_LLM_TIMEOUT_SECONDS` | `unset` | numeric string parsed as int/float | runtime/governance engine | `runtime/intelligence/llm_provider.py` |
 | `ADAAD_LOCAL_PEER_ID` | `'local-node'` | string/JSON per caller contract | runtime/governance engine | `runtime/governance/federation/coherence_validator.py` |
 | `ADAAD_MAX_COMPLEXITY_DELTA` | `'5'` | numeric string parsed as int/float | runtime/governance engine | `runtime/constitution.py` |
-| `ADAAD_MAX_CPU_SECONDS` | `'30'` | numeric string parsed as int/float | runtime/governance engine | `runtime/governance/validators/resource_bounds.py` |
+| `ADAAD_RESOURCE_CPU_SECONDS` | `'30'` | numeric string parsed as int/float; canonical resource limit (deprecated alias: `ADAAD_MAX_CPU_SECONDS`) | runtime/governance engine | `runtime/governance/validators/resource_bounds.py` |
 | `ADAAD_MAX_EPOCH_ENTROPY_BITS` | `'4096'` | numeric string parsed as int/float | runtime/governance engine | `runtime/constitution.py` |
-| `ADAAD_MAX_MEMORY_MB` | `'512', unset` | numeric string parsed as int/float | runtime/governance engine | `runtime/governance/validators/resource_bounds.py` |
+| `ADAAD_RESOURCE_MEMORY_MB` | `'512'` | numeric string parsed as int/float; canonical resource limit (deprecated alias: `ADAAD_MAX_MEMORY_MB`) | runtime/governance engine | `runtime/governance/validators/resource_bounds.py`, `runtime/sandbox/executor.py` |
 | `ADAAD_MAX_MUTATIONS_PER_HOUR` | `'60'` | numeric string parsed as int/float | UI/API helpers | `ui/aponi_dashboard.py` |
 | `ADAAD_MAX_MUTATION_ENTROPY_BITS` | `'128'` | numeric string parsed as int/float | runtime/governance engine | `runtime/constitution.py` |
-| `ADAAD_MAX_WALL_SECONDS` | `'30'` | numeric string parsed as int/float | runtime/governance engine | `runtime/governance/validators/resource_bounds.py` |
+| `ADAAD_RESOURCE_WALL_SECONDS` | `'30'` | numeric string parsed as int/float; canonical resource limit (deprecated alias: `ADAAD_MAX_WALL_SECONDS`) | runtime/governance engine | `runtime/governance/validators/resource_bounds.py` |
 | `ADAAD_MCP_JWT_SECRET` | `''` | numeric string parsed as int/float | runtime/governance engine | `runtime/mcp/server.py` |
 | `ADAAD_MODEL_ID` | `'unknown_model'` | enum string defined by caller | runtime/governance engine | `runtime/evolution/baseline.py` |
 | `ADAAD_MUTATION_EMA_ALPHA` | `'0.3'` | numeric string parsed as int/float | agent/orchestrator packages | `adaad/agents/mutation_engine.py` |
@@ -117,6 +120,7 @@ This page catalogs `ADAAD_*` environment variables currently read by executable 
 | `ADAAD_PROVIDER_ID` | `'unknown_provider'` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/baseline.py` |
 | `ADAAD_RECOVERY_TIER` | `unset` | enum string defined by caller | agent/orchestrator packages | `adaad/orchestrator/dispatcher.py` |
 | `ADAAD_REPLAY_MODE` | `'', 'audit', 'off', 'strict', unset` | enum string defined by caller; `strict` requires deterministic provider/seed | runtime/governance engine + agent/orchestrator packages | `runtime/governance/foundation/determinism.py`, `adaad/orchestrator/dispatcher.py` |
+| `ADAAD_ROADMAP_AMENDMENT_TRIGGER_INTERVAL` | `'10'` | numeric string parsed as int; minimum number of successful epochs between roadmap amendment proposal emissions; value is read once at epoch start and held constant for the epoch duration — cannot be modified mid-epoch; values < 1 are rejected with `ValueError` at boot | runtime/autonomy (Phase 6) | `runtime/autonomy/loop.py` (M6-03 integration) |
 | `ADAAD_REPLAY_PROOF_ALGO` | `unset` | string/JSON per caller contract | runtime/governance engine | `runtime/evolution/replay_attestation.py` |
 | `ADAAD_REPLAY_PROOF_KEYRING_PATH` | `unset` | secret string; required in secured deployments | runtime/governance engine | `runtime/evolution/replay_attestation.py` |
 | `ADAAD_REPLAY_PROOF_KEY_ID` | `'replay-proof-dev'` | secret string; required in secured deployments | runtime/governance engine | `runtime/evolution/replay_attestation.py` |

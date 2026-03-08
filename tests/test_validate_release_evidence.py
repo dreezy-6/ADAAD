@@ -300,3 +300,93 @@ def test_validator_rejects_missing_authoritative_marker(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "authoritative evidence matrix marker must appear exactly once" in result.stdout
+
+
+
+def _load_validator_module():
+    import importlib.util
+
+    module_path = Path(__file__).resolve().parents[1] / "scripts" / "validate_release_evidence.py"
+    spec = importlib.util.spec_from_file_location("validate_release_evidence", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_markdown_table_parser_handles_normal_rows() -> None:
+    module = _load_validator_module()
+
+    row = "| `ci-status-requirements` | x | [ci](../../.github/workflows/ci.yml) | Complete |"
+    cells = module._parse_markdown_table_row(row)
+
+    assert cells == ["`ci-status-requirements`", "x", "[ci](../../.github/workflows/ci.yml)", "Complete"]
+
+
+def test_markdown_table_parser_handles_escaped_pipe_in_evidence() -> None:
+    module = _load_validator_module()
+
+    row = (
+        "| `versioned-docs-spec-links` | x | "
+        "proof text with escaped pipe \\| marker and [spec](../governance/schema_versioning_and_migration.md) | Complete |"
+    )
+    cells = module._parse_markdown_table_row(row)
+
+    assert cells is not None
+    assert len(cells) == 4
+    assert "\\|" in cells[2]
+
+
+def test_validator_reports_explicit_parse_error_for_short_row(tmp_path: Path) -> None:
+    repo = tmp_path
+    (repo / "scripts").mkdir(parents=True, exist_ok=True)
+    src = Path(__file__).resolve().parents[1] / "scripts" / "validate_release_evidence.py"
+    (repo / "scripts" / "validate_release_evidence.py").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    _seed_links(repo)
+
+    _write_matrix(
+        repo,
+        """
+| Claim ID | External claim | Objective evidence artifacts (must resolve in-repo) | Status |
+| --- | --- | --- | --- |
+| `ci-status-requirements` | x | [ci](../../.github/workflows/ci.yml) | Complete |
+| `replay-proof-outputs` | x | [det](../../tests/determinism) | Complete |
+| `forensic-bundle-examples` | x | [for](../governance/FORENSIC_BUNDLE_LIFECYCLE.md) |
+| `codeql-status` | x | [codeql](../../.github/workflows/codeql.yml) | Complete |
+| `versioned-docs-spec-links` | x | [spec](../governance/schema_versioning_and_migration.md) | Complete |
+""".strip()
+        + "\n",
+    )
+
+    result = _run_validator(repo)
+
+    assert result.returncode == 1
+    assert "matrix parse error at line" in result.stdout
+    assert "expected 4 columns, found 3" in result.stdout
+
+
+def test_validator_accepts_relative_links_with_anchors(tmp_path: Path) -> None:
+    repo = tmp_path
+    (repo / "scripts").mkdir(parents=True, exist_ok=True)
+    src = Path(__file__).resolve().parents[1] / "scripts" / "validate_release_evidence.py"
+    (repo / "scripts" / "validate_release_evidence.py").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    _seed_links(repo)
+
+    _write_matrix(
+        repo,
+        """
+| Claim ID | External claim | Objective evidence artifacts (must resolve in-repo) | Status |
+| --- | --- | --- | --- |
+| `ci-status-requirements` | x | [ci](../../.github/workflows/ci.yml#jobs) | Complete |
+| `replay-proof-outputs` | x | [det](../../tests/determinism/README.md#determinism) | Complete |
+| `forensic-bundle-examples` | x | [for](../governance/FORENSIC_BUNDLE_LIFECYCLE.md#lifecycle) | Complete |
+| `codeql-status` | x | [codeql](../../.github/workflows/codeql.yml#scan) | Complete |
+| `versioned-docs-spec-links` | x | [spec](../governance/schema_versioning_and_migration.md#v1) | Complete |
+""".strip()
+        + "\n",
+    )
+
+    result = _run_validator(repo, "--require-complete")
+
+    assert result.returncode == 0

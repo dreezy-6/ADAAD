@@ -39,6 +39,7 @@ DEFAULT_ROTATION_INTERVAL_SECONDS = 60 * 60 * 24 * 30
 _HMAC_SIGNATURE_PREFIX = "sha256:"
 _STRICT_ENVS = frozenset({"staging", "production", "prod"})
 _KNOWN_ENVS = frozenset({"dev", "test", "staging", "production", "prod"})
+_STRICT_GOVERNANCE_MODES = frozenset({"strict", "audit"})
 _ARTIFACT_HMAC_CONFIG: Dict[str, Dict[str, str]] = {
     "replay_proof": {
         "specific_env_prefix": "ADAAD_REPLAY_PROOF_KEY_",
@@ -60,6 +61,25 @@ _ARTIFACT_HMAC_CONFIG: Dict[str, Dict[str, str]] = {
 
 def dev_mode() -> bool:
     return os.environ.get("CRYOVANT_DEV_MODE", "0").lower() in {"1", "true", "yes", "on"}
+
+
+def _is_truthy_env(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _governance_strict_context() -> bool:
+    env = (os.getenv("ADAAD_ENV") or "").strip().lower()
+    replay_mode = (os.getenv("ADAAD_REPLAY_MODE") or "").strip().lower()
+    recovery_tier = (os.getenv("ADAAD_RECOVERY_TIER") or "").strip().lower()
+    strict_override = _is_truthy_env(os.getenv("ADAAD_GOVERNANCE_STRICT", ""))
+    return env in _STRICT_ENVS or replay_mode in _STRICT_GOVERNANCE_MODES or recovery_tier in _STRICT_GOVERNANCE_MODES or strict_override
+
+
+def _legacy_feature_enabled(flag: str) -> bool:
+    configured = os.getenv(flag)
+    if configured is None:
+        return not _governance_strict_context()
+    return _is_truthy_env(configured)
 
 
 
@@ -241,6 +261,14 @@ def verify_payload_signature(
     else:
         signed_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
     if signature in {f"cryovant-static-{signed_digest}", f"cryovant-static-{signed_digest.split(':', 1)[1]}"}:
+        if not _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_STATIC_SIGNATURES"):
+            metrics.log(
+                event_type="cryovant_legacy_static_payload_signature_disabled",
+                payload={"key_id": key_id, "env_mode": env_mode()},
+                level="CRITICAL",
+                element_id=ELEMENT_ID,
+            )
+            return False
         if env_mode() == "dev" and dev_mode():
             metrics.log(
                 event_type="cryovant_legacy_static_payload_signature_accepted",
@@ -284,7 +312,7 @@ class TokenExpiredError(ValueError):
 
 
 def verify_session(token: str) -> bool:
-    """Legacy session verification path.
+    """Deprecated session verification path.
 
     Deprecated: this method fails closed outside explicit dev-mode contexts.
     Callers must migrate to :func:`verify_governance_token`.
@@ -297,6 +325,9 @@ def verify_session(token: str) -> bool:
 
     if env in _STRICT_ENVS:
         raise GovernanceTokenError("verify_session_legacy_disabled_strict_env")
+
+    if not _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_VERIFY_SESSION"):
+        raise GovernanceTokenError("verify_session_legacy_flag_disabled")
 
     if env == "dev" and dev_mode():
         metrics.log(
@@ -327,7 +358,7 @@ def _assert_dev_token_not_expired(token: str) -> None:
 
 
 def _accept_dev_token(token: str) -> bool:
-    """Accept only the configured legacy development token."""
+    """Accept only the configured deprecated development token."""
 
     dev_token = (os.getenv("CRYOVANT_DEV_TOKEN") or "").strip()
     if not dev_token or token != dev_token:
@@ -390,7 +421,7 @@ def verify_governance_token(
     """Verify production governance token with explicit dev-mode fallback.
 
     Accepted tokens are HMAC-signed ``cryovant-gov-v1`` envelopes with expiry.
-    Legacy ``CRYOVANT_DEV_TOKEN`` override remains available only for explicit
+    Deprecated ``CRYOVANT_DEV_TOKEN`` override remains available only for explicit
     development mode (``ADAAD_ENV=dev`` and ``CRYOVANT_DEV_MODE`` enabled).
     """
 
@@ -400,6 +431,8 @@ def verify_governance_token(
 
     dev_token = os.environ.get("CRYOVANT_DEV_TOKEN", "").strip()
     if dev_token and candidate == dev_token:
+        if not _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_DEV_TOKEN_OVERRIDE"):
+            return False
         return env_mode() == "dev" and dev_mode()
 
     parts = candidate.split(":", 5)
@@ -471,7 +504,7 @@ def _valid_signature(
     agent_dir: Path | None = None,
     lineage_hash: str | None = None,
 ) -> bool:
-    """Validate certificate signatures with HMAC-first + legacy fallback.
+    """Validate certificate signatures with HMAC-first + compat fallback.
 
     When ``lineage_hash`` is provided, it is treated as authoritative and
     ``agent_dir`` is not re-hashed. Callers passing both must ensure the hash
@@ -490,7 +523,10 @@ def _valid_signature(
         ):
             return True
 
-    if _legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature):
+    if (
+        _legacy_feature_enabled("ADAAD_ENABLE_LEGACY_STATIC_SIGNATURES")
+        and (_legacy_static_signature_allowed(signature) or _dev_signature_allowed(signature))
+    ):
         metrics.log(
             event_type="cryovant_legacy_signature_accepted",
             payload={"signature_prefix": signature[:24], "env_mode": env_mode()},
@@ -762,12 +798,13 @@ def validate_environment() -> bool:
     return True
 
 
-def certify_agents(app_agents_dir: Path) -> Tuple[bool, List[str]]:
+def certify_agents(app_agents_dir: Path, *, repair: bool = False) -> Tuple[bool, List[str]]:
     """
     Validate that each agent contains the required metadata triplet and signed certificate.
     """
     missing: List[str] = []
     signature_failures: List[str] = []
+    validation_findings: List[str] = []
     agents_root = Path(app_agents_dir)
     if not agents_root.exists():
         metrics.log(event_type="cryovant_no_agents_dir", payload={"path": str(app_agents_dir)}, level="ERROR", element_id=ELEMENT_ID)
@@ -799,14 +836,28 @@ def certify_agents(app_agents_dir: Path) -> Tuple[bool, List[str]]:
 
             lineage_hash = certificate.get("lineage_hash")
             if not lineage_hash and _valid_signature(signature, agent_dir=candidate, lineage_hash=computed_lineage_hash):
-                lineage_hash = computed_lineage_hash
-                certificate["lineage_hash"] = lineage_hash
-                cert.write_text(json.dumps(certificate, indent=2), encoding="utf-8")
-                journal.write_entry(agent_id=agent_id, action="certificate_evolved", payload={"lineage_hash": lineage_hash})
+                if repair:
+                    lineage_hash = computed_lineage_hash
+                    certificate["lineage_hash"] = lineage_hash
+                    cert.write_text(json.dumps(certificate, indent=2), encoding="utf-8")
+                    journal.write_entry(agent_id=agent_id, action="certificate_evolved", payload={"lineage_hash": lineage_hash})
+                    journal.write_entry(
+                        agent_id=agent_id,
+                        action="certificate_repaired",
+                        payload={"repair": True, "lineage_hash": lineage_hash},
+                    )
+                    metrics.log(
+                        event_type="cryovant_certificate_repaired",
+                        payload={"agent_id": agent_id, "certificate": str(cert), "lineage_hash": lineage_hash},
+                        level="INFO",
+                        element_id=ELEMENT_ID,
+                    )
+                else:
+                    validation_findings.append(f"{agent_id}:missing_lineage_hash")
             if not _valid_signature(signature, agent_dir=candidate, lineage_hash=computed_lineage_hash):
                 signature_failures.append(agent_id)
-    if missing or signature_failures:
-        errors = missing + [f"{name}:invalid_signature" for name in signature_failures]
+    if missing or signature_failures or validation_findings:
+        errors = missing + [f"{name}:invalid_signature" for name in signature_failures] + validation_findings
         metrics.log(event_type="cryovant_certify_failed", payload={"missing": errors}, level="ERROR", element_id=ELEMENT_ID)
         for agent in signature_failures:
             journal.write_entry(agent_id=agent, action="certify_failed", payload={"reason": "invalid_signature"})

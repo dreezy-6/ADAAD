@@ -19,7 +19,7 @@ python onboard.py
 ## What success looks like
 
 ```
-  ✔ Python 3.12.3
+  ✔ Python 3.11.9
   ✔ Virtual environment ready
   ✔ Dependencies installed
   ✔ ADAAD_ENV=dev
@@ -114,6 +114,23 @@ Full reference: [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md)
 | Replay fails on first run | Normal — run audit mode first to establish baseline |
 | Policy rejection in dry-run | Expected fail-closed behaviour — inspect `--verbose` output |
 | Dashboard unreachable | Check server started: `curl http://127.0.0.1:8000/api/health` |
+
+---
+
+## Federation mode (multi-repo)
+
+> Only needed for deployments connecting multiple ADAAD nodes. Single-repo deployments skip this entirely.
+
+```bash
+# Required: valid HMAC key material for the federation transport
+export ADAAD_FEDERATION_ENABLED=true
+export ADAAD_FEDERATION_HMAC_KEY=<your-key-from-secret-manager>
+
+# Start with federation enabled
+python -m app.main --verbose
+```
+
+The boot guard validates key material before any federation surface activates. Absent or undersized key → `FederationKeyError` (fail-closed). Key rotation procedure: `docs/runbooks/hmac_key_rotation.md`.
 
 ---
 

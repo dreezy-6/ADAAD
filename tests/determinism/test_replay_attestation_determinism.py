@@ -90,6 +90,8 @@ def _attach_trust_metadata(bundle: dict, *, key_epoch_id: str = "epoch-1") -> di
         "canonical_digest": trusted.get("canonical_digest"),
         "policy_hashes": trusted.get("policy_hashes", {}),
         "fitness_weight_snapshot_hash": trusted.get("fitness_weight_snapshot_hash"),
+        "replay_environment_fingerprint": trusted.get("replay_environment_fingerprint", {}),
+        "replay_environment_fingerprint_hash": trusted.get("replay_environment_fingerprint_hash"),
         "trust_root_metadata": trusted.get("trust_root_metadata"),
     }
     proof_digest = sha256_prefixed_digest(unsigned_bundle)
@@ -123,6 +125,8 @@ def test_replay_attestation_digest_is_identical_for_identical_input(tmp_path) ->
     bundle_b = builder_b.build_bundle(epoch_id)
 
     assert bundle_a["fitness_weight_snapshot_hash"] == "sha256:" + ("f" * 64)
+    assert bundle_a["replay_environment_fingerprint_hash"].startswith("sha256:")
+    assert "runtime_version" in bundle_a["replay_environment_fingerprint"]
     assert bundle_a["proof_digest"] == bundle_b["proof_digest"]
     assert bundle_a["signature_bundle"] == bundle_b["signature_bundle"]
     assert canonical_json(bundle_a) == canonical_json(bundle_b)
@@ -335,3 +339,25 @@ def test_replay_attestation_schema_rejects_algorithm_incompatible_signature(tmp_
 
     errors = validate_replay_proof_schema(bundle)
     assert any("invalid_ed25519_signature" in err for err in errors)
+
+
+def test_replay_attestation_rejects_environment_mismatch_even_when_replay_digest_matches(tmp_path) -> None:
+    epoch_id = "epoch-env-mismatch"
+    ledger = LineageLedgerV2(tmp_path / "lineage_env_mismatch.jsonl")
+    _seed_epoch(ledger, epoch_id=epoch_id)
+
+    builder = ReplayProofBuilder(ledger=ledger, proofs_dir=tmp_path / "proofs", key_id="proof-key")
+    bundle = builder.build_bundle(epoch_id)
+
+    expected_environment = dict(bundle["replay_environment_fingerprint"])
+    expected_environment["env_whitelist_digest"] = "sha256:" + ("9" * 64)
+
+    result = verify_replay_proof_bundle(
+        bundle,
+        keyring={"proof-key": "adaad-replay-proof-dev-secret:proof-key"},
+        expected_replay_environment_fingerprint=expected_environment,
+    )
+
+    assert not result["ok"]
+    assert result["error"] == "replay_environment_fingerprint_mismatch"
+

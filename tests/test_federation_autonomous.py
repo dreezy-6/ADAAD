@@ -70,11 +70,51 @@ class TestGossipProtocol:
         g = GossipProtocol(registry=r)
         return r, g
 
+    def _valid_raw_event(self, *, event_id: str = "e1", origin_peer_id: str = "n2", event_type: str = "test", payload=None):
+        from runtime.governance.federation.peer_discovery import GossipEvent
+        emitted_at = time.time()
+        digest = GossipEvent.compute_lineage_digest(
+            event_id=event_id,
+            origin_peer_id=origin_peer_id,
+            event_type=event_type,
+            emitted_at=emitted_at,
+        )
+        return {
+            "event_id": event_id,
+            "origin_peer_id": origin_peer_id,
+            "event_type": event_type,
+            "payload": payload if payload is not None else {},
+            "emitted_at": emitted_at,
+            "lineage_digest": digest,
+        }
+
     def test_receive_valid_event_enqueued(self):
         _, g = self._setup()
-        g.receive({"event_id":"e1","origin_peer_id":"n2","event_type":"test","payload":{},"emitted_at":time.time(),"lineage_digest":"sha256:"+"a"*64})
+        raw = self._valid_raw_event()
+        result = g.receive(raw)
         events = g.pending_events()
+        assert result is not None
         assert len(events) == 1 and events[0].event_id == "e1"
+
+    def test_receive_rejects_non_dict_payload(self):
+        _, g = self._setup()
+        raw = self._valid_raw_event(payload=["not", "a", "dict"])
+        result = g.receive(raw)
+        assert result is None
+        assert g.pending_events() == []
+
+    def test_receive_rejects_missing_or_bad_digest(self):
+        _, g = self._setup()
+
+        bad_digest = self._valid_raw_event()
+        bad_digest["lineage_digest"] = "sha256:" + "0" * 64
+        assert g.receive(bad_digest) is None
+
+        missing_digest = self._valid_raw_event()
+        del missing_digest["lineage_digest"]
+        assert g.receive(missing_digest) is None
+
+        assert g.pending_events() == []
 
     def test_receive_malformed_event_rejected(self):
         _, g = self._setup()
@@ -83,7 +123,7 @@ class TestGossipProtocol:
 
     def test_pending_events_drains_queue(self):
         _, g = self._setup()
-        g.receive({"event_id":"e2","origin_peer_id":"n3","event_type":"sync","payload":{},"emitted_at":time.time(),"lineage_digest":"sha256:"+"b"*64})
+        g.receive(self._valid_raw_event(event_id="e2", origin_peer_id="n3", event_type="sync"))
         g.pending_events()
         assert g.pending_events() == []
 
@@ -169,6 +209,54 @@ class TestFederationConsensusEngine:
         eng._state.current_term = 5
         result = eng.request_vote(candidate_id="node-2", candidate_term=3)
         assert result["vote_granted"] is False
+
+    def test_journal_fail_open_emits_status_and_does_not_raise(self, caplog):
+        from runtime.governance.federation.consensus import FederationConsensusEngine, JournalFailureMode
+        caplog.set_level("ERROR")
+
+        def _boom(_event_type, _payload):
+            raise RuntimeError("journal unavailable")
+
+        eng = FederationConsensusEngine(
+            node_id="node-1",
+            peer_ids=["node-2", "node-3"],
+            journal_fn=_boom,
+            journal_failure_mode=JournalFailureMode.FAIL_OPEN,
+        )
+
+        eng.start_election()
+
+        status = eng.last_journal_status
+        assert status is not None
+        assert status.ok is False
+        assert status.event_type == "federation_election_started.v1"
+        assert status.exception_class == "RuntimeError"
+        assert status.exception_message == "journal unavailable"
+        assert status.fail_closed_triggered is False
+        assert "federation_journal_write_failed" in caplog.text
+        assert "exception_class=RuntimeError" in caplog.text
+        assert "exception_message=journal unavailable" in caplog.text
+
+    def test_journal_fail_closed_raises_for_critical_event(self):
+        from runtime.governance.federation.consensus import FederationConsensusEngine, JournalFailureMode
+
+        def _boom(_event_type, _payload):
+            raise ValueError("write failed")
+
+        eng = FederationConsensusEngine(
+            node_id="node-1",
+            peer_ids=["node-2", "node-3"],
+            journal_fn=_boom,
+            journal_failure_mode=JournalFailureMode.FAIL_CLOSED_CRITICAL,
+        )
+
+        with pytest.raises(ValueError, match="write failed"):
+            eng.start_election()
+
+        status = eng.last_journal_status
+        assert status is not None
+        assert status.ok is False
+        assert status.fail_closed_triggered is True
 
 
 class TestFederationNodeSupervisor:

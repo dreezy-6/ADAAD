@@ -11,6 +11,14 @@ def test_sandbox_evidence_ledger_hash_chain(tmp_path):
         policy_hash="sha256:" + ("1" * 64),
         syscall_trace=("open", "read"),
         provider_ts="2026-02-14T00:00:00Z",
+        replay_environment_fingerprint={
+            "runtime_version": "3.11.9",
+            "dependency_lock_digest": "sha256:" + ("2" * 64),
+            "container_profile_digest": "sha256:" + ("3" * 64),
+            "filesystem_snapshot_digest": "sha256:" + ("4" * 64),
+            "seed_lineage": {"root_seed": "0001", "parent_seed": "", "current_seed": "0001"},
+        },
+        replay_diagnostics={"added": [], "removed": [], "modified": [], "post_filesystem_snapshot_digest": "sha256:" + ("5" * 64)},
     )
     first = ledger.append(payload)
     second = ledger.append(payload)
@@ -26,6 +34,13 @@ def test_sandbox_evidence_ledger_hash_chain(tmp_path):
     assert payload["preflight"]["ok"] is True
     assert payload["runtime_telemetry"] == {}
     assert payload["runtime_telemetry_hash"].startswith("sha256:")
+    assert payload["replay_environment_fingerprint_hash"].startswith("sha256:")
+    assert payload["runtime_version_hash"].startswith("sha256:")
+    assert payload["dependency_lock_digest_hash"].startswith("sha256:")
+    assert payload["container_profile_digest_hash"].startswith("sha256:")
+    assert payload["filesystem_snapshot_digest_hash"].startswith("sha256:")
+    assert payload["seed_lineage_hash"].startswith("sha256:")
+    assert payload["replay_diagnostics_hash"].startswith("sha256:")
 
 
 def test_sandbox_evidence_resource_accounting_is_deterministic():
@@ -59,6 +74,15 @@ def test_sandbox_evidence_runtime_telemetry_is_canonical():
         syscall_trace=("open", "read"),
         provider_ts="2026-02-14T00:00:00Z",
         runtime_telemetry={"b": 2, "a": 1},
+        replay_environment_fingerprint={
+            "runtime_version": "3.11.9",
+            "dependency_lock_digest": "sha256:" + ("2" * 64),
+            "container_profile_digest": "sha256:" + ("3" * 64),
+            "filesystem_snapshot_digest": "sha256:" + ("4" * 64),
+            "seed_lineage": {"root_seed": "0001", "parent_seed": "", "current_seed": "0001"},
+        },
+        replay_diagnostics={"added": [], "removed": [], "modified": [], "post_filesystem_snapshot_digest": "sha256:" + ("5" * 64)},
     )
     assert list(payload["runtime_telemetry"].keys()) == ["a", "b"]
     assert payload["runtime_telemetry_hash"].startswith("sha256:")
+    assert payload["replay_environment_fingerprint"]["runtime_version"] == "3.11.9"

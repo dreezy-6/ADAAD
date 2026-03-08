@@ -16,28 +16,16 @@ Dream mode handles mutation cycles for agents.
 """
 
 import json
-import os
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from adaad.agents.base_agent import stage_offspring
-from adaad.agents.discovery import agent_path_from_id, iter_agent_dirs, resolve_agent_id
-from runtime.api.app_layer import (
-    EntropyBudget,
-    FitnessEvaluator,
-    RuntimeDeterminismProvider,
-    SeededDeterminismProvider,
-    default_provider,
-    deterministic_token,
-    metrics,
-    require_replay_safe_provider,
-)
+from app.agents.base_agent import stage_offspring
+from app.agents.discovery import agent_path_from_id, iter_agent_dirs, resolve_agent_id
+from runtime import metrics
 from security import cryovant
 
 ELEMENT_ID = "Fire"
-DEFAULT_TASK_SAMPLE_SIZE = 3
-FULL_TASK_PAYLOAD_ENV = "ADAAD_METRICS_INCLUDE_FULL_TASKS"
-TASK_SAMPLE_SIZE_ENV = "ADAAD_DREAM_DISCOVERY_SAMPLE_SIZE"
 
 
 class DreamMode:
@@ -45,41 +33,9 @@ class DreamMode:
     Drives creative mutation cycles.
     """
 
-    def __init__(
-        self,
-        agents_root: Path,
-        lineage_dir: Path,
-        *,
-        replay_mode: str = "off",
-        recovery_tier: str | None = None,
-        provider: RuntimeDeterminismProvider | None = None,
-        aggression: float = 0.5,
-    ):
+    def __init__(self, agents_root: Path, lineage_dir: Path):
         self.agents_root = agents_root
         self.lineage_dir = lineage_dir
-        self.replay_mode = replay_mode
-        self.recovery_tier = recovery_tier
-        if provider is not None:
-            self.provider = provider
-        elif (replay_mode or "off").strip().lower() == "strict":
-            self.provider = SeededDeterminismProvider(seed="dream-mode-strict")
-        else:
-            self.provider = default_provider()
-        self._require_replay_safe_provider()
-        self.aggression = self._clamp_aggression(aggression)
-        self.entropy_budget = EntropyBudget()
-        self.fitness_evaluator = FitnessEvaluator()
-
-    def _require_replay_safe_provider(self) -> None:
-        normalized_mode = (self.replay_mode or "off").strip().lower()
-        if normalized_mode == "audit":
-            require_replay_safe_provider(self.provider, recovery_tier="audit")
-            return
-        require_replay_safe_provider(
-            self.provider,
-            replay_mode=self.replay_mode,
-            recovery_tier=self.recovery_tier,
-        )
 
     @staticmethod
     def _read_json(path: Path) -> Dict[str, object]:
@@ -106,44 +62,6 @@ class DreamMode:
             return None
         return scope
 
-
-    @staticmethod
-    def _clamp_aggression(aggression: float) -> float:
-        return max(0.0, min(1.0, float(aggression)))
-
-    def mutation_profile(self) -> dict[str, float]:
-        structural_preservation_probability = 1.0 - self.aggression
-        token_rewrite_upper_bound = max(1, int(64 * self.aggression))
-        return {
-            "aggression": self.aggression,
-            "structural_preservation_probability": structural_preservation_probability,
-            "token_rewrite_upper_bound": float(token_rewrite_upper_bound),
-        }
-
-    def write_dream_manifest(
-        self,
-        *,
-        agent_id: str,
-        epoch_id: str,
-        bundle_id: str,
-        staged_path: Path,
-        fitness: object,
-    ) -> Path:
-        """Persist deterministic dream-cycle metadata for audit and replay analysis."""
-        manifest_path = staged_path / "dream_manifest.json"
-        manifest = {
-            "agent_id": agent_id,
-            "epoch_id": epoch_id,
-            "bundle_id": bundle_id,
-            "staged_path": str(staged_path),
-            "lineage_dir": str(self.lineage_dir),
-            "replay_mode": self.replay_mode,
-            "recovery_tier": self.recovery_tier,
-            "fitness": fitness.to_dict(),
-        }
-        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return manifest_path
-
     def discover_tasks(self) -> List[str]:
         """
         Discover mutation-ready agents.
@@ -161,35 +79,10 @@ class DreamMode:
                 )
                 continue
             tasks.append(agent_id)
-
-        # Deterministic observability contract:
-        # - task ordering follows iter_agent_dirs + resolve_agent_id ordering.
-        # - sample uses a stable prefix so replay/audit payloads remain equivalent.
-        sample_size = self._task_sample_size()
-        payload: Dict[str, object] = {
-            "task_count": len(tasks),
-            "task_sample": tasks[:sample_size],
-        }
-        if self._include_full_task_metrics_payload():
-            payload["tasks"] = tasks
-
-        metrics.log(event_type="dream_discovery", payload=payload, level="INFO")
+        metrics.log(event_type="dream_discovery", payload={"tasks": tasks}, level="INFO")
         return tasks
 
-    @staticmethod
-    def _include_full_task_metrics_payload() -> bool:
-        value = os.getenv(FULL_TASK_PAYLOAD_ENV, "").strip().lower()
-        return value in {"1", "true", "yes", "on"}
-
-    @staticmethod
-    def _task_sample_size() -> int:
-        configured = os.getenv(TASK_SAMPLE_SIZE_ENV, str(DEFAULT_TASK_SAMPLE_SIZE)).strip()
-        try:
-            return max(0, int(configured))
-        except ValueError:
-            return DEFAULT_TASK_SAMPLE_SIZE
-
-    def run_cycle(self, agent_id: Optional[str] = None, *, epoch_id: str = "", bundle_id: str = "dream") -> Dict[str, str]:
+    def run_cycle(self, agent_id: Optional[str] = None) -> Dict[str, str]:
         """
         Run a single dream mutation cycle. Dream only stages candidates; it does not promote.
         """
@@ -217,22 +110,10 @@ class DreamMode:
             return {"status": "blocked", "agent": selected, "reason": "dream_scope_missing"}
 
         metrics.log(event_type="evolution_cycle_decision", payload={"selected_agent": selected}, level="INFO", element_id=ELEMENT_ID)
-        self._require_replay_safe_provider()
-        # Token is derived exclusively from stable replay inputs — never from provider
-        # call-count position. This guarantees identical mutation_content for identical
-        # (epoch_id, bundle_id, agent_id) inputs across any number of run_cycle calls
-        # on the same instance, satisfying the strict-mode reproducibility invariant.
-        token = deterministic_token(
-            epoch_id=epoch_id,
-            bundle_id=bundle_id,
-            agent_id=selected,
-            label="dream_token",
-            length=16,
-        )
-        mutation_content = f"{selected}-mutation-{token}"
+        mutation_content = f"{selected}-mutation-{time.time()}"
         handoff_contract = {
             "schema_version": "1.0",
-            "issued_at": self.provider.iso_now(),
+            "issued_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "issuer": "DreamMode",
             "agent": selected,
             "dream_scope": dream_scope,
@@ -245,27 +126,12 @@ class DreamMode:
             dream_mode=True,
             sandboxed=True,
             handoff_contract=handoff_contract,
-            mutation_intent="dream_mutation",
         )
         metrics.log(
             event_type="dream_candidate_generated",
             payload={"agent": selected, "staged_path": str(staged_path)},
             level="INFO",
             element_id=ELEMENT_ID,
-        )
-        fitness = self.fitness_evaluator.evaluate_content(mutation_content, constitution_ok=True)
-        metrics.log(
-            event_type="dream_mutation_fitness",
-            payload={"agent": selected, "fitness": fitness.to_dict(), "viable": fitness.is_viable()},
-            level="INFO" if fitness.is_viable() else "WARNING",
-            element_id=ELEMENT_ID,
-        )
-        self.write_dream_manifest(
-            agent_id=selected,
-            epoch_id=epoch_id,
-            bundle_id=bundle_id,
-            staged_path=staged_path,
-            fitness=fitness,
         )
         metrics.log(
             event_type="evolution_cycle_validation",
@@ -279,10 +145,4 @@ class DreamMode:
             level="INFO",
             element_id=ELEMENT_ID,
         )
-        return {
-            "status": "completed",
-            "agent": selected,
-            "staged_path": str(staged_path),
-            "fitness": str(fitness.score),
-            "viable": "true" if fitness.is_viable() else "false",
-        }
+        return {"status": "completed", "agent": selected, "staged_path": str(staged_path)}

@@ -28,20 +28,17 @@ from typing import Any, Dict, List
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
-import logging
-
-logger = logging.getLogger(__name__)
+from app.api.nexus.mutate import router as mutate_router
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = BASE_DIR / "data"
 STATE_FILE = DATA_DIR / "dashboard_state.json"
 ACTIONS_LOG = DATA_DIR / "actions.jsonl"
-GATE_LOCK_FILE = ROOT / "security" / "ledger" / "gate.lock"
+GATE_LOCK_FILE = BASE_DIR / "security" / "ledger" / "gate.lock"
 GATE_PROTOCOL = "adaad-gate/1.0"
 
 app = FastAPI(title="Aponi Dashboard Backend", version="1.0")
+app.include_router(mutate_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -132,9 +129,9 @@ def _gate_state() -> Dict[str, Any]:
             contents = GATE_LOCK_FILE.read_text(encoding="utf-8").strip()
             if contents:
                 reason = contents
-        except Exception as exc:
-            # Failed to read gate lock reason; keep gate locked but log for diagnostics.
-            logger.warning("Failed to read gate lock file '%s': %s", GATE_LOCK_FILE, exc)
+        except Exception:
+            # If reading the lock file fails, keep the existing reason value.
+            pass
 
     if reason:
         reason = reason[:280]
@@ -238,8 +235,8 @@ def nexus_protocol() -> Dict[str, Any]:
 
 @app.get("/api/nexus/agents")
 def nexus_agents() -> Dict[str, Any]:
-    _assert_gate_open()
-    agents_dir = ROOT / "app" / "agents"
+    gate = _assert_gate_open()
+    agents_dir = BASE_DIR / "app" / "agents"
     agents: List[Dict[str, Any]] = []
     if agents_dir.exists():
         for entry in sorted(agents_dir.iterdir(), key=lambda p: p.name):
