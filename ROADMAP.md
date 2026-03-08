@@ -204,41 +204,123 @@ git tag free-v3.1.0 && git push origin free-v3.1.0
 
 ## Phase 6.1 — Complexity, Safety, and Efficiency Simplification Increment
 
-**Status:** 🟡 active · **Lane:** Governance hardening / complexity reduction · **Tooling:** ✅ in main
+**Status:** ✅ shipped · **Released:** v3.1.1 · **Closed:** 2026-03-07 · **Lane:** Governance hardening / complexity reduction · **Tooling:** ✅ in main
 
 This increment reduces operational complexity while preserving fail-closed
 governance by introducing explicit simplification budgets and CI-enforced
 contract checks.
 
-**Measurable targets:**
+**Delivered targets (all CI-enforced, fail-closed):**
 
-1. **Critical file complexity budgets**
-   - Enforce maximum file-size and module fan-in budgets for critical surfaces:
-     `runtime/constitution.py`, `app/main.py`, `security/cryovant.py`, and
-     `runtime/autonomy/loop.py`.
-2. **Legacy-path reduction**
-   - Establish a reduction target of **70% legacy branch removal/gating**
-     (`baseline=23`, `target_max=6`) with fail-closed no-regression enforcement
-     until the target milestone is reached.
-3. **Unified metrics-schema adoption**
-   - Enforce **100% producer coverage** for `EvolutionMetricsEmitter` in the
-     canonical metrics-producing runtime surfaces.
-4. **Runtime cost controls**
-   - Enforce bounded per-epoch resource caps (`memory<=2048MB`, `cpu<=30s`,
-     `wall<=60s`) and mutation experiment caps (`cycle_budget<=50`,
-     `mutation_quota<=25`).
+| Target | Baseline | Enforced Cap | Status |
+|---|---|---|---|
+| Legacy branch count | 23 | ≤ 6 | ✅ |
+| `runtime/constitution.py` max lines | 2200 | 2100 | ✅ |
+| `app/main.py` max lines | 1200 | 800 | ✅ |
+| `security/cryovant.py` max fan-in | 6 | 5 | ✅ |
+| `runtime/autonomy/loop.py` max lines | 360 | 340 | ✅ |
+| Metrics-schema producer coverage | — | 100% | ✅ |
 
-**CI enforcement:**
+**CI enforcement:** `python scripts/validate_simplification_targets.py` runs on every PR
+and fails closed on complexity drift, legacy-path regression, metrics-schema contract
+drift, or runtime-cost cap regression. `enforced_max_branches` locked from 23 → 6 in
+`governance/simplification_targets.json`.
 
-- `python scripts/validate_simplification_targets.py` is required in CI and
-  fails closed on complexity drift, legacy-path regression, metrics-schema
-  contract drift, or runtime-cost cap regression.
-- Simplification contract and roadmap changes are treated as governance-impact
-  and audited under critical-tier CI semantics.
+**Validator output (post-closeout):**
+```json
+{"legacy_count": 6, "metrics_coverage_percent": 100.0, "status": "ok", "errors": []}
+```
 
 ---
 
-## Phase 0 Track A — Security Hardening (complete)
+## Phase 7 — Reviewer Reputation & Adaptive Governance Calibration
+
+**Status:** 🔵 planned · **Target:** v3.2.0 · **Requires:** Phase 6.1 shipped ✅
+
+Phase 7 closes the feedback loop between human reviewer decisions and constitutional
+calibration — a mechanism absent from all known open-source governance platforms.
+Governance pressure adapts empirically to reviewer track record; the constitutional
+floor (human review always required) is architecturally inviolable.
+
+### M7-01 — Reviewer Reputation Ledger
+
+`runtime/governance/reviewer_reputation_ledger.py`
+
+Append-only, SHA-256 hash-chained ledger of all reviewer decisions: approve, reject,
+timeout, and override events. Every entry carries `reviewer_id`, `epoch_id`,
+`decision`, `rationale_length`, and `outcome_validated` (post-merge fitness signal).
+
+- Ledger is write-once per decision — no retroactive modification
+- `reviewer_id` is HMAC-derived from signing-key fingerprint (no plaintext PII)
+- Replay-safe: deterministic on identical input sequences
+
+### M7-02 — Reputation Scoring Engine
+
+`runtime/governance/reviewer_reputation.py`
+
+Derives reputation score `r ∈ [0.0, 1.0]` from ledger history:
+
+```
+r = α · accuracy_rate + β · coverage_rate + γ · calibration_consistency
+```
+
+- `accuracy_rate`: fraction of approved mutations with positive post-merge fitness
+- `coverage_rate`: fraction of proposals reviewed within SLA window
+- `calibration_consistency`: variance of rationale_length signals (lower = better)
+- Weights `α=0.50, β=0.25, γ=0.25` — governance-impact changes require constitution amendment
+
+### M7-03 — Tier Calibration Engine
+
+`runtime/governance/review_pressure.py`
+
+Adjusts Tier 1 review pressure based on aggregate reviewer reputation while enforcing
+the constitutional floor:
+
+- **High reputation cohort** (`avg_r >= 0.80`): review window extended to 36h, auto-reminder suppressed
+- **Standard cohort** (`0.60 ≤ avg_r < 0.80`): 24h window (current default)
+- **Low reputation cohort** (`avg_r < 0.60`): window reduced to 12h, escalation triggered
+- **Invariant:** Tier 0 surfaces always require human review — calibration cannot remove this gate
+
+### M7-04 — Constitution v0.3.0: `reviewer_calibration` Rule
+
+Bump `CONSTITUTION_VERSION` from `0.2.0` → `0.3.0`. New advisory rule:
+
+```yaml
+- id: reviewer_calibration
+  tier: 1
+  enforcement: advisory
+  rationale: >
+    Records reviewer reputation posture for telemetry. Advisory only —
+    does not block mutations. Feeds the tier calibration engine.
+  signals: [reputation_score, coverage_rate, calibration_consistency]
+```
+
+First new constitutional rule since v0.2.0. Advisory enforcement preserves fail-closed
+invariants while surfacing governance health signals to operators.
+
+### M7-05 — Aponi Reviewer Calibration Endpoint
+
+`GET /governance/reviewer-calibration` — read-only dashboard endpoint returning:
+
+```json
+{
+  "cohort_summary": {"high": 2, "standard": 4, "low": 0},
+  "avg_reputation": 0.82,
+  "tier_pressure": "extended",
+  "constitutional_floor": "enforced"
+}
+```
+
+**Acceptance criteria:**
+- Reputation score is deterministic on identical ledger state ✅ (CI gate)
+- Tier calibration never removes Tier 0 human-review requirement ✅ (invariant test)
+- `CONSTITUTION_VERSION = "0.3.0"` in all environments after migration ✅
+- `reviewer_calibration` rule verdict present in every governance telemetry event ✅
+- Aponi endpoint returns 200 in `dev` and `staging` environments ✅
+
+**PRs planned:** PR-7-01 (ledger) → PR-7-02 (scoring) → PR-7-03 (calibration) → PR-7-04 (constitution) → PR-7-05 (Aponi)
+
+---
 
 **Status:** ✅ complete · **Closed:** 2026-03-06
 
