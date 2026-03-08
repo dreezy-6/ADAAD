@@ -90,6 +90,8 @@ def _attach_trust_metadata(bundle: dict, *, key_epoch_id: str = "epoch-1") -> di
         "canonical_digest": trusted.get("canonical_digest"),
         "policy_hashes": trusted.get("policy_hashes", {}),
         "fitness_weight_snapshot_hash": trusted.get("fitness_weight_snapshot_hash"),
+        "replay_environment_fingerprint": trusted.get("replay_environment_fingerprint", {}),
+        "replay_environment_fingerprint_hash": trusted.get("replay_environment_fingerprint_hash"),
         "trust_root_metadata": trusted.get("trust_root_metadata"),
     }
     proof_digest = sha256_prefixed_digest(unsigned_bundle)
@@ -123,6 +125,8 @@ def test_replay_attestation_digest_is_identical_for_identical_input(tmp_path) ->
     bundle_b = builder_b.build_bundle(epoch_id)
 
     assert bundle_a["fitness_weight_snapshot_hash"] == "sha256:" + ("f" * 64)
+    assert bundle_a["replay_environment_fingerprint_hash"].startswith("sha256:")
+    assert "runtime_version" in bundle_a["replay_environment_fingerprint"]
     assert bundle_a["proof_digest"] == bundle_b["proof_digest"]
     assert bundle_a["signature_bundle"] == bundle_b["signature_bundle"]
     assert canonical_json(bundle_a) == canonical_json(bundle_b)
