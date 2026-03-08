@@ -20,7 +20,17 @@
     "isolation_mode",
     "enforced_controls",
     "preflight",
-    "events"
+    "events",
+    "runtime_telemetry_hash",
+    "replay_environment_fingerprint",
+    "replay_environment_fingerprint_hash",
+    "runtime_version_hash",
+    "dependency_lock_digest_hash",
+    "container_profile_digest_hash",
+    "filesystem_snapshot_digest_hash",
+    "seed_lineage_hash",
+    "replay_diagnostics",
+    "replay_diagnostics_hash"
   ],
   "properties": {
     "manifest_hash": {
@@ -163,6 +173,125 @@
             "type": "string",
             "minLength": 1
           }
+        }
+      }
+    },
+    "runtime_telemetry": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "runtime_telemetry_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "replay_environment_fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime_version",
+        "dependency_lock_digest",
+        "container_profile_digest",
+        "filesystem_snapshot_digest",
+        "seed_lineage"
+      ],
+      "properties": {
+        "runtime_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dependency_lock_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "container_profile_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "filesystem_snapshot_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "seed_lineage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "root_seed",
+            "parent_seed",
+            "current_seed"
+          ],
+          "properties": {
+            "root_seed": {
+              "type": "string"
+            },
+            "parent_seed": {
+              "type": "string"
+            },
+            "current_seed": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "replay_environment_fingerprint_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "runtime_version_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "dependency_lock_digest_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "container_profile_digest_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "filesystem_snapshot_digest_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "seed_lineage_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "replay_diagnostics_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "replay_diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "added",
+        "removed",
+        "modified",
+        "post_filesystem_snapshot_digest"
+      ],
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "modified": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "post_filesystem_snapshot_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
         }
       }
     }

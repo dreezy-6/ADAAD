@@ -20,6 +20,7 @@ from runtime.evolution.lineage_v2 import LineageLedgerV2
 from runtime.evolution.replay import ReplayEngine
 from runtime.governance.deterministic_filesystem import read_file_deterministic
 from runtime.governance.foundation import ZERO_HASH, canonical_json, sha256_digest, sha256_prefixed_digest
+from runtime.sandbox.environment_snapshot import collect_pre_execution_snapshot
 from security import cryovant
 
 REPLAY_PROOFS_DIR = ROOT_DIR / "security" / "ledger" / "replay_proofs"
@@ -331,6 +332,19 @@ class ReplayProofBuilder:
                     return candidate
         return ZERO_HASH
 
+    def _replay_seed_for_epoch(self, epoch_id: str) -> str:
+        events = self.ledger.read_epoch(epoch_id)
+        for entry in events:
+            payload_raw = entry.get("payload")
+            payload: Dict[str, Any] = payload_raw if isinstance(payload_raw, dict) else {}
+            if entry.get("type") == "EpochStartEvent":
+                metadata = payload.get("metadata") or {}
+                if isinstance(metadata, dict):
+                    seed = metadata.get("seed")
+                    if isinstance(seed, str) and seed:
+                        return seed
+        return epoch_id
+
     def build_bundle(self, epoch_id: str) -> Dict[str, Any]:
         replay_state = self.replay_engine.replay_epoch(epoch_id)
         ledger_state_hash = self.ledger.get_epoch_digest(epoch_id) or replay_state.get("digest") or "sha256:0"
@@ -343,6 +357,9 @@ class ReplayProofBuilder:
         mutation_graph_fingerprint = "sha256:" + sha256_digest(read_file_deterministic(goal_graph_path))
         policy_hashes = self._policy_hashes(checkpoint_chain, epoch_id)
         fitness_weight_snapshot_hash = self._fitness_weight_snapshot_hash(epoch_id)
+        replay_environment_fingerprint = collect_pre_execution_snapshot({"replay_seed": self._replay_seed_for_epoch(epoch_id)})
+        replay_environment_fingerprint.pop("_tracked_files", None)
+        replay_environment_fingerprint.pop("_filesystem_state", None)
         unsigned_bundle = {
             "schema_version": "1.0",
             "epoch_id": epoch_id,
@@ -357,6 +374,8 @@ class ReplayProofBuilder:
             "canonical_digest": str(replay_state.get("canonical_digest") or sha256_digest(replay_state)),
             "policy_hashes": policy_hashes,
             "fitness_weight_snapshot_hash": fitness_weight_snapshot_hash,
+            "replay_environment_fingerprint": replay_environment_fingerprint,
+            "replay_environment_fingerprint_hash": sha256_prefixed_digest(replay_environment_fingerprint),
         }
         proof_digest = sha256_prefixed_digest(unsigned_bundle)
         signed_digest = proof_digest
@@ -450,6 +469,8 @@ def verify_replay_proof_bundle(
         "canonical_digest": bundle.get("canonical_digest"),
         "policy_hashes": bundle.get("policy_hashes", {}),
         "fitness_weight_snapshot_hash": bundle.get("fitness_weight_snapshot_hash"),
+        "replay_environment_fingerprint": bundle.get("replay_environment_fingerprint", {}),
+        "replay_environment_fingerprint_hash": bundle.get("replay_environment_fingerprint_hash"),
     }
     if "trust_root_metadata" in bundle:
         unsigned_bundle["trust_root_metadata"] = bundle.get("trust_root_metadata")

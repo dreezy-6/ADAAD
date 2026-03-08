@@ -16,6 +16,7 @@ from runtime.governance.validators.resource_bounds import (
     ResourceLimitEvent,
     _read_limit_with_deprecated_alias,
 )
+from runtime.sandbox.environment_snapshot import capture_post_execution_delta, collect_pre_execution_snapshot
 from runtime.sandbox.evidence import SandboxEvidenceLedger, build_sandbox_evidence, sign_bundle
 from runtime.sandbox.fs_rules import enforce_write_path_allowlist
 from runtime.sandbox.isolation import ContainerIsolationBackend, IsolationBackend, ProcessIsolationBackend
@@ -125,6 +126,8 @@ class HardenedSandboxExecutor:
         preflight: dict[str, Any],
         events: tuple[dict[str, Any], ...],
         runtime_telemetry: dict[str, Any],
+        replay_environment_fingerprint: dict[str, Any],
+        replay_diagnostics: dict[str, Any],
     ) -> None:
         evidence_payload = build_sandbox_evidence(
             manifest=manifest.to_dict(),
@@ -139,6 +142,8 @@ class HardenedSandboxExecutor:
             preflight=preflight,
             events=events,
             runtime_telemetry=runtime_telemetry,
+            replay_environment_fingerprint=pre_execution_snapshot,
+            replay_diagnostics=capture_post_execution_delta(pre_execution_snapshot),
         )
         signed_payload = sign_bundle(
             evidence_payload,
@@ -175,6 +180,8 @@ class HardenedSandboxExecutor:
         )
         validate_manifest(manifest)
         validate_policy(self.policy)
+
+        pre_execution_snapshot = collect_pre_execution_snapshot(manifest.to_dict())
 
         preflight = analyze_execution_plan(manifest=manifest, policy=self.policy)
         if not preflight.get("ok"):
@@ -285,6 +292,8 @@ class HardenedSandboxExecutor:
                     },
                 ),
                 runtime_telemetry=runtime_telemetry,
+                replay_environment_fingerprint=pre_execution_snapshot,
+                replay_diagnostics=capture_post_execution_delta(pre_execution_snapshot),
             )
             self._emit_end_event(
                 payload=self._build_end_payload(
@@ -320,6 +329,8 @@ class HardenedSandboxExecutor:
                     },
                 ),
                 runtime_telemetry=runtime_telemetry,
+                replay_environment_fingerprint=pre_execution_snapshot,
+                replay_diagnostics=capture_post_execution_delta(pre_execution_snapshot),
             )
             self._emit_end_event(
                 payload=self._build_end_payload(
@@ -353,6 +364,8 @@ class HardenedSandboxExecutor:
                     },
                 ),
                 runtime_telemetry=runtime_telemetry,
+                replay_environment_fingerprint=pre_execution_snapshot,
+                replay_diagnostics=capture_post_execution_delta(pre_execution_snapshot),
             )
             self._emit_end_event(
                 payload=self._build_end_payload(
@@ -390,6 +403,8 @@ class HardenedSandboxExecutor:
                     },
                 ),
                 runtime_telemetry=runtime_telemetry,
+                replay_environment_fingerprint=pre_execution_snapshot,
+                replay_diagnostics=capture_post_execution_delta(pre_execution_snapshot),
             )
             self._emit_end_event(
                 payload=self._build_end_payload(
@@ -432,6 +447,8 @@ class HardenedSandboxExecutor:
                     },
                 ),
                 runtime_telemetry=runtime_telemetry,
+                replay_environment_fingerprint=pre_execution_snapshot,
+                replay_diagnostics=capture_post_execution_delta(pre_execution_snapshot),
             )
             self._emit_end_event(
                 payload=self._build_end_payload(
@@ -461,6 +478,8 @@ class HardenedSandboxExecutor:
                 },
             ),
             runtime_telemetry=runtime_telemetry,
+            replay_environment_fingerprint=pre_execution_snapshot,
+            replay_diagnostics=capture_post_execution_delta(pre_execution_snapshot),
         )
 
         peak_memory_mb = max(
