@@ -100,11 +100,24 @@ class MutationOrchestrationService:
         leased = self._orchestrator.lease_next_job(worker_id=worker_id, now_ts=now_ts)
         if leased is None:
             return StatusEnvelope(status="ok", reason="no_queued_jobs", payload={"dispatched": False})
-        self._queue.mark_running(job_id=leased["job_id"], worker_id=worker_id, now_ts=now_ts)
+        marked = self._queue.mark_running(job_id=leased["job_id"], worker_id=worker_id, now_ts=now_ts)
+        if not marked:
+            return StatusEnvelope(
+                status="warn",
+                reason="job_dispatch_conflict",
+                payload={"dispatched": False, "job_id": leased["job_id"], "worker_id": worker_id},
+            )
         return StatusEnvelope(
             status="ok",
             reason="job_dispatched",
-            payload={"dispatched": True, "job_id": leased["job_id"], "state": "running", "worker_id": worker_id},
+            payload={
+                "dispatched": True,
+                "job_id": leased["job_id"],
+                "state": "running",
+                "worker_id": worker_id,
+                "lease_id": leased.get("lease_id", ""),
+                "lease_expires_at": leased.get("lease_expires_at"),
+            },
         )
 
     def retry_job(self, *, job_id: str, now_ts: float | None = None) -> StatusEnvelope:
