@@ -17,6 +17,8 @@ from runtime import metrics
 
 LOG = logging.getLogger(__name__)
 METRIC_EVENT = "storage_manager_prune_fallback"
+USAGE_SCAN_METRIC_EVENT = "storage_manager_usage_scan"
+USAGE_INDEX_VERSION = 1
 
 
 class StorageManager:
@@ -60,6 +62,17 @@ class StorageManager:
             governance_config,
             key="dynamic_agent_pressure",
         )
+        self.storage_usage_reconcile_interval_s = int(
+            self._coerce_float(
+                None,
+                runtime_config,
+                governance_config,
+                key="storage_usage_reconcile_interval_s",
+                default=600.0,
+            )
+        )
+        self.storage_usage_index_path = self.data_root / "data" / "storage_usage_index.json"
+        self._last_usage_scan: dict[str, Any] = {}
 
     def check_and_prune(self) -> dict:
         current_mb = self._get_usage_mb()
@@ -70,7 +83,8 @@ class StorageManager:
 
         baseline_mb = current_mb
         pruned_count = self._prune_failed_candidates(pressure=pressure)
-        current_mb = self._get_usage_mb()
+        if pruned_count > 0:
+            current_mb = self._get_usage_mb()
         should_prune_snapshots = current_mb >= storage_cap_mb
         if self.minimum_reclaim_target_mb is not None:
             reclaimed_mb = max(0.0, baseline_mb - current_mb)
@@ -79,21 +93,171 @@ class StorageManager:
         if should_prune_snapshots:
             pruned_count += self._prune_old_snapshots(pressure=pressure)
 
+        if pruned_count > 0:
+            current_mb = self._get_usage_mb()
+
         return {
             "pruned": True,
             "pruned_count": pruned_count,
-            "current_mb": round(self._get_usage_mb(), 3),
+            "current_mb": round(current_mb, 3),
             "dynamic_agent_pressure": round(pressure, 3),
         }
 
     def _get_usage_mb(self) -> float:
-        total_bytes = 0
         if not self.data_root.exists():
+            self._write_usage_index({"version": USAGE_INDEX_VERSION, "total_bytes": 0, "files": {}, "dirs": {}})
             return 0.0
-        for path in self.data_root.rglob("*"):
-            if path.is_file():
-                total_bytes += path.stat().st_size
+
+        started_at = time.perf_counter()
+        now = time.time()
+        existing_index = self._read_usage_index()
+        file_index: dict[str, dict[str, int]] = {
+            path: {"size": int(meta.get("size", 0)), "mtime_ns": int(meta.get("mtime_ns", 0))}
+            for path, meta in existing_index.get("files", {}).items()
+            if isinstance(meta, Mapping)
+        }
+        dir_index: dict[str, int] = {
+            path: int(mtime_ns)
+            for path, mtime_ns in existing_index.get("dirs", {}).items()
+            if isinstance(path, str)
+        }
+
+        last_full_reconcile = float(existing_index.get("last_full_reconcile_ts", 0.0) or 0.0)
+        force_full = (now - last_full_reconcile) >= max(0, self.storage_usage_reconcile_interval_s)
+
+        files_statted = 0
+        if force_full or not file_index:
+            file_index, dir_index, files_statted = self._full_usage_scan()
+            total_bytes = sum(meta["size"] for meta in file_index.values())
+            last_full_reconcile = now
+            scan_mode = "full"
+        else:
+            file_index, dir_index, files_statted = self._incremental_usage_scan(file_index=file_index, dir_index=dir_index)
+            total_bytes = sum(meta["size"] for meta in file_index.values())
+            scan_mode = "incremental"
+
+        self._write_usage_index(
+            {
+                "version": USAGE_INDEX_VERSION,
+                "total_bytes": total_bytes,
+                "last_full_reconcile_ts": last_full_reconcile,
+                "last_scan_ts": now,
+                "files": file_index,
+                "dirs": dir_index,
+            }
+        )
+        duration_ms = round((time.perf_counter() - started_at) * 1000.0, 3)
+        scan_details = {
+            "mode": scan_mode,
+            "duration_ms": duration_ms,
+            "files_statted": files_statted,
+            "indexed_files": len(file_index),
+            "usage_mb": round(total_bytes / (1024.0 * 1024.0), 6),
+        }
+        self._last_usage_scan = scan_details
+        metrics.log(event_type=USAGE_SCAN_METRIC_EVENT, payload=scan_details)
         return total_bytes / (1024.0 * 1024.0)
+
+    def _full_usage_scan(self) -> tuple[dict[str, dict[str, int]], dict[str, int], int]:
+        file_index: dict[str, dict[str, int]] = {}
+        dir_index: dict[str, int] = {}
+        files_statted = 0
+        for root, dirs, files in self.data_root.walk(top_down=True):
+            rel_dir = self._relative_key(root)
+            dir_index[rel_dir] = root.stat().st_mtime_ns
+            dirs.sort()
+            files.sort()
+            for name in files:
+                file_path = root / name
+                if file_path == self.storage_usage_index_path:
+                    continue
+                stat = file_path.stat()
+                files_statted += 1
+                file_index[self._relative_key(file_path)] = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+        return file_index, dir_index, files_statted
+
+    def _incremental_usage_scan(
+        self,
+        *,
+        file_index: dict[str, dict[str, int]],
+        dir_index: dict[str, int],
+    ) -> tuple[dict[str, dict[str, int]], dict[str, int], int]:
+        updated_files = dict(file_index)
+        updated_dirs: dict[str, int] = {}
+        seen_dirs: set[str] = set()
+        files_statted = 0
+
+        for root, dirs, files in self.data_root.walk(top_down=True):
+            rel_dir = self._relative_key(root)
+            seen_dirs.add(rel_dir)
+            root_mtime_ns = root.stat().st_mtime_ns
+            updated_dirs[rel_dir] = root_mtime_ns
+            prior_mtime_ns = int(dir_index.get(rel_dir, -1))
+            dirs.sort()
+            files.sort()
+
+            if rel_dir == ".":
+                root_file_keys = set()
+                for name in files:
+                    file_path = root / name
+                    if file_path == self.storage_usage_index_path:
+                        continue
+                    stat = file_path.stat()
+                    files_statted += 1
+                    key = self._relative_key(file_path)
+                    root_file_keys.add(key)
+                    updated_files[key] = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+                for key in [existing for existing in list(updated_files) if "/" not in existing and existing not in root_file_keys]:
+                    del updated_files[key]
+                continue
+
+            if prior_mtime_ns == root_mtime_ns:
+                continue
+
+            prefix = "" if rel_dir == "." else f"{rel_dir}/"
+            for key in list(updated_files):
+                if key.startswith(prefix):
+                    del updated_files[key]
+
+            for name in files:
+                file_path = root / name
+                if file_path == self.storage_usage_index_path:
+                    continue
+                stat = file_path.stat()
+                files_statted += 1
+                updated_files[self._relative_key(file_path)] = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+
+        deleted_dirs = set(dir_index) - seen_dirs
+        for deleted_dir in deleted_dirs:
+            prefix = "" if deleted_dir == "." else f"{deleted_dir}/"
+            for key in list(updated_files):
+                if key.startswith(prefix):
+                    del updated_files[key]
+
+        return updated_files, updated_dirs, files_statted
+
+    def _read_usage_index(self) -> dict[str, Any]:
+        if not self.storage_usage_index_path.exists():
+            return {}
+        try:
+            payload = json.loads(self.storage_usage_index_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, JSONDecodeError):
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        if int(payload.get("version", 0) or 0) != USAGE_INDEX_VERSION:
+            return {}
+        return payload
+
+    def _write_usage_index(self, payload: Mapping[str, Any]) -> None:
+        self.storage_usage_index_path.parent.mkdir(parents=True, exist_ok=True)
+        self.storage_usage_index_path.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+    def _relative_key(self, path: Path) -> str:
+        return str(path.relative_to(self.data_root)) if path != self.data_root else "."
 
     def _prune_failed_candidates(self, *, pressure: float = 0.0) -> int:
         candidates_dir = self.data_root / "candidates"
