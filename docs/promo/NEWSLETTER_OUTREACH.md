@@ -38,7 +38,7 @@ Hi,
 
 Console covers developer tools worth knowing about — I think ADAAD fits your audience.
 
-**What it is:** An AI mutation engine where three competing Claude-powered agents propose code improvements each epoch, gated by a constitutional policy engine with 16 deterministic rules. Every change is hash-chained, auditable, and replayable.
+**What it is:** An AI mutation engine where three competing Claude-powered agents propose code improvements each epoch, gated by a constitutional policy engine with a versioned deterministic rule set (see Constitution + governance artifact for current count). Every change is hash-chained, auditable, and replayable.
 
 **What's genuinely new about it:**
 The governance model. `GovernanceGate` is the only surface that can approve a change — not the AI agents, not automation, not environment variables. This is architecturally enforced. The constitution is a versioned document in the repo with binding rules the AI cannot modify.

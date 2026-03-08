@@ -22,7 +22,7 @@ ADAAD's mutation pipeline has one and only one approval surface: `GovernanceGate
 
 This isn't documented policy. It's architectural structure. The rest of the system literally cannot approve mutations; they don't have that code path.
 
-The gate evaluates 16 deterministic rules:
+The gate evaluates a versioned deterministic rule set (see Constitution + governance artifact for current count):
 
 ```python
 # A sample of what the constitutional gate checks
@@ -124,7 +124,7 @@ Risk and complexity scores come from `SemanticDiffEngine` — an AST-aware analy
 This one required careful thought. The capability: ADAAD can now evaluate whether conditions are right (health score ≥ 0.80, prediction accuracy > 0.60, zero federation divergence) and propose an amendment to ROADMAP.md.
 
 The safeguards:
-- Same gate. Same 16 rules.
+- Same gate. Same versioned constitutional rule set.
 - `authority_level = "governor-review"` hardcoded in `RoadmapAmendmentEngine.__init__`. Not configurable.
 - Human governor sign-off required. Not delegatable.
 - No auto-merge path. Constitutionally prohibited.

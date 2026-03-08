@@ -2,7 +2,7 @@
 
 > **Branch:** `dreezy-6` → `main` · **Version:** `0.65.x (Experimental)` → `1.0.0 (Stable)` · **Constitution:** `v0.1.0` → `v0.2.0`
 
-This PR graduates ADAAD from experimental pre-1.0 to its first stable release. It closes every tracked open item in the governance maturity model: completes the constitutional rule set (all 11 rules now enforced), remediates a critical HMAC security gap, ships the Claude-governed MCP co-pilot integration, hardens the forensic retention service for portable deployment, establishes the `governance_runtime_profile.lock.json` ownership contract, and expands the verified test surface to 170 files across 14 subdirectories.
+This PR graduates ADAAD from experimental pre-1.0 to its first stable release. It closes every tracked open item in the governance maturity model: completes the constitutional rule set (the v0.2.0 constitutional rule set fully enforced), remediates a critical HMAC security gap, ships the Claude-governed MCP co-pilot integration, hardens the forensic retention service for portable deployment, establishes the `governance_runtime_profile.lock.json` ownership contract, and expands the verified test surface to 170 files across 14 subdirectories.
 
 Every commit in this PR maps to a tracked milestone item, a documented governance gap, or a validated constitutional requirement. No speculative scope.
 
@@ -262,7 +262,7 @@ All schemas are enforced by `runtime/governance/schema_validator.py` and verifie
 | Surface | Advancement | Risk |
 |---|---|---|
 | Trust Layer (Cryovant) | HMAC verification stub **remediated** — real enforcement now active | HIGH — improvement direction; prior behavior was insecure |
-| Constitution | All 11 rules **enforced**, `v0.2.0` | HIGH — mutations that previously passed without enforcement will now be gated |
+| Constitution | Rule set **enforced**, `v0.2.0` (version-qualified) | HIGH — mutations that previously passed without enforcement will now be gated |
 | Execution (MCP) | Governed LLM proposal surface **introduced** | MEDIUM — JWT-gated, constitutionally pre-evaluated, authority clamped server-side |
 | Ledger | Lineage v2 duplicate **retired**, single authority enforced | MEDIUM — consolidation prerequisite for BLOCKING rule |
 | Server | FastAPI lifespan **migrated** | LOW — behavioral equivalence preserved |

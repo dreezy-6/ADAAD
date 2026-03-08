@@ -1,0 +1,15 @@
+{
+  "artifact_version": "1.0.0",
+  "description": "Canonical machine-readable constitutional rule-count metadata.",
+  "canonical_sources": {
+    "constitution_document": "docs/CONSTITUTION.md",
+    "constitution_policy": "runtime/governance/constitution.yaml"
+  },
+  "constitution_policy_version": "0.3.0",
+  "rule_count": {
+    "total_rules": 14,
+    "count_method": "len(runtime/governance/constitution.yaml::rules)",
+    "as_of": "v0.3.0"
+  },
+  "wording_guidance": "Rule set is versioned; see docs/CONSTITUTION.md and runtime/governance/constitution.yaml for current count."
+}

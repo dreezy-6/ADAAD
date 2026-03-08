@@ -43,7 +43,7 @@
 
 ## What ADAAD does
 
-Three Claude-powered AI agents continuously propose code improvements. Those proposals compete in a genetic-algorithm population — crossed, mutated, and ranked. The fittest candidates advance to a **constitutional gate**: 16 deterministic rules, evaluated in order. One blocking failure halts everything.
+Three Claude-powered AI agents continuously propose code improvements. Those proposals compete in a genetic-algorithm population — crossed, mutated, and ranked. The fittest candidates advance to a **constitutional gate**: a versioned deterministic rule set (see `docs/CONSTITUTION.md` and `runtime/governance/constitution.yaml` for the current count), evaluated in order. One blocking failure halts everything.
 
 <p align="center">
   <img src="docs/assets/adaad-flow.svg" width="860" alt="ADAAD mutation pipeline: propose → simulate → replay-verify → policy gate → execute → evidence"/>
@@ -161,7 +161,7 @@ print(f"Duration:    {result.duration_seconds:.1f}s")
 </tr>
 <tr>
   <td><strong>🛡️&nbsp; Constitutional Gating</strong></td>
-  <td>16 governance rules evaluated per mutation across three tiers (Sandbox / Stable / Production). One blocking failure = full halt.</td>
+  <td>Versioned governance rule set evaluated per mutation across three tiers (Sandbox / Stable / Production). See the Constitution and governance artifact for the current count. One blocking failure = full halt.</td>
 </tr>
 <tr>
   <td><strong>🧾&nbsp; Append-Only Evidence Ledger</strong></td>
@@ -245,7 +245,7 @@ print(f"Duration:    {result.duration_seconds:.1f}s")
 | v1.8 | — | Market × federation × container × Darwinian unified |
 | v1.7 | — | Fully autonomous multi-node federation — Raft consensus, gossip |
 | v1.6 | — | Real container-level isolation — cgroup v2, orchestrator, health probes |
-| v1.0 | — | Stable release — HMAC, 11 constitutional rules, MCP co-pilot |
+| v1.0 | — | Stable release — HMAC and constitutional governance baseline (`v0.2.0`), MCP co-pilot |
 
 </details>
 

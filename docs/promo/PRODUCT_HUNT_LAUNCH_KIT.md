@@ -24,7 +24,7 @@ I built ADAAD because I kept running into the same problem: AI code tools are ex
 
 **What ADAAD does differently:**
 
-🛡️ **Constitutional governance** — 16 deterministic rules evaluated per mutation. One blocking failure halts everything. The GovernanceGate is the only surface that can approve a change. This is architecturally enforced, not a convention.
+🛡️ **Constitutional governance** — a versioned deterministic rule set evaluated per mutation (see Constitution + governance artifact for current count). One blocking failure halts everything. The GovernanceGate is the only surface that can approve a change. This is architecturally enforced, not a convention.
 
 🔁 **Deterministic replay** — every decision can be re-run byte-identical. If the replay ever produces a different answer, the pipeline halts. Real auditability, not theater.
 
@@ -57,7 +57,7 @@ The plain English doc is genuinely written for non-technical readers — share i
 ## Gallery image captions:
 
 1. "The mutation pipeline: propose → evolve → gate → record → adapt"
-2. "16 constitutional rules. One gate. Zero exceptions."
+2. "Versioned constitutional rule set. One gate. Zero exceptions."
 3. "Deterministic replay: every decision byte-identical on re-run"
 4. "Free Android app — four install tracks, $0"
 5. "Phase 6: the engine proposes changes to its own roadmap. Humans approve."
