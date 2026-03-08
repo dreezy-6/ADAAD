@@ -57,11 +57,17 @@ class PopulationManager:
         top = manager.top_candidates(n=5)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, rng: Optional[random.Random] = None) -> None:
         self._population: List[MutationCandidate] = []
         self._state   = PopulationState()
         self._weights: Optional[ScoringWeights] = None
-        self._rng     = random.Random()  # seeded lazily — deterministic via caller
+        self._rng     = rng or random.Random()
+        self._child_counter = 0
+
+    def set_seed(self, seed: int) -> None:
+        """Seed the instance RNG for deterministic evolution behavior."""
+        self._rng.seed(seed)
+        self._child_counter = 0
 
     # ------------------------------------------------------------------
     # Setup
@@ -81,6 +87,7 @@ class PopulationManager:
         """
         self._population = self._enforce_diversity(candidates)[:MAX_POPULATION]
         self._state = PopulationState()
+        self._child_counter = 0
 
     # ------------------------------------------------------------------
     # Evolution
@@ -115,7 +122,7 @@ class PopulationManager:
 
         # Crossover phase
         children: List[MutationCandidate] = []
-        if len(elites) >= 2 and random.random() < CROSSOVER_RATE:
+        if len(elites) >= 2 and self._rng.random() < CROSSOVER_RATE:
             for i in range(min(len(elites) - 1, ELITE_SIZE)):
                 child = self._crossover(elites[i], elites[(i + 1) % len(elites)])
                 if child:
@@ -169,8 +176,13 @@ class PopulationManager:
         Child mutation_id: blend of parent IDs to preserve lineage slug.
         parent_id: set to parent_a.mutation_id for elitism bonus eligibility.
         """
-        import time as _time
-        child_id = f"cross-{parent_a.mutation_id[:8]}-{parent_b.mutation_id[:8]}-{int(_time.time())}"
+        child_generation = self._state.generation + 1
+        child_index = self._child_counter
+        self._child_counter += 1
+        child_id = (
+            f"cross-{parent_a.mutation_id[:8]}-{parent_b.mutation_id[:8]}"
+            f"-g{child_generation:03d}-i{child_index:03d}"
+        )
         return MutationCandidate(
             mutation_id=child_id,
             expected_gain=self._blend(parent_a.expected_gain,  parent_b.expected_gain),
@@ -180,14 +192,13 @@ class PopulationManager:
             strategic_horizon=self._blend(parent_a.strategic_horizon, parent_b.strategic_horizon),
             forecast_roi=self._blend(parent_a.forecast_roi,   parent_b.forecast_roi),
             parent_id=parent_a.mutation_id,
-            generation=self._state.generation + 1,
+            generation=child_generation,
             agent_origin="crossover",
             epoch_id=parent_a.epoch_id,
             source_context_hash=parent_a.source_context_hash,
         )
 
-    @staticmethod
-    def _blend(a: float, b: float, alpha: float = BLX_ALPHA) -> float:
+    def _blend(self, a: float, b: float, alpha: float = BLX_ALPHA) -> float:
         """
         BLX-alpha blend crossover for a single numeric field.
 
@@ -196,7 +207,7 @@ class PopulationManager:
         """
         lo, hi = min(a, b), max(a, b)
         extent = (hi - lo) * alpha
-        return round(random.uniform(lo - extent, hi + extent), 4)
+        return round(self._rng.uniform(lo - extent, hi + extent), 4)
 
     @staticmethod
     def _fingerprint(candidate: MutationCandidate) -> str:
