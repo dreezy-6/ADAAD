@@ -4,6 +4,19 @@
 
 This document cross-references `README.md` operational claims with concrete implementation modules and tests.
 
+<!-- ARCH_SNAPSHOT_METADATA:START -->
+## Architecture Deep-Dive Snapshot
+
+| Metric | Value |
+| --- | --- |
+| Report version | `3.0.0` |
+| Branch | `work` |
+| Tag | `(none)` |
+| Short SHA | `b33ec91` |
+
+All future architecture snapshots MUST include branch, tag (if any), and short SHA.
+<!-- ARCH_SNAPSHOT_METADATA:END -->
+
 ## Governance Philosophy Alignment
 
 README governance principles are implemented via:
