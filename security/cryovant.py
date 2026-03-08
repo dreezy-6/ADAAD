@@ -59,6 +59,16 @@ _ARTIFACT_HMAC_CONFIG: Dict[str, Dict[str, str]] = {
 }
 
 
+class CriticalArtifactReadError(RuntimeError):
+    """Raised when governance-critical JSON artifacts cannot be loaded deterministically."""
+
+    def __init__(self, *, path: Path, reason_code: str, exc: BaseException) -> None:
+        self.path = path
+        self.reason_code = reason_code
+        self.exc = exc
+        super().__init__(f"critical_artifact_read_failed:{reason_code}:{path}")
+
+
 def dev_mode() -> bool:
     return os.environ.get("CRYOVANT_DEV_MODE", "0").lower() in {"1", "true", "yes", "on"}
 
@@ -582,11 +592,59 @@ def dev_signature_allowed(signature: str) -> bool:
     return _dev_signature_allowed(signature)
 
 
-def _read_json(path: Path) -> Dict[str, Any]:
+def _emit_critical_json_failure(*, path: Path, reason_code: str, exc: BaseException) -> None:
+    payload = {
+        "path": str(path),
+        "reason_code": reason_code,
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+        "operation_class": "governance-critical",
+    }
+    metrics.log(
+        event_type="cryovant_critical_json_read_failed",
+        payload=payload,
+        level="CRITICAL",
+        element_id=ELEMENT_ID,
+    )
+    journal.write_entry(agent_id="system", action="critical_json_read_failed", payload=payload)
+
+
+def _read_json(path: Path, *, strict: bool = True) -> Dict[str, Any]:
+    """
+    Strict mode is the default for governance-critical artifacts and fails closed.
+    Permissive mode (strict=False) is reserved for optional non-critical metadata
+    where fallback to {} is explicitly acceptable.
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, JSONDecodeError, TypeError):
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        if strict:
+            _emit_critical_json_failure(path=path, reason_code="critical_json_missing", exc=exc)
+            raise CriticalArtifactReadError(path=path, reason_code="critical_json_missing", exc=exc) from exc
         return {}
+    except OSError as exc:
+        if strict:
+            _emit_critical_json_failure(path=path, reason_code="critical_json_io_error", exc=exc)
+            raise CriticalArtifactReadError(path=path, reason_code="critical_json_io_error", exc=exc) from exc
+        return {}
+    except JSONDecodeError as exc:
+        if strict:
+            _emit_critical_json_failure(path=path, reason_code="critical_json_parse_error", exc=exc)
+            raise CriticalArtifactReadError(path=path, reason_code="critical_json_parse_error", exc=exc) from exc
+        return {}
+    except TypeError as exc:
+        if strict:
+            _emit_critical_json_failure(path=path, reason_code="critical_json_type_error", exc=exc)
+            raise CriticalArtifactReadError(path=path, reason_code="critical_json_type_error", exc=exc) from exc
+        return {}
+
+    if isinstance(parsed, dict):
+        return parsed
+    if strict:
+        type_exc = TypeError("json_root_must_be_object")
+        _emit_critical_json_failure(path=path, reason_code="critical_json_invalid_root", exc=type_exc)
+        raise CriticalArtifactReadError(path=path, reason_code="critical_json_invalid_root", exc=type_exc)
+    return {}
 
 
 def _rotation_interval_seconds(metadata: Dict[str, Any]) -> int:
@@ -603,6 +661,12 @@ def _rotation_interval_seconds(metadata: Dict[str, Any]) -> int:
 
 
 def _load_rotation_metadata() -> Dict[str, Any]:
+    if not ROTATION_METADATA_PATH.exists():
+        _persist_rotation_metadata({
+            "interval_seconds": DEFAULT_ROTATION_INTERVAL_SECONDS,
+            "last_rotation_ts": 0,
+            "last_rotation_iso": "",
+        })
     metadata = _read_json(ROTATION_METADATA_PATH)
     interval_seconds = _rotation_interval_seconds(metadata)
     metadata.setdefault("interval_seconds", interval_seconds)

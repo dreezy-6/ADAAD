@@ -296,6 +296,40 @@ class CryovantDevSignatureTest(unittest.TestCase):
         self.assertIn("cryovant_certificate_repaired", event_types)
 
 
+    def test_compute_lineage_hash_fail_closes_on_malformed_critical_json(self) -> None:
+        agent_dir = self.tmp_root / "agent-b"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        (agent_dir / "meta.json").write_text('{"id":"agent-b"}', encoding="utf-8")
+        (agent_dir / "dna.json").write_text('{"genes":[]}', encoding="utf-8")
+        (agent_dir / "certificate.json").write_text('{"signature":', encoding="utf-8")
+
+        with mock.patch("security.cryovant.metrics.log") as metrics_log, mock.patch(
+            "security.cryovant.journal.write_entry"
+        ) as write_entry:
+            with self.assertRaises(cryovant.CriticalArtifactReadError) as exc:
+                cryovant.compute_lineage_hash(agent_dir)
+
+        self.assertIn("critical_json_parse_error", str(exc.exception))
+        self.assertEqual(metrics_log.call_args.kwargs["event_type"], "cryovant_critical_json_read_failed")
+        self.assertEqual(metrics_log.call_args.kwargs["payload"]["reason_code"], "critical_json_parse_error")
+        self.assertEqual(write_entry.call_args.kwargs["action"], "critical_json_read_failed")
+
+    def test_rotation_metadata_fail_closes_on_malformed_critical_json(self) -> None:
+        rotation_path = self.tmp_root / "rotation" / "rotation.json"
+        rotation_path.parent.mkdir(parents=True, exist_ok=True)
+        rotation_path.write_text('{"interval_seconds":', encoding="utf-8")
+
+        with mock.patch("security.cryovant.ROTATION_METADATA_PATH", rotation_path), mock.patch(
+            "security.cryovant.metrics.log"
+        ) as metrics_log, mock.patch("security.cryovant.journal.write_entry") as write_entry:
+            with self.assertRaises(cryovant.CriticalArtifactReadError) as exc:
+                cryovant._load_rotation_metadata()
+
+        self.assertIn("critical_json_parse_error", str(exc.exception))
+        self.assertEqual(metrics_log.call_args.kwargs["event_type"], "cryovant_critical_json_read_failed")
+        self.assertEqual(metrics_log.call_args.kwargs["payload"]["path"], str(rotation_path))
+        self.assertEqual(write_entry.call_args.kwargs["payload"]["reason_code"], "critical_json_parse_error")
+
     def test_verify_governance_token_accepts_signed_token(self) -> None:
         os.environ["ADAAD_GOVERNANCE_SESSION_SIGNING_KEY"] = "gov-secret"
         self.addCleanup(os.environ.pop, "ADAAD_GOVERNANCE_SESSION_SIGNING_KEY", None)
