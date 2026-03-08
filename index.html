@@ -609,6 +609,16 @@
     transform: translateY(0);
   }
 
+  /* ─── EMBER CANVAS ─── */
+  #ember-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
   /* ─── RESPONSIVE ─── */
   @media (max-width: 768px) {
     nav { padding: 12px 20px; }
@@ -620,6 +630,8 @@
 </style>
 </head>
 <body>
+
+<canvas id="ember-canvas" aria-hidden="true"></canvas>
 
 <div class="orb orb-1"></div>
 <div class="orb orb-2"></div>
@@ -641,7 +653,7 @@
 <section class="hero">
   <div class="badge">
     <span class="dot"></span>
-    v3.1.0-dev · Phase 6 active · Free &amp; open source
+    v3.1.1 · Phase 6.1 active · Free &amp; open source
   </div>
 
   <h1>
@@ -910,7 +922,7 @@
 <!-- FOOTER -->
 <footer>
   <div class="footer-left">
-    <strong>ADAAD</strong> v3.1.0-dev · MIT License · InnovativeAI-adaad
+    <strong>ADAAD</strong> v3.1.1 · MIT License · InnovativeAI-adaad
   </div>
   <div class="footer-links">
     <a href="https://github.com/InnovativeAI-adaad/ADAAD">GitHub</a>
@@ -921,6 +933,208 @@
     <a href="https://github.com/InnovativeAI-adaad/ADAAD/blob/main/CONTRIBUTING.md">Contribute</a>
   </div>
 </footer>
+
+<script>
+  // ─── EMBER / ASH / DUST PARTICLE SYSTEM ───────────────────────────────────
+  (function() {
+    const canvas = document.getElementById('ember-canvas');
+    const ctx = canvas.getContext('2d');
+    let W, H, dpr;
+    const particles = [];
+    const EMBER_COUNT = 55;
+    const ASH_COUNT   = 40;
+    const DUST_COUNT  = 70;
+
+    // Palette — warm fire tones against the dark blue/navy site bg
+    const EMBER_COLORS = [
+      [255, 120,  20],  // deep orange
+      [255, 160,  40],  // amber
+      [255, 200,  60],  // gold
+      [255,  80,  20],  // red-orange
+      [255, 220, 100],  // pale yellow-white
+    ];
+    const ASH_COLORS = [
+      [160, 155, 150],  // warm gray
+      [200, 195, 190],  // light ash
+      [100,  95,  90],  // dark ash
+      [220, 210, 200],  // near-white ash
+    ];
+
+    function rand(min, max) { return min + Math.random() * (max - min); }
+    function randInt(min, max) { return Math.floor(rand(min, max + 1)); }
+
+    function resize() {
+      dpr = window.devicePixelRatio || 1;
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width  = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width  = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    // ── Ember particle ──────────────────────────────────────────────────────
+    function spawnEmber(fromBottom) {
+      const col = EMBER_COLORS[randInt(0, EMBER_COLORS.length - 1)];
+      return {
+        type: 'ember',
+        x: rand(0, W),
+        y: fromBottom ? rand(H * 0.6, H + 40) : rand(-20, H),
+        r: rand(0.8, 2.8),
+        vx: rand(-0.5, 0.5),
+        vy: rand(-1.6, -0.5),       // rises
+        life: 0,
+        maxLife: rand(180, 380),
+        col,
+        twinkle: rand(0, Math.PI * 2),
+        twinkleSpeed: rand(0.04, 0.12),
+        wobble: rand(0, Math.PI * 2),
+        wobbleAmp: rand(0.2, 0.7),
+        wobbleSpeed: rand(0.02, 0.06),
+        glowR: rand(col[0] * 0.6, col[0]),
+        glowG: rand(col[1] * 0.4, col[1]),
+        glowB: rand(col[2] * 0.2, col[2]),
+      };
+    }
+
+    // ── Ash flake ───────────────────────────────────────────────────────────
+    function spawnAsh(fromBottom) {
+      const col = ASH_COLORS[randInt(0, ASH_COLORS.length - 1)];
+      return {
+        type: 'ash',
+        x: rand(0, W),
+        y: fromBottom ? rand(H * 0.5, H + 60) : rand(-40, H),
+        w: rand(2, 6),
+        h: rand(0.8, 2.2),
+        rot: rand(0, Math.PI * 2),
+        rotSpeed: rand(-0.015, 0.015),
+        vx: rand(-0.4, 0.4),
+        vy: rand(-0.9, -0.2),       // drifts upward slowly
+        life: 0,
+        maxLife: rand(260, 500),
+        col,
+        sway: rand(0, Math.PI * 2),
+        swayAmp: rand(0.3, 1.0),
+        swaySpeed: rand(0.01, 0.04),
+      };
+    }
+
+    // ── Dust mote ───────────────────────────────────────────────────────────
+    function spawnDust(fromBottom) {
+      return {
+        type: 'dust',
+        x: rand(0, W),
+        y: fromBottom ? rand(H * 0.3, H + 20) : rand(-10, H),
+        r: rand(0.3, 1.1),
+        vx: rand(-0.25, 0.25),
+        vy: rand(-0.4, -0.05),
+        life: 0,
+        maxLife: rand(300, 600),
+        sway: rand(0, Math.PI * 2),
+        swayAmp: rand(0.15, 0.5),
+        swaySpeed: rand(0.008, 0.025),
+        baseAlpha: rand(0.08, 0.22),
+      };
+    }
+
+    function initParticles() {
+      particles.length = 0;
+      for (let i = 0; i < EMBER_COUNT; i++) particles.push(spawnEmber(false));
+      for (let i = 0; i < ASH_COUNT;   i++) particles.push(spawnAsh(false));
+      for (let i = 0; i < DUST_COUNT;  i++) particles.push(spawnDust(false));
+    }
+
+    function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+    function updateAndDraw() {
+      ctx.clearRect(0, 0, W, H);
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life++;
+
+        const t  = p.life / p.maxLife;
+        const fade = t < 0.12
+          ? easeInOut(t / 0.12)
+          : t > 0.75
+            ? easeInOut((1 - t) / 0.25)
+            : 1;
+
+        if (p.type === 'ember') {
+          p.twinkle += p.twinkleSpeed;
+          p.wobble  += p.wobbleSpeed;
+          p.x += p.vx + Math.sin(p.wobble) * p.wobbleAmp;
+          p.y += p.vy;
+
+          const twink = 0.7 + 0.3 * Math.sin(p.twinkle);
+          const alpha = fade * twink * 0.85;
+          const r     = p.r * (0.85 + 0.15 * twink);
+          const [cr, cg, cb] = p.col;
+
+          // Outer glow
+          const grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 5);
+          grd.addColorStop(0,   `rgba(${p.glowR},${p.glowG},${p.glowB},${(alpha * 0.5).toFixed(3)})`);
+          grd.addColorStop(1,   `rgba(${p.glowR},${p.glowG},${p.glowB},0)`);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r * 5, 0, Math.PI * 2);
+          ctx.fillStyle = grd;
+          ctx.fill();
+
+          // Core dot
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${cr},${cg},${cb},${alpha.toFixed(3)})`;
+          ctx.fill();
+
+        } else if (p.type === 'ash') {
+          p.sway += p.swaySpeed;
+          p.rot  += p.rotSpeed;
+          p.x += p.vx + Math.sin(p.sway) * p.swayAmp;
+          p.y += p.vy;
+
+          const [cr, cg, cb] = p.col;
+          const alpha = fade * 0.45;
+
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.w, p.h, 0, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${cr},${cg},${cb},${alpha.toFixed(3)})`;
+          ctx.fill();
+          ctx.restore();
+
+        } else { // dust
+          p.sway += p.swaySpeed;
+          p.x += p.vx + Math.sin(p.sway) * p.swayAmp;
+          p.y += p.vy;
+
+          const alpha = fade * p.baseAlpha;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(210,200,190,${alpha.toFixed(3)})`;
+          ctx.fill();
+        }
+
+        // Recycle dead or off-screen particles
+        const offScreen = p.y < -60 || p.x < -60 || p.x > W + 60;
+        if (p.life >= p.maxLife || offScreen) {
+          if (p.type === 'ember') particles[i] = spawnEmber(true);
+          else if (p.type === 'ash') particles[i] = spawnAsh(true);
+          else particles[i] = spawnDust(true);
+        }
+      }
+
+      requestAnimationFrame(updateAndDraw);
+    }
+
+    window.addEventListener('resize', () => { resize(); });
+    resize();
+    initParticles();
+    requestAnimationFrame(updateAndDraw);
+  })();
+</script>
 
 <script>
   // Scroll reveal
