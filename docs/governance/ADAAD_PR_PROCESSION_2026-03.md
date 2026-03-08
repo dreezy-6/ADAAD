@@ -79,6 +79,7 @@ A validator comparing this document to `.adaad_agent_state.json` should fail if:
 2. `last_completed_pr` is not `PR-PHASE6-04`.
 3. Any `pr_nodes.*.status` diverges from this contract.
 4. `ordered_pr_ids` is not strict topological order.
+5. `blocked_reason` is non-null during the finalized `v3.1.0` release-complete state.
 
 ---
 
@@ -112,3 +113,4 @@ Historical details remain available via git history; this file now contains only
 
 - **2026-03-08:** Updated Phase 6 sequence status to complete (`PR-PHASE6-04` merged, `v3.1.0` released) and aligned machine-checkable contract expectations with `.adaad_agent_state.json`.
 - **2026-03-08:** Canonicalized this document to Phase 6 active sequence only; archived superseded Phase 4/5 planning sections; added machine-checkable procession contract for `.adaad_agent_state.json` preflight alignment.
+- **2026-03-08:** Post-merge state-alignment correction: updated `PR-PHASE6-04` to merged, set terminal alignment (`next_pr: NONE`, `last_completed_pr: PR-PHASE6-04`), and revised dependency/preflight language to reflect finalized `v3.1.0` completion.
