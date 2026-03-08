@@ -26,8 +26,9 @@ REQUIRED_CLAIM_IDS = {
     "versioned-docs-spec-links",
 }
 DISALLOWED_TOKENS = {"tbd", "todo", "coming soon"}
-TABLE_ROW_PATTERN = re.compile(r"^\|\s*`(?P<claim_id>[^`]+)`\s*\|(?P<rest>.*)\|\s*$")
+CLAIM_ID_CELL_PATTERN = re.compile(r"^`(?P<claim_id>[^`]+)`$")
 MARKDOWN_LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+EXPECTED_TABLE_COLUMNS = 4
 
 
 def _parse_args() -> argparse.Namespace:
@@ -59,6 +60,35 @@ def _parse_version_triplet(raw: str) -> tuple[int, int, int] | None:
     if not match:
         return None
     return tuple(int(match.group(i)) for i in (1, 2, 3))
+
+
+def _parse_markdown_table_row(raw_line: str) -> list[str] | None:
+    stripped = raw_line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+
+    cells: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in stripped[1:-1]:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            current.append(char)
+            continue
+        if char == "|":
+            cells.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+
+    if escaped:
+        current.append("\\")
+    cells.append("".join(current).strip())
+    return cells
 
 
 def _collect_authoritative_matrix_marker_errors() -> list[str]:
@@ -131,14 +161,21 @@ def main() -> int:
     matrix_text = MATRIX_PATH.read_text(encoding="utf-8")
     rows: dict[str, dict[str, str | list[str]]] = {}
 
-    for line in matrix_text.splitlines():
-        match = TABLE_ROW_PATTERN.match(line.strip())
-        if not match:
+    for line_number, line in enumerate(matrix_text.splitlines(), start=1):
+        cells = _parse_markdown_table_row(line)
+        if cells is None:
             continue
-        claim_id = match.group("claim_id").strip()
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) < 4:
+        if len(cells) != EXPECTED_TABLE_COLUMNS:
+            errors.append(
+                "matrix parse error at "
+                f"line {line_number}: expected {EXPECTED_TABLE_COLUMNS} columns, "
+                f"found {len(cells)} in row: {line.strip()}"
+            )
             continue
+        claim_match = CLAIM_ID_CELL_PATTERN.fullmatch(cells[0])
+        if not claim_match:
+            continue
+        claim_id = claim_match.group("claim_id").strip()
         evidence_cell = cells[2]
         status_cell = cells[3]
         links = MARKDOWN_LINK_PATTERN.findall(evidence_cell)
