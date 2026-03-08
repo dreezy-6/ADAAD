@@ -10,6 +10,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.api.nexus.mutate import router as mutate_router
+from runtime.monetization.middleware import build_monetization_router
 
 
 ROOT = Path(__file__).resolve().parent
@@ -38,6 +39,7 @@ class SPAStaticFiles(StaticFiles):
 
 app = FastAPI(title="InnovativeAI-adaad Unified Server")
 app.include_router(mutate_router)
+app.include_router(build_monetization_router())
 
 
 @app.on_event("startup")

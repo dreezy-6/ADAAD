@@ -355,6 +355,73 @@ All Phase 0 Track A audit findings resolved. The platform is now hardened to Inn
 
 ---
 
+## Phase 8 — Enterprise SaaS Monetization Layer
+
+**Status:** ✅ shipped · **Released:** v3.2.0 · **Lane:** Commercial · **Tooling:** ✅ in main
+
+Transforms ADAAD from an open-source project into a revenue-generating SaaS platform
+for InnovativeAI LLC. Every monetization gate is fail-closed and sits **upstream** of
+the GovernanceGate — paying more never weakens constitutional enforcement.
+
+**Constitutional principle:** Tier capabilities gate access to features. They never gate,
+weaken, or bypass the GovernanceGate, constitutional rules, or evidence ledger.
+
+### M8-01 — Tier Engine ✅ shipped
+
+`runtime/monetization/tier_engine.py`
+
+Three-tier SaaS access model (Community / Pro / Enterprise) with deterministic,
+replay-safe capability enforcement. `TierEngine.check_capability()` is the sole
+enforcement surface — pure function, no I/O, safe for replay harnesses.
+
+**Tiers:**
+- **Community** — Free forever · 50 epochs/mo · Full governance engine · Android app
+- **Pro** — $49/mo · 500 epochs/mo · Reviewer reputation · Simulation DSL · Aponi IDE · 3 federation nodes
+- **Enterprise** — $499/mo · Unlimited · SSO/SAML · SLA · Custom constitutional rules
+
+### M8-02 — API Key Manager ✅ shipped
+
+`runtime/monetization/api_key_manager.py`
+
+HMAC-SHA256 signed bearer tokens. Offline validation — no database lookup required.
+Tier encoded in key prefix (`cm`, `pr`, `en`). Revocation via in-process set; callers
+manage persistence. Constant-time HMAC comparison (no timing oracle).
+
+### M8-03 — Usage Tracker ✅ shipped
+
+`runtime/monetization/usage_tracker.py`
+
+Append-only, thread-safe metering. Five event types. Per-org, per-tier, per-billing-window
+quota enforcement. SHA-256 content hash on every event. Flush interface for persistence.
+
+### M8-04 — Billing Gateway ✅ shipped
+
+`runtime/monetization/billing_gateway.py`
+
+Stripe webhook integration with HMAC signature verification. Idempotent event processing.
+Governed tier lifecycle events emitted to governance ledger before tier transitions take
+effect. 7-day grace period on payment failure before revert to Community.
+
+### M8-05 — Monetization Middleware + API Routes ✅ shipped
+
+`runtime/monetization/middleware.py`
+
+FastAPI middleware for auth, tier enforcement, and sliding-window rate limiting on all
+`/api/**` routes. Three new endpoints: `/api/monetization/tiers`, `/pricing`, `/usage/{org_id}`.
+Response headers include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-ADAAD-Tier`.
+
+**Acceptance criteria:**
+- `TierEngine` is pure/deterministic — replay-safe: **✅**
+- API key validation offline (no DB) — replay-safe: **✅**
+- Quota checks fail-closed — ambiguous state rejects: **✅**
+- GovernanceGate never bypassed by tier logic: **✅** (invariant test in CI)
+- ≥90% test coverage on monetization module: **✅** (CI gate)
+- SPDX headers on all new files: **✅** (CI gate)
+
+**PRs shipped:** M8-01 (tier engine) → M8-02 (API keys) → M8-03 (usage) → M8-04 (billing) → M8-05 (middleware)
+
+---
+
 ## What will not be built
 
 To maintain constitutional clarity:
