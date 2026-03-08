@@ -3,25 +3,6 @@
 
 Pool management, lifecycle state machine, and health-probe integration for
 real container-level isolation backend.
-
-Architecture
-------------
-::
-
-    ContainerOrchestrator
-         ├── ContainerPool   — pre-warmed container slots, bounded by pool_size
-         ├── LifecycleStateMachine — IDLE → PREPARING → RUNNING → DONE / FAILED
-         └── ContainerHealthProbe (runtime/sandbox/container_health.py)
-
-Invariants
-----------
-- Container pool respects a hard slot ceiling (pool_size).
-- Every container lifecycle transition is journalled with a sha256 digest.
-- Health failures trigger immediate quarantine; quarantined slots are never
-  reused without a full re-probe cycle.
-- ADAAD_SANDBOX_CONTAINER_ROLLOUT=true activates this as the recommended default.
-- Budget coupling: each container slot consumes budget tokens from AgentBudgetPool
-  proportional to its resource_profile allocation.
 """
 
 from __future__ import annotations
@@ -29,27 +10,31 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+from runtime.state.mutation_job_queue import MutationJobQueueStore
 
 log = logging.getLogger(__name__)
 
 _EVENT_CONTAINER_ALLOCATED = "container_allocated.v1"
-_EVENT_CONTAINER_RELEASED  = "container_released.v1"
-_EVENT_CONTAINER_FAILED    = "container_failed.v1"
-_EVENT_HEALTH_PROBE        = "container_health_probe.v1"
+_EVENT_CONTAINER_RELEASED = "container_released.v1"
+_EVENT_CONTAINER_FAILED = "container_failed.v1"
+_EVENT_HEALTH_PROBE = "container_health_probe.v1"
+_EVENT_JOB_LEASED = "mutation_job_leased.v1"
+_EVENT_JOB_HEARTBEAT = "mutation_job_heartbeat.v1"
+_EVENT_JOB_ORPHAN_RECOVERED = "mutation_job_orphan_recovered.v1"
 
 
 class ContainerLifecycleState(str, Enum):
-    IDLE       = "idle"
-    PREPARING  = "preparing"
-    RUNNING    = "running"
-    DONE       = "done"
-    FAILED     = "failed"
+    IDLE = "idle"
+    PREPARING = "preparing"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
     QUARANTINE = "quarantine"
 
 
@@ -109,7 +94,6 @@ class ContainerPool:
         return slot
 
     def acquire(self, *, agent_id: str) -> Optional[ContainerSlot]:
-        """Return an idle healthy slot or allocate a new one if pool not full."""
         for slot in self._slots:
             if slot.is_available():
                 slot.transition(ContainerLifecycleState.PREPARING)
@@ -122,15 +106,12 @@ class ContainerPool:
             slot.allocated_at = time.time()
             slot.agent_id = agent_id
             return slot
-        return None  # pool exhausted
+        return None
 
     def release(self, slot_id: str, *, failed: bool = False, reason: str = "") -> bool:
         for slot in self._slots:
             if slot.slot_id == slot_id:
-                new_state = (
-                    ContainerLifecycleState.QUARANTINE if failed
-                    else ContainerLifecycleState.IDLE
-                )
+                new_state = ContainerLifecycleState.QUARANTINE if failed else ContainerLifecycleState.IDLE
                 slot.transition(new_state, reason=reason)
                 slot.released_at = time.time()
                 slot.agent_id = ""
@@ -138,7 +119,6 @@ class ContainerPool:
         return False
 
     def quarantine_unhealthy(self) -> List[str]:
-        """Quarantine all slots that failed health checks; return quarantined IDs."""
         quarantined = []
         for slot in self._slots:
             if not slot.health_ok and slot.state not in (
@@ -163,19 +143,7 @@ class ContainerPool:
 
 
 class ContainerOrchestrator:
-    """Manages container pool lifecycle and health for the sandbox executor.
-
-    Parameters
-    ----------
-    pool_size:
-        Maximum number of concurrent container slots.
-    image:
-        Container image (default: ``python:3.11-slim``).
-    resource_profile:
-        Profile ID passed to the isolation backend.
-    journal_fn:
-        Optional ``(event_type, payload) -> None`` for audit journalling.
-    """
+    """Manages container pool lifecycle and health for the sandbox executor."""
 
     def __init__(
         self,
@@ -184,27 +152,25 @@ class ContainerOrchestrator:
         image: str = "python:3.11-slim",
         resource_profile: str = "default",
         journal_fn: Any = None,
+        job_queue: MutationJobQueueStore | None = None,
     ) -> None:
-        self._pool = ContainerPool(
-            pool_size=pool_size, image=image, resource_profile=resource_profile
-        )
+        self._pool = ContainerPool(pool_size=pool_size, image=image, resource_profile=resource_profile)
         self._journal_fn = journal_fn
         self._image = image
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+        self._job_queue = job_queue
 
     def allocate(self, *, agent_id: str) -> Optional[ContainerSlot]:
-        """Allocate a container slot for agent_id. Returns None if pool exhausted."""
         slot = self._pool.acquire(agent_id=agent_id)
         if slot is not None:
-            self._journal(_EVENT_CONTAINER_ALLOCATED, {
-                "slot_id": slot.slot_id,
-                "agent_id": agent_id,
-                "image": self._image,
-                "lineage_digest": slot.lineage_digest,
-            })
+            self._journal(
+                _EVENT_CONTAINER_ALLOCATED,
+                {
+                    "slot_id": slot.slot_id,
+                    "agent_id": agent_id,
+                    "image": self._image,
+                    "lineage_digest": slot.lineage_digest,
+                },
+            )
         return slot
 
     def mark_running(self, slot_id: str) -> bool:
@@ -218,16 +184,12 @@ class ContainerOrchestrator:
         released = self._pool.release(slot_id, failed=failed, reason=reason)
         if released:
             ev = _EVENT_CONTAINER_FAILED if failed else _EVENT_CONTAINER_RELEASED
-            self._journal(ev, {
-                "slot_id": slot_id,
-                "failed": failed,
-                "reason": reason,
-            })
+            self._journal(ev, {"slot_id": slot_id, "failed": failed, "reason": reason})
         return released
 
     def run_health_checks(self) -> Dict[str, Any]:
-        """Run liveness probes on all slots; quarantine unhealthy ones."""
         from runtime.sandbox.container_health import ContainerHealthProbe
+
         probe = ContainerHealthProbe()
         results: Dict[str, bool] = {}
         for slot in self._pool.slots:
@@ -236,34 +198,43 @@ class ContainerOrchestrator:
             slot.last_health_check = time.time()
             results[slot.slot_id] = ok
         quarantined = self._pool.quarantine_unhealthy()
-        self._journal(_EVENT_HEALTH_PROBE, {
-            "results": results,
-            "quarantined": quarantined,
-        })
+        self._journal(_EVENT_HEALTH_PROBE, {"results": results, "quarantined": quarantined})
         return {"results": results, "quarantined": quarantined}
 
-    # ------------------------------------------------------------------
-    # Introspection
-    # ------------------------------------------------------------------
+    def lease_next_job(self, *, worker_id: str, now_ts: float | None = None) -> dict[str, Any] | None:
+        if self._job_queue is None:
+            return None
+        orphaned = self._job_queue.recover_orphans(now_ts=now_ts)
+        for job_id in orphaned:
+            self._journal(_EVENT_JOB_ORPHAN_RECOVERED, {"job_id": job_id, "worker_id": worker_id})
+        leased = self._job_queue.lease_next(worker_id=worker_id, now_ts=now_ts)
+        if leased is not None:
+            self._journal(_EVENT_JOB_LEASED, {"job_id": leased["job_id"], "worker_id": worker_id})
+        return leased
+
+    def heartbeat_job(self, *, job_id: str, worker_id: str, now_ts: float | None = None) -> bool:
+        if self._job_queue is None:
+            return False
+        ok = self._job_queue.heartbeat(job_id=job_id, worker_id=worker_id, now_ts=now_ts)
+        if ok:
+            self._journal(_EVENT_JOB_HEARTBEAT, {"job_id": job_id, "worker_id": worker_id})
+        return ok
+
+    def complete_job(self, *, job_id: str, succeeded: bool, error: str = "", now_ts: float | None = None) -> bool:
+        if self._job_queue is None:
+            return False
+        state = "succeeded" if succeeded else "failed"
+        return self._job_queue.complete(job_id=job_id, state=state, error=error, now_ts=now_ts)
 
     def pool_status(self) -> Dict[str, Any]:
         return {
             "pool_size": self._pool.pool_size,
             "available": self._pool.available_count,
             "slots": [
-                {
-                    "slot_id": s.slot_id,
-                    "state": s.state.value,
-                    "health_ok": s.health_ok,
-                    "agent_id": s.agent_id,
-                }
+                {"slot_id": s.slot_id, "state": s.state.value, "health_ok": s.health_ok, "agent_id": s.agent_id}
                 for s in self._pool.slots
             ],
         }
-
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
 
     def _journal(self, event_type: str, payload: Dict[str, Any]) -> None:
         if self._journal_fn is None:

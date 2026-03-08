@@ -152,3 +152,42 @@ def test_mutation_orchestration_blocked_payload_isolation() -> None:
         exit_after_boot=False,
     )
     assert second.payload == {"run_cycle": False}
+
+
+def test_mutation_orchestration_enqueue_and_dispatch_idempotent(tmp_path: Path) -> None:
+    from runtime.state.mutation_job_queue import MutationJobQueueStore
+    from runtime.sandbox.container_orchestrator import ContainerOrchestrator
+
+    queue = MutationJobQueueStore(tmp_path / "jobs.json", backend="json")
+    orchestrator = ContainerOrchestrator(job_queue=queue)
+    service = MutationOrchestrationService(queue_store=queue, orchestrator=orchestrator)
+
+    payload = {"mutation": "m-9", "epoch": "e-9"}
+    first = service.enqueue_mutation_job(payload, dedupe_key="demo", now_ts=1.0)
+    second = service.enqueue_mutation_job(payload, dedupe_key="demo", now_ts=2.0)
+    dispatched = service.dispatch_next_job(worker_id="worker-1", now_ts=3.0)
+    duplicate_dispatch = service.dispatch_next_job(worker_id="worker-2", now_ts=3.1)
+
+    assert first.payload["job_id"] == second.payload["job_id"]
+    assert dispatched.reason == "job_dispatched"
+    assert duplicate_dispatch.reason == "no_queued_jobs"
+
+
+def test_mutation_orchestration_worker_crash_recovery_retry(tmp_path: Path) -> None:
+    from runtime.state.mutation_job_queue import MutationJobQueueStore
+    from runtime.sandbox.container_orchestrator import ContainerOrchestrator
+
+    queue = MutationJobQueueStore(tmp_path / "jobs.json", backend="json", lease_timeout_s=5)
+    orchestrator = ContainerOrchestrator(job_queue=queue)
+    service = MutationOrchestrationService(queue_store=queue, orchestrator=orchestrator)
+
+    enqueued = service.enqueue_mutation_job({"mutation": "m-crash"}, now_ts=10.0)
+    job_id = enqueued.payload["job_id"]
+    service.dispatch_next_job(worker_id="worker-a", now_ts=11.0)
+
+    queue.recover_orphans(now_ts=20.0)
+    assert queue.get(job_id)["state"] == "quarantined"
+
+    retry = service.retry_job(job_id=job_id, now_ts=21.0)
+    assert retry.payload["retried"] is True
+    assert queue.get(job_id)["state"] == "queued"
