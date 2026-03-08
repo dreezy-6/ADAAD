@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 AGENTS_PATH = Path("AGENTS.md")
 STATE_PATH = Path(".adaad_agent_state.json")
-SPEC_PATH = Path("docs/governance/ARCHITECT_SPEC_v3.0.0.md")
-CANONICAL_SPEC_PATH = "docs/governance/ARCHITECT_SPEC_v3.0.0.md"
-CANONICAL_SPEC_BASENAME = "ARCHITECT_SPEC_v3.0.0.md"
+SPEC_PATH = Path("docs/governance/ARCHITECT_SPEC_v3.1.0.md")
+PROCESSION_PATH = Path("docs/governance/ADAAD_PR_PROCESSION_2026-03.md")
+CANONICAL_SPEC_PATH = "docs/governance/ARCHITECT_SPEC_v3.1.0.md"
+CANONICAL_SPEC_BASENAME = "ARCHITECT_SPEC_v3.1.0.md"
 
 HIGH_VISIBILITY_ENTRYPOINTS = [
     Path("README.md"),
@@ -78,6 +80,74 @@ def _validate_canonical_spec_claims(errors: list[str]) -> None:
                     )
 
 
+def _extract_phase6_pr_sequence(text: str) -> list[str]:
+    sequence: list[str] = []
+    for match in re.finditer(r"\bPR-PHASE6-(\d{2})\b", text):
+        pr_id = f"PR-PHASE6-{match.group(1)}"
+        if pr_id not in sequence:
+            sequence.append(pr_id)
+    return sequence
+
+
+def _highest_merged_phase6_index(git_log_text: str) -> int:
+    indices = [int(match.group(1)) for match in re.finditer(r"PR-PHASE6-(\d{2})", git_log_text)]
+    if not indices:
+        return 0
+    return max(indices)
+
+
+def _validate_state_next_pr_not_merged(errors: list[str], next_pr: str) -> None:
+    if not PROCESSION_PATH.exists():
+        errors.append(f"missing canonical procession file: {PROCESSION_PATH}")
+        return
+
+    sequence = _extract_phase6_pr_sequence(PROCESSION_PATH.read_text(encoding="utf-8"))
+    if not sequence:
+        errors.append("canonical procession file does not define any PR-PHASE6 sequence")
+        return
+
+    try:
+        git_log_text = subprocess.check_output(
+            ["git", "log", "--oneline", "--decorate"],
+            text=True,
+            stderr=subprocess.STDOUT,
+        )
+    except subprocess.CalledProcessError as exc:
+        errors.append(f"unable to read git merge history: {exc.output.strip()}")
+        return
+
+    merged_cutoff = _highest_merged_phase6_index(git_log_text)
+    merged_prs = {pr for pr in sequence if int(pr.rsplit("-", maxsplit=1)[-1]) <= merged_cutoff}
+
+    if next_pr.upper() in {"NONE", "N/A", "NA", "COMPLETED"}:
+        if merged_cutoff < int(sequence[-1].rsplit("-", maxsplit=1)[-1]):
+            expected_next = next(
+                pr
+                for pr in sequence
+                if int(pr.rsplit("-", maxsplit=1)[-1]) > merged_cutoff
+            )
+            errors.append(
+                f"state next_pr={next_pr!r} but canonical sequence has pending PR {expected_next}"
+            )
+        return
+
+    if next_pr in merged_prs:
+        errors.append(
+            f"state next_pr={next_pr!r} regresses to an already merged canonical PR"
+        )
+
+    if next_pr.startswith("PR-PHASE6-"):
+        expected_next = None
+        for pr in sequence:
+            if int(pr.rsplit("-", maxsplit=1)[-1]) > merged_cutoff:
+                expected_next = pr
+                break
+        if expected_next and next_pr != expected_next:
+            errors.append(
+                f"state next_pr={next_pr!r} is not serial; expected {expected_next!r}"
+            )
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -99,13 +169,8 @@ def main() -> int:
     if not state_next_pr:
         errors.append(".adaad_agent_state.json: next_pr is empty")
 
-    if not agents_next_heading:
-        errors.append("AGENTS.md: unable to locate '(next)' phase heading")
 
-    if not agents_next_pr:
-        errors.append("AGENTS.md: unable to locate first PR in the '(next)' phase table")
-
-    # Phase label consistency: state active_phase and AGENTS (next) heading must agree
+    # Optional AGENTS.md alignment checks apply only when a "(next)" section exists.
     if active_phase_label and agents_next_heading:
         if active_phase_label.lower() not in agents_next_heading.lower():
             errors.append(
@@ -113,12 +178,13 @@ def main() -> int:
                 f"does not match state active_phase label ({active_phase_label!r})"
             )
 
-    # next_pr must match AGENTS (next) table first PR
     if state_next_pr and agents_next_pr and state_next_pr != agents_next_pr:
         errors.append(
             f"state/AGENTS mismatch: state next_pr={state_next_pr!r}, "
             f"AGENTS next table first PR={agents_next_pr!r}"
         )
+
+    _validate_state_next_pr_not_merged(errors, state_next_pr)
 
     _validate_canonical_spec_claims(errors)
 
