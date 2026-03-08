@@ -16,7 +16,7 @@ The part I keep coming back to: the GovernanceGate is architecturally the only t
 **What it does technically:**
 - Three Claude-powered agents (Architect/Dream/Beast) propose mutations independently each epoch
 - Proposals scored using BLX-alpha genetic algorithm, UCB1 bandit agent selection
-- Survivors face 16 constitutional rules: AST validity, no banned tokens, cryptographic signature required, resource bounds, lineage continuity, etc.
+- Survivors face a versioned constitutional rule set: AST validity, no banned tokens, cryptographic signature required, resource bounds, lineage continuity, etc.
 - Every decision written to a SHA-256 hash-chained evidence ledger — tamper-evident, append-only
 - Deterministic replay: any governance decision can be re-run later and produces byte-identical results. Divergence halts the pipeline.
 - Phase 6 (active): the system can propose amendments to its own roadmap. Still requires human sign-off. Still goes through the same gate.
@@ -133,7 +133,7 @@ The governance layer is what I think is most interesting from an LLM-systems per
 
 **The agents get constrained inputs.** Each agent persona (Architect/Dream/Beast) receives a structured `CodebaseContext` — file summaries, recent failures, epoch ID. The epoch ID is the entropy seed, so proposals are deterministically reproducible from context alone.
 
-**The gate doesn't use LLM judgment.** The 16 constitutional rules are deterministic functions: AST validity check, banned token scan, cryptographic signature verification, resource bounds, lineage hash check, etc. No LLM is asked "is this safe?" — the rules either pass or fail computationally.
+**The gate doesn't use LLM judgment.** The constitutional rules are versioned deterministic functions: AST validity check, banned token scan, cryptographic signature verification, resource bounds, lineage hash check, etc. No LLM is asked "is this safe?" — the rules either pass or fail computationally.
 
 **Scoring uses semantic AST diff.** Phase 4 replaced regex heuristics with `SemanticDiffEngine` — AST-based risk scoring: `risk = (ast_depth_delta × 0.3) + (cyclomatic_delta × 0.4) + (import_surface_delta × 0.3)`. Identical AST inputs → identical scores.
 

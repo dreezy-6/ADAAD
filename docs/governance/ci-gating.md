@@ -36,6 +36,18 @@ These jobs run for every CI execution:
 
 These jobs run only when classifier gates evaluate to `true`:
 
+### Conditional required-check mapping
+
+| Required check | Trigger condition | Selector scope |
+|---|---|---|
+| `strict-replay` | `pr_tier=critical` or replay/ledger flag from PR template | strict deterministic replay verification |
+| `evidence-suite` | governance/runtime/security path changes or replay/ledger impact flag | evidence/sandbox tests |
+| `promotion-suite` | governance/runtime path changes, policy/constitution flag, or `pr_tier=critical` | governance/promotion selectors |
+| `shadow-governance-gate` | policy-touching paths (`governance/governance_policy*.json`, policy runtime/tests fixtures) or policy/constitution flag | replay-only policy evaluator against historical ledgers |
+| `phase7-reputation-gate` | governance/server/relevant UI path changes (`governance/**`, `server.py`, `ui/**`) | reviewer reputation + ledger + pressure + constitutional-floor + reviewer panel endpoint/UI coverage |
+| `pr3h-acceptance-gate` | PR-3H closure scope (`tests/acceptance/pr3h/**`, `scripts/validate_pr3h_acceptance.py`, checkpoint/entropy replay acceptance surfaces) | checkpoint tamper escalation + entropy triage replay fixtures via machine-readable audit output |
+| `benchmark-regression-gate` | always-on CI promotion check | deterministic benchmark generation + category delta non-regression (`scripts/validate_benchmark_deltas.py`) |
+
 - `strict-replay`
   - Runs for `critical` tier or replay/ledger impact flag.
   - Skips for docs-only and tests-only changes.
@@ -43,6 +55,31 @@ These jobs run only when classifier gates evaluate to `true`:
   - Runs when governance/runtime/security paths changed or replay/ledger impact is flagged.
 - `promotion-suite`
   - Runs when governance/runtime paths changed, policy/constitution impact is flagged, or the PR is `critical` tier.
+- `shadow-governance-gate`
+  - Non-optional for policy-touching PRs (or explicit policy-impact flag).
+  - Runs `scripts/evaluate_shadow_governance.py` in replay-only mode against `tests/fixtures/governance/shadow_replay_ledger.json`.
+  - Fails closed when any threshold breach occurs (`false_allow_rate > 0.05`, `false_block_rate > 0.20`, or `divergence_count > 3`).
+- `phase7-reputation-gate`
+  - Runs when governance/server/relevant UI paths change (`governance/**`, `server.py`, `ui/**`).
+  - Executes the Phase 7 invariant selector set: reviewer reputation scoring, reviewer reputation ledger, review pressure, constitutional-floor coverage, and reviewer panel endpoint/UI coverage.
+
+- `pr3h-acceptance-gate`
+  - Required evidence gate for PR-3H closure.
+  - Runs `python scripts/validate_pr3h_acceptance.py` and requires a passing machine-readable audit artifact (`artifacts/pr3h_acceptance_audit.json`) from CI.
+  - PR-3H is not considered complete until the uploaded artifact reports `"status": "pass"`.
+
+
+## Benchmark regression gate (required)
+
+A dedicated CI job, `benchmark-regression-gate`, enforces deterministic benchmark promotion controls:
+
+1. Generate machine-readable benchmark output and scorecard via
+   `python scripts/run_release_benchmarks.py --release-candidate ci-${GITHUB_SHA}`.
+2. Compare candidate benchmark results against the baseline release benchmark artifact using
+   `python scripts/validate_benchmark_deltas.py --baseline <baseline> --candidate <candidate>`.
+
+Promotion is blocked on any category regression unless a signed waiver JSON is provided and passes
+signature and category-consistency validation. Missing or invalid waiver input fails closed.
 
 ## Simplification contract gate (required)
 
@@ -138,6 +175,8 @@ Required jobs (all blocking):
   - Includes a rule-activation assertion that fails when any constitution rule with baseline `severity=blocking` or a `tier_overrides` blocking severity is disabled in `runtime/governance/constitution.yaml`.
 - `replay-strict-validation`
 - `constitution-fingerprint-stability`
+- `reviewer-calibration-validation`
+  - Runs the Phase 7 reviewer calibration selector set (reputation, ledger, review pressure, constitutional-floor, and reviewer panel endpoint/UI coverage).
 
 The terminal `release-gate` job is fail-closed and requires each upstream job result to be `success`; any failure, cancellation, or skip state blocks release gating.
 
@@ -305,3 +344,23 @@ The following check is added to `governance_strict_release_gate.yml` before v3.1
 
 - **`phase6-roadmap-m6xx-all-shipped`**: M6-01 through M6-05 must all be marked
   `✅ shipped` in `ROADMAP.md`. Any pending milestone → release gate blocks v3.1.0 tag.
+
+---
+
+### Formal Amendment Model Check Gate
+
+| Job | Workflow | Gate type |
+|---|---|---|
+| `amendment-formal-model-check` | `ci.yml` | Formal property check |
+
+**Purpose:** Run bounded formal workflow checks for amendment state transitions whenever PRs touch
+`runtime/`, `security/`, `governance/`, or amendment-specific logic.
+
+**Command set:**
+
+- `PYTHONPATH=. python tools/formal/amendment_state_model.py`
+- `PYTHONPATH=. pytest tests/formal/test_amendment_state_model.py -q`
+
+**Pass condition:** No invariant violation in bounded model exploration; formal model tests pass.
+
+**Fail condition:** Any property violation or test failure blocks CI.

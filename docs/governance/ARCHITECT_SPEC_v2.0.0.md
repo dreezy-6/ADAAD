@@ -46,7 +46,7 @@ Violation of this invariant is a constitutional fault. Pipeline halts immediatel
 
 ### 1.3 The Fourteen Constitutional Rules
 
-All fourteen rules are evaluated sequentially per mutation. Evaluation is deterministic and order-stable.
+The constitutional rule set for this spec version is evaluated sequentially per mutation. Evaluation is deterministic and order-stable.
 
 | # | Rule ID | Severity | Gate Behavior |
 |---|---------|----------|---------------|
@@ -121,7 +121,7 @@ EPOCH START
     │
     ▼
 [5] CONSTITUTIONAL GATE (GovernanceGate) ← SINGLE AUTHORITY POINT
-    Purpose: Evaluate each candidate against all 14 constitutional rules.
+    Purpose: Evaluate each candidate against the constitutional rule set for this spec version.
     Inputs:  MutationCandidate, MutationScore, tier classification, ScoringWeights
     Checks:
       - All BLOCKING rules must PASS
@@ -183,7 +183,7 @@ EPOCH COMPLETE
 |----|-----------|-------------|------------------|
 | DET-01 | All mutation scoring is deterministic given fixed ScoringWeights and seed | `core/random_control.py` | Halt; emit replay divergence |
 | DET-02 | BLX-alpha crossover produces identical outputs for identical parent inputs | Unit: `test_population_manager.py` | Reject crossover result; log |
-| DET-03 | Gate evaluation order is fixed (rule 1–14 always evaluated in sequence) | GovernanceGate implementation | Audit log mandatory |
+| DET-03 | Gate evaluation order is fixed (for v2.0.0, rules 1–14 are always evaluated in sequence) | GovernanceGate implementation | Audit log mandatory |
 | DET-04 | Weight adaptation produces identical outputs for identical EpochResult inputs | Unit: `test_weight_adaptor.py` | Log; use prior state |
 | DET-05 | context_hash (MD5 of CodebaseContext) is stable across identical inputs | Unit: `test_ai_mutation_proposer.py` | Reject proposal; re-hash required |
 | DET-06 | replay_proof bundle is verifiable offline via `tools/verify_replay_bundle.py` | CI + `test_replay_proof.py` | EPOCH INVALID |
@@ -283,7 +283,7 @@ EPOCH COMPLETE
 
 ### 4.6 GovernanceGate (Constitution Enforcement)
 
-**Purpose:** The single authority for mutation approval. Evaluates all 14 rules.
+**Purpose:** The single authority for mutation approval. Evaluates the constitutional rule set defined for this spec version.
 
 **Notes for all agents:** This subsystem is **read-only** from the perspective of all other agents. Its verdict is final. No agent may retry, override, or bypass a BLOCKING failure. Any such attempt is a constitutional fault.
 

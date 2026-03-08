@@ -25,7 +25,7 @@ ADAAD runs a continuous improvement loop on your codebase. Three AI agents (Arch
 
 🔁 **Deterministic replay** — every governance decision can be re-run and produces byte-identical results. Replay divergence halts the pipeline. This is what makes it auditable, not just fast.
 
-🛡️ **Constitutional gating** — 16 rules evaluated per mutation. AST validity, banned token scan, cryptographic signature required, resource bounds, lineage continuity. One failure = full halt.
+🛡️ **Constitutional gating** — a versioned rule set evaluated per mutation (see Constitution + governance artifact for current count). AST validity, banned token scan, cryptographic signature required, resource bounds, lineage continuity. One failure = full halt.
 
 🧾 **Permanent evidence ledger** — every proposal, score, and decision is SHA-256 hash-chained. Tamper-evident, append-only, replay-verifiable.
 
@@ -62,7 +62,7 @@ Happy to answer anything. The constitution is worth a read if you're interested 
 ## Gallery / Screenshots captions
 
 1. **Pipeline overview** — "The full mutation lifecycle: three agents propose, genetic algorithm scores, constitutional gate decides"
-2. **GovernanceGate verdict** — "16 rules, evaluated in order. One blocking failure halts everything."
+2. **GovernanceGate verdict** — "Versioned constitutional rule set, evaluated in order. One blocking failure halts everything."
 3. **Evidence ledger** — "SHA-256 hash-chained. Every decision, permanently recorded."
 4. **Android dashboard** — "Free. No Play Store. Install via APK, Obtainium, F-Droid, or PWA."
 5. **Phase 6 roadmap amendment** — "ADAAD proposes. Humans approve. Always."

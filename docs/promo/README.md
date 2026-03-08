@@ -96,7 +96,7 @@ A: Diversity in proposals, same governance gate. Architect tends toward safe, me
 A: Given the same inputs, the governance pipeline produces byte-identical output. Any past governance decision can be re-run and will produce the exact same verdict. If a replay ever diverges from the original, the pipeline halts immediately. This makes auditing real, not theoretical.
 
 **Q: How is the constitution enforced?**
-A: `GovernanceGate` evaluates 16 rules in order. Any BLOCKING rule failure immediately rejects the mutation and logs the failure. There is no way to bypass this — it's not a config flag, it's the only path mutations travel through.
+A: `GovernanceGate` evaluates the versioned constitutional rule set in order (see Constitution + governance artifact for current count). Any BLOCKING rule failure immediately rejects the mutation and logs the failure. There is no way to bypass this — it's not a config flag, it's the only path mutations travel through.
 
 **Q: Can the AI modify its own constitution?**
 A: No. The AI can propose a constitutional amendment, but it must pass through the same GovernanceGate as any other change, requires Tier 0 classification (highest oversight), and requires explicit human sign-off before it takes effect.

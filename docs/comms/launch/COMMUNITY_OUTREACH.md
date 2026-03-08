@@ -12,7 +12,7 @@
 >
 > ADAAD is an open-source framework for governed autonomous code evolution. The short version: AI agents propose code improvements, they compete in a genetic-algorithm tournament, and the survivors face a constitutional policy gate before anything changes.
 >
-> The piece I find most interesting from an ML systems perspective: the gate is entirely deterministic. No LLM is asked "is this safe?" — the 16 rules are computational checks (AST validity, banned token scan, crypto signature, resource bounds, etc.). Any governance decision can be replayed from logged inputs and produces byte-identical results. Divergence halts the pipeline.
+> The piece I find most interesting from an ML systems perspective: the gate is entirely deterministic. No LLM is asked "is this safe?" — the versioned constitutional rule set is composed of computational checks (AST validity, banned token scan, crypto signature, resource bounds, etc.). Any governance decision can be replayed from logged inputs and produces byte-identical results. Divergence halts the pipeline.
 >
 > Phase 6 is the wild one: the system can now propose amendments to its own roadmap. Same gate. Human sign-off required. `authority_level = "governor-review"` is hardcoded and injection-blocked.
 >

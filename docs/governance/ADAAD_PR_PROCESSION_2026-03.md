@@ -1,15 +1,15 @@
 # ADAAD PR Procession Plan — 2026-03
 
 > [!IMPORTANT]
-> **Canonical source (automation sequence control):** This document is the controlling source for **active Phase 6 PR order**, dependency graph, CI tier, and status used by ADAAD automation.
+> **Canonical source (automation sequence control):** This document is the controlling source for **Phase 6 PR order and closure state**, dependency graph, CI tier, and status used by ADAAD automation.
 
 **Authority chain:** `docs/CONSTITUTION.md` > `docs/ARCHITECTURE_CONTRACT.md` > `docs/governance/ARCHITECT_SPEC_v3.1.0.md` > this document  
 **Last reviewed:** 2026-03-08  
-**Active milestone:** `v3.1.0` (Phase 6 close)
+**Milestone:** `v3.1.0` (Phase 6 complete)
 
 ---
 
-## 1) Canonical Active Sequence (Phase 6)
+## 1) Canonical Sequence (Phase 6 Complete)
 
 ### 1.1 Sequence order (authoritative)
 
@@ -17,20 +17,20 @@
 PR-PHASE6-01  →  PR-PHASE6-02  →  PR-PHASE6-03  →  PR-PHASE6-04  →  v3.1.0 tag
 ```
 
-### 1.2 Active PR status + dependency table
+### 1.2 PR status + dependency table
 
 | PR ID | Title | Milestone | CI tier | Depends on | Status |
 |---|---|---|---|---|---|
 | `PR-PHASE6-01` | Phase 6 governance foundations | `v3.1.0` | `critical` | Phase 5 complete (`v3.0.0`) | `merged` |
 | `PR-PHASE6-02` | M6-03: Wire RoadmapAmendmentEngine into EvolutionLoop | `v3.1.0` | `critical` | `PR-PHASE6-01` merged | `merged` |
 | `PR-PHASE6-03` | M6-04: Federated roadmap propagation | `v3.1.0` | `critical` | `PR-PHASE6-02` merged | `merged` |
-| `PR-PHASE6-04` | M6-05: Free Android distribution pipeline close | `v3.1.0` | `standard` | `android-free-release.yml` passing | `active` |
+| `PR-PHASE6-04` | M6-05: Free Android distribution pipeline close | `v3.1.0` | `standard` | `android-free-release.yml` passing | `merged` |
 
 ### 1.3 Dependency graph (fail-closed interpretation)
 
-- `PR-PHASE6-04` is the only active unmerged PR in this sequence.
+- Phase 6 PR sequencing is fully completed through `PR-PHASE6-04`.
 - No PR may be advanced out-of-order.
-- `v3.1.0` tag is blocked until `PR-PHASE6-04` is merged and required release gates pass.
+- `v3.1.0` release is unblocked after the Phase 6 sequence merged.
 
 ---
 
@@ -42,7 +42,7 @@ The block below is intended for deterministic preflight checks against `.adaad_a
 adaad_pr_procession_contract:
   schema_version: "1.0"
   source_of_truth: "docs/governance/ADAAD_PR_PROCESSION_2026-03.md"
-  active_phase: "phase6"
+  active_phase: "phase6_complete"
   milestone: "v3.1.0"
   ordered_pr_ids:
     - PR-PHASE6-01
@@ -65,20 +65,21 @@ adaad_pr_procession_contract:
     PR-PHASE6-04:
       ci_tier: standard
       depends_on: ["android-free-release.yml:pass"]
-      status: active
+      status: merged
   state_alignment:
-    expected_next_pr: PR-PHASE6-04
-    expected_last_completed_pr: PR-PHASE6-03
+    expected_next_pr: NONE
+    expected_last_completed_pr: PR-PHASE6-04
     blocked_reason_must_be_null: true
 ```
 
 ### 2.1 Preflight alignment rules (recommended validator behavior)
 
 A validator comparing this document to `.adaad_agent_state.json` should fail if:
-1. `next_pr` is not `PR-PHASE6-04`.
-2. `last_completed_pr` is not `PR-PHASE6-03`.
+1. `next_pr` is not `NONE`.
+2. `last_completed_pr` is not `PR-PHASE6-04`.
 3. Any `pr_nodes.*.status` diverges from this contract.
 4. `ordered_pr_ids` is not strict topological order.
+5. `blocked_reason` is non-null during the finalized `v3.1.0` release-complete state.
 
 ---
 
@@ -110,4 +111,6 @@ Historical details remain available via git history; this file now contains only
 
 ## Changelog
 
+- **2026-03-08:** Updated Phase 6 sequence status to complete (`PR-PHASE6-04` merged, `v3.1.0` released) and aligned machine-checkable contract expectations with `.adaad_agent_state.json`.
 - **2026-03-08:** Canonicalized this document to Phase 6 active sequence only; archived superseded Phase 4/5 planning sections; added machine-checkable procession contract for `.adaad_agent_state.json` preflight alignment.
+- **2026-03-08:** Post-merge state-alignment correction: updated `PR-PHASE6-04` to merged, set terminal alignment (`next_pr: NONE`, `last_completed_pr: PR-PHASE6-04`), and revised dependency/preflight language to reflect finalized `v3.1.0` completion.

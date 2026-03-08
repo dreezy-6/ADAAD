@@ -53,7 +53,7 @@ Open-source system where three Claude-powered AI agents compete to improve a cod
 
 **Selection layer:** BLX-alpha genetic algorithm population. Proposals compete, cross-breed (good ideas combine), get ranked by a fitness function. UCB1 bandit selects which agent gets more proposal budget. Thompson sampling activates on detected non-stationarity (Page-Hinkley sequential change detection, ≥30 epochs).
 
-**Governance layer:** `GovernanceGate` evaluates 16 deterministic rules per mutation across three tiers (Sandbox/Stable/Production). Rules cover AST validity, banned tokens, cryptographic signature, lineage continuity, resource bounds, entropy budget, and more. Three severity levels: BLOCKING (reject), WARNING (flag), ADVISORY (log).
+**Governance layer:** `GovernanceGate` evaluates a versioned deterministic rule set per mutation (see Constitution + governance artifact for current count) across three tiers (Sandbox/Stable/Production). Rules cover AST validity, banned tokens, cryptographic signature, lineage continuity, resource bounds, entropy budget, and more. Three severity levels: BLOCKING (reject), WARNING (flag), ADVISORY (log).
 
 **Adaptation layer:** `WeightAdaptor` adjusts scoring weights via momentum gradient descent (LR=0.05). `PenaltyAdaptor` adapts risk/complexity penalties based on post-merge outcome data from the evidence ledger. Weights bounded [0.05, 0.70] by constitutional rule.
 
@@ -113,7 +113,7 @@ AI code generation tools create changes fast. Change management requires knowing
 
 **What ADAAD adds:**
 
-Every mutation goes through a governance pipeline that produces a cryptographic evidence bundle. The bundle includes: the original proposal, the scoring rationale, the gate evaluation results (16 rules, named, with pass/fail for each), the final decision, and a SHA-256 chain linking it to every prior decision.
+Every mutation goes through a governance pipeline that produces a cryptographic evidence bundle. The bundle includes: the original proposal, the scoring rationale, the gate evaluation results (versioned rule set, named, with pass/fail for each), the final decision, and a SHA-256 chain linking it to every prior decision.
 
 You can replay any decision later with byte-identical results. "Why did this change happen on March 6th?" → replay the epoch → get the exact same gate verdicts → verify the evidence bundle.
 

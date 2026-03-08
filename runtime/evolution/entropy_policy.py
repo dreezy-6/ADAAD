@@ -19,10 +19,52 @@ class EntropyPolicyViolation(RuntimeError):
 
 
 @dataclass(frozen=True)
+class EntropyAnomalyThresholds:
+    """Deterministic anomaly triage thresholds for observed entropy bits.
+
+    ``monitor_bits`` marks the first non-zero observed entropy level as an anomaly.
+    ``investigate_bits`` marks the threshold where anomalies require manual triage.
+    ``block_bits`` marks critical anomaly severity and always fail-closed behavior.
+    """
+
+    monitor_bits: int = 1
+    investigate_bits: int = 8
+    block_bits: int = 16
+
+    def classify(self, *, observed_bits: int) -> Dict[str, str]:
+        """Classify anomaly severity deterministically using integer thresholds."""
+        observed = max(0, int(observed_bits))
+        if observed >= int(self.block_bits):
+            return {"triage_level": "block", "triage_reason": "anomaly_observed_bits_block_threshold_reached"}
+        if observed >= int(self.investigate_bits):
+            return {
+                "triage_level": "investigate",
+                "triage_reason": "anomaly_observed_bits_investigate_threshold_reached",
+            }
+        if observed >= int(self.monitor_bits):
+            return {"triage_level": "monitor", "triage_reason": "anomaly_observed_bits_monitor_threshold_reached"}
+        return {"triage_level": "none", "triage_reason": "anomaly_not_detected"}
+
+
+ENTROPY_REASON_TAXONOMY = {
+    "ok",
+    "entropy_policy_disabled",
+    "entropy_budget_exceeded",
+    "epoch_entropy_budget_exceeded",
+    "mutation_and_epoch_entropy_budget_exceeded",
+    "anomaly_not_detected",
+    "anomaly_observed_bits_monitor_threshold_reached",
+    "anomaly_observed_bits_investigate_threshold_reached",
+    "anomaly_observed_bits_block_threshold_reached",
+}
+
+
+@dataclass(frozen=True)
 class EntropyPolicy:
     policy_id: str
     per_mutation_ceiling_bits: int
     per_epoch_ceiling_bits: int
+    anomaly_thresholds: EntropyAnomalyThresholds = EntropyAnomalyThresholds()
 
     @property
     def policy_hash(self) -> str:
@@ -31,6 +73,11 @@ class EntropyPolicy:
                 "policy_id": self.policy_id,
                 "per_mutation_ceiling_bits": self.per_mutation_ceiling_bits,
                 "per_epoch_ceiling_bits": self.per_epoch_ceiling_bits,
+                "anomaly_thresholds": {
+                    "monitor_bits": int(self.anomaly_thresholds.monitor_bits),
+                    "investigate_bits": int(self.anomaly_thresholds.investigate_bits),
+                    "block_bits": int(self.anomaly_thresholds.block_bits),
+                },
             }
         )
 
@@ -64,10 +111,36 @@ class EntropyPolicy:
             "policy_hash": self.policy_hash,
             "per_mutation_ceiling_bits": int(self.per_mutation_ceiling_bits),
             "per_epoch_ceiling_bits": int(self.per_epoch_ceiling_bits),
+            "anomaly_thresholds": {
+                "monitor_bits": int(self.anomaly_thresholds.monitor_bits),
+                "investigate_bits": int(self.anomaly_thresholds.investigate_bits),
+                "block_bits": int(self.anomaly_thresholds.block_bits),
+            },
         }
+        detail.update(self.anomaly_thresholds.classify(observed_bits=effective_observed_bits))
 
-        if int(self.per_mutation_ceiling_bits) <= 0 or int(self.per_epoch_ceiling_bits) <= 0:
-            return {"passed": True, "reason": "entropy_policy_disabled", **detail}
+        policy_enabled = int(self.per_mutation_ceiling_bits) > 0 and int(self.per_epoch_ceiling_bits) > 0
+        if not policy_enabled:
+            return {
+                "passed": True,
+                "reason": "entropy_policy_disabled",
+                "triage_level": self.anomaly_triage.classify(
+                    mutation_ratio=0.0,
+                    epoch_ratio=0.0,
+                    policy_enabled=False,
+                ),
+                **detail,
+            }
+
+        mutation_ratio = mutation_total_bits / float(self.per_mutation_ceiling_bits)
+        epoch_ratio = effective_epoch_bits / float(self.per_epoch_ceiling_bits)
+        detail["mutation_utilization_ratio"] = mutation_ratio
+        detail["epoch_utilization_ratio"] = epoch_ratio
+        detail["triage_level"] = self.anomaly_triage.classify(
+            mutation_ratio=mutation_ratio,
+            epoch_ratio=epoch_ratio,
+            policy_enabled=True,
+        )
 
         mutation_exceeded = mutation_total_bits > int(self.per_mutation_ceiling_bits)
         epoch_exceeded = effective_epoch_bits > int(self.per_epoch_ceiling_bits)
@@ -100,7 +173,18 @@ def enforce_entropy_policy(
             observed_bits=observed_bits,
         )
     except EntropyPolicyViolation as exc:
-        return {"passed": False, "reason": "entropy_ceiling_exceeded", **exc.detail}
+        return {
+            "passed": False,
+            "reason": "entropy_ceiling_exceeded",
+            "violation_reason": exc.reason,
+            **exc.detail,
+        }
 
 
-__all__ = ["EntropyPolicy", "EntropyPolicyViolation", "enforce_entropy_policy"]
+__all__ = [
+    "ENTROPY_REASON_TAXONOMY",
+    "EntropyAnomalyThresholds",
+    "EntropyPolicy",
+    "EntropyPolicyViolation",
+    "enforce_entropy_policy",
+]

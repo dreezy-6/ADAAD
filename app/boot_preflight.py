@@ -8,7 +8,7 @@ import os
 from typing import Any
 
 from app import APP_ROOT
-from runtime.api.runtime_services import metrics
+from runtime.api.runtime_services import metrics, validate_constitution_version_config
 
 BOOT_KNOWN_ENVS: frozenset[str] = frozenset({"dev", "test", "staging", "production", "prod"})
 BOOT_STRICT_ENVS: frozenset[str] = frozenset({"staging", "production", "prod"})
@@ -54,8 +54,17 @@ def load_storage_manager_configs() -> tuple[dict[str, Any], dict[str, Any]]:
     return governance_config, runtime_config
 
 
+
+
+def validate_boot_constitution_version() -> None:
+    """Fail closed if configured constitution version does not match runtime canon."""
+    result = validate_constitution_version_config()
+    if not result.get("ok"):
+        raise SystemExit(f"CRITICAL: {result.get('reason', 'constitution_version_validation_failed')}")
+
 def validate_boot_environment() -> None:
     """Fail closed on invalid or unsafe environment configuration at startup."""
+    validate_boot_constitution_version()
     env = (os.getenv("ADAAD_ENV") or "").strip().lower()
     if not env:
         raise SystemExit(

@@ -21,7 +21,7 @@
 **Tweet 3:**
 > Survivors face the GovernanceGate.
 >
-> 16 rules. Evaluated in order. One blocking failure = full halt. No exceptions.
+> Versioned rule set. Evaluated in order (see Constitution + governance artifact for current count). One blocking failure = full halt. No exceptions.
 >
 > Rules include: AST validity, no banned tokens (eval/exec), cryptographic signature required, resource bounds, lineage continuity.
 >

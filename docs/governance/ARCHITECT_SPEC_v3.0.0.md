@@ -131,7 +131,7 @@ DESTINATION REPO INTAKE
     │   DIVERGE: emit FEDERATION_REPLAY_DIVERGENCE, halt both pipelines
     ▼
 [8] DESTINATION GOVERNANCE GATE — GovernanceGate.approve_mutation()
-    │   Full evaluation: rules 1–16 applied to destination codebase context
+    │   Full evaluation (v3.0.0): rules 1–16 applied to destination codebase context
     │   PASS: mutation applied to destination repo
     │   FAIL: emit FEDERATED_DESTINATION_GATE_REJECT to destination ledger
     │          Notify source ledger via FEDERATION_DESTINATION_REJECT_ECHO
@@ -192,7 +192,7 @@ DESTINATION REPO INTAKE
 |---|---|
 | **Purpose** | Independent constitutional evaluation of the federated mutation against the destination codebase |
 | **Inputs** | Federated mutation bundle; destination codebase AST snapshot; destination fitness state; replay proof |
-| **Checks** | All 16 constitutional rules evaluated against destination context; rule 15 (`federated_dual_gate_required`) confirmed |
+| **Checks** | Versioned constitutional rule set evaluated against destination context; federation-specific rules confirmed per this spec version |
 | **Pass Condition** | All BLOCKING rules pass → mutation applied to destination |
 | **Fail Condition** | Any BLOCKING rule fails → `FEDERATED_DESTINATION_GATE_REJECT`; source ledger echo emitted |
 | **Failure Modes** | `FEDERATED_DESTINATION_GATE_REJECT`, `FEDERATION_DESTINATION_GATE_TIMEOUT`, `FEDERATION_DESTINATION_REPLAY_PROOF_ABSENT` |
@@ -423,7 +423,7 @@ The following guarantees apply to all consumers of ADAAD v2.x who upgrade to v3.
 
 1. **Single-repo pipelines are unaffected.** All v2.3.0 behavior is preserved. Federation is opt-in via `FederatedSignalBroker.dispatch_mutation_proposal()`. A pipeline that never calls this method operates identically to v2.3.0.
 2. **`LineageLedgerV2` single-repo entries hash identically to v2.3.0 entries.** `federation_origin=None` is excluded from hash computation.
-3. **GovernanceGate rules 1–14 are evaluated identically.** Rules 15 and 16 are only evaluated when a federated mutation is detected (i.e., `federation_origin` is non-None in the proposal metadata).
+3. **For v3.0.0, GovernanceGate rules 1–14 are evaluated identically.** Rules 15 and 16 are only evaluated when a federated mutation is detected (i.e., `federation_origin` is non-None in the proposal metadata).
 4. **All existing MCP tools, `EpochTelemetry`, and `BanditSelector` interfaces are unchanged.**
 5. **`CheckpointChain` is extended, not replaced.** Existing checkpoint files remain valid.
 
