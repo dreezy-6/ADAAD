@@ -1,3 +1,65 @@
+## [3.5.0] — 2026-03-09  Phase 10 Distribution Engine
+
+### Added
+
+**M10-01 · ReferralEngine** (`runtime/distribution/referral_engine.py`)
+- Deterministic referral code generation: HMAC-SHA256(secret, org_id) — stable, unguessable
+- Fraud prevention: self-referral blocked, duplicate-referral blocked, unknown-code rejected
+- 4 qualifying actions: `first_epoch`, `pro_conversion`, `enterprise_conv`, `seven_day_active`
+- Per-trigger reward catalogue: epoch bonuses (25–50) + USD credits ($10/$50) with expiry dates
+- Idempotent reward grants — duplicate `(referrer, referred, action)` triplets ignored
+- SHA-256 hash-chained `ReferralEvent` → evidence ledger (same pattern as governance)
+- `viral_coefficient()` — k-factor metric (> 1.0 = viral growth)
+- `top_referrers()` + `pending_epoch_bonus()` + `pending_credit_usd()` analytics
+
+**M10-02 · GitHubMarketplaceProcessor** (`runtime/distribution/marketplace.py`)
+- Full GitHub Marketplace purchase/change/cancel lifecycle → auto-provision org + API key
+- GitHub App install/uninstall → auto-create org on first install, suspend on uninstall
+- `parse_marketplace_event()` — pure-function payload parser, no I/O
+- `parse_installation_event()` — pure-function parser for App installation events
+- `verify_github_marketplace_signature()` — constant-time HMAC-SHA256 sig verification
+- `GITHUB_PLAN_TO_TIER` mapping: 10 GitHub plan names → community/pro/enterprise
+- Auto-triggers referral qualifying actions on plan upgrades
+- `MarketplaceProcessResult` — SHA-256 hash-chained result for every event processed
+
+**M10-03 · DeployManifestGenerator** (`runtime/distribution/deploy_manifests.py`)
+- `generate_railway_json()` — Railway one-click deploy manifest
+- `generate_render_yaml()` — Render.com service manifest with optional Redis/Postgres
+- `generate_dockerfile()` — multi-stage production Dockerfile (non-root user, HEALTHCHECK)
+- `generate_docker_compose()` — full docker-compose.yml for self-hosted deployment
+- `generate_fly_toml()` — Fly.io deployment manifest with health checks
+- `generate_all()` — single-call bundle returning all 5 platform manifests
+- Railway deploy button + env var documentation markdown section
+
+**M10-04 · Distribution API Router** (`app/api/distribution.py`)
+- `GET  /api/distribution/referral/code`          — get org's stable referral code + share URL
+- `POST /api/distribution/referral/register`       — register incoming referral (public)
+- `POST /api/distribution/referral/qualify`        — record qualifying action (admin)
+- `GET  /api/distribution/referral/rewards`        — pending epoch bonuses + USD credits
+- `GET  /api/distribution/referral/leaderboard`    — top n referrers (admin)
+- `POST /api/distribution/marketplace/purchase`    — handle GitHub Marketplace webhooks
+- `POST /api/distribution/marketplace/install`     — handle GitHub App install webhooks
+- `GET  /api/distribution/marketplace/stats`       — install + conversion stats (admin)
+- `GET  /api/distribution/deploy/{railway,render,dockerfile,compose,fly}` — download manifests
+- `GET  /api/distribution/deploy/bundle`           — all manifests as JSON
+
+**CI Gate** (`.github/workflows/distribution_gate.yml`)
+- 28 tests (T10-01..T10-28), all passing · coverage ≥ 90%
+- Referral code determinism verification
+- Deploy manifest validity check (railway.json parsed as JSON)
+- HMAC signature constant-time verification check
+- GovernanceGate isolation check (distribution modules must not import GovernanceGate)
+- SPDX header enforcement
+
+### Acceptance criteria
+- All 28 Phase 10 tests pass: ✅
+- Referral code deterministic (T10-01): ✅
+- Self-referral blocked (T10-04): ✅
+- Marketplace events fail-closed on bad HMAC (T10-22): ✅
+- Dockerfile has non-root user + HEALTHCHECK (T10-24): ✅
+- GovernanceGate never imported by distribution modules: ✅
+- Rewards are capacity bonuses only — never weaken governance: ✅
+
 ## [3.4.0] — 2026-03-09  Phase 9 Revenue Growth Engine
 
 ### Added
