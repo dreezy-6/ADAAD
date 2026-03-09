@@ -1,0 +1,67 @@
+cff-version: 1.2.0
+message: "If you use ADAAD in your research, please cite it using the metadata in this file."
+
+type: software
+
+title: "ADAAD: Autonomous Device-Anchored Adaptive Development"
+version: "3.5.0"
+date-released: "2026-03-09"
+
+abstract: >
+  ADAAD is an open-source autonomous code mutation system with constitutional
+  governance enforcement. Three Claude-powered AI agents (Architect, Dream, Beast)
+  propose code improvements that compete via a genetic algorithm (BLX-alpha crossover).
+  Fittest candidates advance to a 16-rule constitutional gate — a fail-closed policy
+  engine evaluated in strict topological order. All governance decisions are recorded
+  in a SHA-256 hash-chained append-only evidence ledger. Every decision supports
+  deterministic replay: given the same epoch state, the same governance evaluation
+  is always produced. Self-calibrating scoring weights adapt via momentum gradient
+  descent across epochs. The system implements a novel "constitutional architecture"
+  pattern in which governance enforcement is a structural invariant rather than a
+  configurable policy — no code path bypassing the gate exists.
+
+authors:
+  - family-names: "Reid"
+    given-names: "Dustin L."
+    alias: "dreezy-6"
+    affiliation: "InnovativeAI LLC"
+    city: "Blackwell"
+    region: "Oklahoma"
+    country: "US"
+    orcid: ""
+    email: "dustin@innovativeai.dev"
+
+repository-code: "https://github.com/dreezy-6/ADAAD"
+url: "https://github.com/InnovativeAI-adaad/ADAAD"
+license: MIT
+
+keywords:
+  - autonomous agents
+  - code mutation
+  - constitutional AI
+  - AI governance
+  - genetic algorithm
+  - deterministic replay
+  - evidence ledger
+  - software engineering
+  - large language models
+  - AI safety
+  - multi-agent systems
+  - Python
+
+identifiers:
+  - type: url
+    value: "https://github.com/dreezy-6/ADAAD"
+    description: "GitHub repository"
+
+preferred-citation:
+  type: software
+  title: "ADAAD: Autonomous Device-Anchored Adaptive Development"
+  authors:
+    - family-names: "Reid"
+      given-names: "Dustin L."
+      affiliation: "InnovativeAI LLC"
+  version: "3.5.0"
+  date-released: "2026-03-09"
+  url: "https://github.com/dreezy-6/ADAAD"
+  license: MIT

@@ -1,0 +1,298 @@
+name: 🚀 Autonomous Marketing Engine
+
+# ════════════════════════════════════════════════════════════════════════════
+# This workflow IS the business.
+#
+# It runs the full autonomous marketing cycle:
+#   - Updates GitHub repo metadata (topics, description) for discoverability
+#   - Publishes articles to Dev.to via API
+#   - Opens PRs to awesome-* lists on GitHub
+#   - Posts to Reddit (r/MachineLearning, r/Python, r/programming)
+#   - Posts Twitter/X thread
+#   - Uses Claude API to discover new exposure opportunities
+#   - Generates drafts for human-required actions (HN, Product Hunt, IH)
+#   - Commits updated marketing state back to the repo
+#
+# Result: ADAAD markets itself autonomously. Every day. Without Dustin
+# having to do anything except set the secrets once.
+# ════════════════════════════════════════════════════════════════════════════
+
+on:
+  # Daily at 9:00 AM UTC — the engine runs whether or not anyone pushes code
+  schedule:
+    - cron: "0 9 * * *"
+
+  # Also runs on every push to main — so shipping code = shipping exposure
+  push:
+    branches: [main]
+
+  # Manual trigger with options
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which targets to run"
+        required: false
+        default: "all"
+        type: choice
+        options: [all, github, devto, prs, reddit, twitter]
+      dry_run:
+        description: "Dry run (no real API calls)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      discover:
+        description: "Run Claude opportunity discovery"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+
+  # ── GitHub metadata — always runs, fastest, highest impact ───────────────
+  github_metadata:
+    name: 📌 GitHub Topics & Description
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'workflow_dispatch' || inputs.target == 'all' || inputs.target == 'github'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Update topics and description
+        env:
+          GITHUB_TOKEN:         ${{ secrets.GITHUB_TOKEN }}
+          MARKETING_DRY_RUN:    ${{ inputs.dry_run || 'false' }}
+        run: python market.py --target github
+
+      - name: Commit marketing state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git add marketing/state/ marketing/human_queue/ marketing/drafts/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): update state [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+          git push || true
+
+  # ── Dev.to article publishing ─────────────────────────────────────────────
+  devto:
+    name: ✍️  Dev.to Articles
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: github_metadata
+    if: |
+      (github.event_name == 'schedule') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'devto'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Publish articles to Dev.to
+        env:
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          DEVTO_API_KEY:      ${{ secrets.DEVTO_API_KEY }}
+          MARKETING_DRY_RUN:  ${{ inputs.dry_run || 'false' }}
+        run: python market.py --target devto
+
+      - name: Commit state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/state/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): devto state [$(date -u '+%Y-%m-%d')]"
+          git push || true
+
+  # ── awesome-list PRs ──────────────────────────────────────────────────────
+  awesome_prs:
+    name: ⭐ Awesome-List PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: github_metadata
+    if: |
+      (github.event_name == 'schedule') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'prs'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Open PRs to awesome-* lists
+        env:
+          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          MARKETING_DRY_RUN:  ${{ inputs.dry_run || 'false' }}
+        run: python market.py --target prs
+
+      - name: Commit state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/state/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): pr state [$(date -u '+%Y-%m-%d')]"
+          git push || true
+
+  # ── Reddit ────────────────────────────────────────────────────────────────
+  reddit:
+    name: 📣 Reddit Posts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: devto
+    if: |
+      (github.event_name == 'schedule') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'reddit'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Post to Reddit
+        env:
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          REDDIT_CLIENT_ID:     ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME:      ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD:      ${{ secrets.REDDIT_PASSWORD }}
+          MARKETING_DRY_RUN:    ${{ inputs.dry_run || 'false' }}
+        run: python market.py --target reddit
+
+      - name: Commit state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/state/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): reddit state [$(date -u '+%Y-%m-%d')]"
+          git push || true
+
+  # ── Twitter ───────────────────────────────────────────────────────────────
+  twitter:
+    name: 🐦 Twitter Thread
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: devto
+    if: |
+      (github.event_name == 'schedule') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'twitter'))
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Post Twitter thread
+        env:
+          TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
+          MARKETING_DRY_RUN:    ${{ inputs.dry_run || 'false' }}
+        run: python market.py --target twitter
+
+      - name: Commit state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/state/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): twitter state [$(date -u '+%Y-%m-%d')]"
+          git push || true
+
+  # ── Claude discovery ─────────────────────────────────────────────────────
+  discover:
+    name: 🔍 Opportunity Discovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Runs weekly on Monday, or on manual trigger with discover=true
+    if: |
+      (github.event_name == 'schedule' && startsWith(github.event.schedule, '0 9 * * 1')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.discover == 'true')
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Discover new exposure targets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python market.py --discover
+
+      - name: Commit discovered targets
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/state/discovered_targets.json || true
+          git diff --staged --quiet || git commit -m "chore(marketing): new targets discovered [$(date -u '+%Y-%m-%d')]"
+          git push || true
+
+  # ── Human queue report ────────────────────────────────────────────────────
+  human_queue_report:
+    name: 📋 Human Queue Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [devto, awesome_prs]
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Generate human queue
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python market.py --queue | tee marketing/human_queue/QUEUE_REPORT.md
+
+      - name: Print status
+        run: python market.py --status
+
+      - name: Commit queue report
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/human_queue/ marketing/drafts/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): human queue updated [$(date -u '+%Y-%m-%d')]"
+          git push || true

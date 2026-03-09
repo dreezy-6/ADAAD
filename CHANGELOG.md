@@ -1,3 +1,81 @@
+## [6.0.0] — 2026-03-09  Phase 11 · Autonomous Marketing Engine (PRIMARY MISSION)
+
+> **This release redefines the repo's primary purpose.**
+> ADAAD is now a self-marketing, self-distributing, governed AI system.
+> The engine doesn't wait for Dustin to post. It posts itself.
+
+### Added
+
+**`market.py`** — The main entry point. One command. Full autonomous cycle.
+```bash
+python market.py           # full cycle — GitHub + Dev.to + PRs + Reddit + Twitter + discovery
+python market.py --dry-run # see what would run, no API calls
+python market.py --queue   # show what needs Dustin's manual attention
+python market.py --discover # use Claude to find new platforms
+python market.py --status  # coverage report
+```
+
+**`runtime/marketing/engine.py`** — Autonomous Marketing Engine brain
+- Uses Claude API to generate platform-optimised article/post bodies
+- Uses Claude API weekly to discover new exposure targets (newsletters, Discord servers, awesome lists, YouTube channels, academic venues)
+- Orchestrates all dispatch agents under the MarketingGate (rate limits, anti-spam, policy)
+- Commits marketing state back to repo after every cycle
+
+**`runtime/marketing/dispatchers.py`** — Platform API clients
+- `GitHubMetaDispatcher` — sets 18 optimal topics + description (GitHub API)
+- `GitHubPRDispatcher` — full fork→branch→commit→PR pipeline for awesome-* lists
+- `DevToDispatcher` — Forem API v1 article publishing
+- `RedditDispatcher` — Reddit OAuth2 link/text submission
+- `TwitterDispatcher` — Twitter API v2 tweet threading
+- `HumanQueueDispatcher` — writes drafted content + adds to human_queue/
+
+**`runtime/marketing/state.py`** — Append-only marketing evidence log
+- JSONL action log (same hash-chain pattern as governance ledger)
+- Per-target state persistence (status, last_action_at, live_url)
+- Coverage report
+
+**`.github/workflows/autonomous_marketing.yml`** — Daily cron + push trigger
+- Runs every day at 9:00 AM UTC WITHOUT any human involvement
+- Also triggers on every push to main (shipping code = shipping exposure)
+- Jobs: github_metadata → devto → awesome_prs → reddit → twitter → discover → human_queue_report
+- Manual dispatch with target filter + dry_run + discover inputs
+- All results committed back to marketing/state/ in the repo
+
+**Awesome-list PRs targeting:**
+- `e2b-dev/awesome-ai-agents` (200k+ visitors/mo, relevance: 0.97)
+- `Shubhamsaboo/awesome-llm-apps` (150k+ visitors/mo, relevance: 0.93)
+- `vinta/awesome-python` (500k+ visitors/mo, relevance: 0.75)
+
+**Dev.to articles (3 queued, Claude-generated bodies):**
+- "We built a constitutional AI mutation engine — here's how it works"
+- "How ADAAD's 16-rule gate stops autonomous AI from going wrong"
+- "From open-source to SaaS: how InnovativeAI monetized a governed AI tool"
+
+**Reddit posts (4 queued, 90-day rate limit):**
+- r/MachineLearning, r/Python, r/programming, r/selfhosted
+
+**Human queue (Claude-drafted, Dustin posts):**
+- Hacker News Show HN (highest ROI, no API)
+- Product Hunt launch brief
+- Indie Hackers founder story
+
+**`CITATION.cff`** — Academic citation file → Google Scholar + Zenodo indexing
+**`PRESS.md`** — Complete press kit (angles, facts, boilerplate, contact)
+**`marketing/README.md`** — Explains the full system to contributors
+
+### Marketing coverage (at 6.0.0)
+- Platforms with automated posting: GitHub, Dev.to, Reddit, Twitter
+- Awesome-list PRs: 3 queued on first run
+- Human-queue drafts: 3 ready (HN, PH, IH)
+- Academic indexing: CITATION.cff live
+- Discovery: Claude scans for new targets weekly
+
+### Tests
+26 tests (T11-01..T11-26), all passing · covers gate, state, dispatchers, content, CI config
+
+### Version
+3.5.0 → 6.0.0 (major bump — this is the new primary mission)
+
 ## [3.5.0] — 2026-03-09  Phase 10 Distribution Engine
 
 ### Added
