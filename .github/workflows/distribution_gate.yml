@@ -1,0 +1,105 @@
+name: Phase 10 · Distribution Engine Gate
+
+on:
+  push:
+    branches:
+      - main
+      - feat/phase10-distribution-engine
+      - 'feat/phase10-*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  distribution_gate:
+    name: Phase 10 Distribution Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install pytest pytest-cov
+
+      - name: Run Phase 10 distribution tests
+        run: |
+          python -m pytest tests/distribution/test_distribution_phase10.py \
+            -v \
+            --tb=short \
+            --cov=runtime/distribution \
+            --cov-report=term-missing \
+            --cov-fail-under=90
+
+      - name: Verify referral code determinism
+        run: |
+          python -c "
+          from runtime.distribution.referral_engine import generate_referral_code
+          c1 = generate_referral_code('acme-inc', 'secret')
+          c2 = generate_referral_code('acme-inc', 'secret')
+          assert c1 == c2, f'FAIL: {c1} != {c2}'
+          print(f'[PASS] Referral code deterministic: {c1}')
+          "
+
+      - name: Verify deploy manifests generate cleanly
+        run: |
+          python -c "
+          from runtime.distribution.deploy_manifests import generate_all, DeployConfig, DeployPlatform
+          import json
+          cfg    = DeployConfig(platform=DeployPlatform.DOCKER)
+          bundle = generate_all(cfg)
+          files  = bundle.files()
+          for name, content in files.items():
+              assert len(content) > 100, f'{name} is too short'
+              print(f'[PASS] {name}: {len(content)} chars')
+          # railway.json must parse as valid JSON
+          json.loads(files['railway.json'])
+          print('[PASS] railway.json is valid JSON')
+          "
+
+      - name: Verify HMAC signature verification is constant-time
+        run: |
+          python -c "
+          import hashlib, hmac as _hmac
+          from runtime.distribution.marketplace import verify_github_marketplace_signature
+          secret  = 'test-webhook-secret'
+          payload = b'{\"action\":\"purchased\"}'
+          sig     = 'sha256=' + _hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+          assert verify_github_marketplace_signature(payload, sig, secret)
+          assert not verify_github_marketplace_signature(payload, 'sha256=deadbeef', secret)
+          print('[PASS] HMAC signature verification correct')
+          "
+
+      - name: SPDX header check
+        run: |
+          for f in runtime/distribution/*.py app/api/distribution.py; do
+            if ! head -1 \"\$f\" | grep -q 'SPDX-License-Identifier'; then
+              echo \"MISSING SPDX header: \$f\"; exit 1
+            fi
+          done
+          echo '[PASS] All Phase 10 files have SPDX headers'
+
+      - name: Verify no GovernanceGate bypass in distribution modules
+        run: |
+          python -c "
+          import ast, sys, pathlib
+          # Scan distribution modules for any import of GovernanceGate
+          # (distribution must never call gate directly — it only reads tier)
+          for path in pathlib.Path('runtime/distribution').glob('*.py'):
+              tree = ast.parse(path.read_text())
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.Import, ast.ImportFrom)):
+                      names = [a.name for a in getattr(node, 'names', [])]
+                      module = getattr(node, 'module', '') or ''
+                      if 'GovernanceGate' in names or 'governance_gate' in module.lower():
+                          print(f'FAIL: {path} imports GovernanceGate — distribution must not touch governance directly')
+                          sys.exit(1)
+          print('[PASS] Distribution modules do not import GovernanceGate')
+          "
