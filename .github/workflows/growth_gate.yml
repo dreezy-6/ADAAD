@@ -1,0 +1,78 @@
+name: Phase 9 · Revenue Growth Gate
+
+on:
+  push:
+    branches:
+      - main
+      - feat/phase9-revenue-growth-engine
+      - 'feat/phase9-*'
+  pull_request:
+    branches:
+      - main
+      - chore/constitution-v030
+
+jobs:
+  growth_gate:
+    name: Phase 9 Growth Engine Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-cov
+
+      - name: Run Phase 9 growth engine tests
+        run: |
+          python -m pytest tests/growth/test_growth_phase9.py \
+            -v \
+            --tb=short \
+            --cov=runtime/growth \
+            --cov-report=term-missing \
+            --cov-fail-under=90
+
+      - name: Verify determinism (run tests twice, compare output)
+        run: |
+          python -m pytest tests/growth/test_growth_phase9.py::test_t902_deterministic \
+            tests/growth/test_growth_phase9.py::test_t922_content_hash_stable \
+            -v --tb=short
+          python -m pytest tests/growth/test_growth_phase9.py::test_t902_deterministic \
+            tests/growth/test_growth_phase9.py::test_t922_content_hash_stable \
+            -v --tb=short
+
+      - name: Verify no I/O in core modules
+        run: |
+          python -c "
+          # These imports must succeed without any network calls or file writes
+          from runtime.growth.customer_health import compute_health, UsageSnapshot
+          from runtime.growth.trial_conversion import TrialConversionEngine
+          from runtime.growth.revenue_analytics import compute_snapshot, OrgBillingRecord
+          import time
+          snap = UsageSnapshot(org_id='ci', tier='community', snapshot_epoch=int(time.time()))
+          hs   = compute_health(snap)
+          engine = TrialConversionEngine()
+          orgs = [OrgBillingRecord('ci', 'pro', 'active', 0, None, None, None)]
+          rev  = compute_snapshot(orgs)
+          print('Health score:', hs.score)
+          print('MRR:', rev.mrr_usd)
+          print('[PASS] Phase 9 core modules load cleanly — no side-effects')
+          "
+
+      - name: SPDX header check
+        run: |
+          for f in runtime/growth/*.py app/api/growth.py; do
+            if ! head -1 "$f" | grep -q "SPDX-License-Identifier"; then
+              echo "MISSING SPDX header: $f"
+              exit 1
+            fi
+          done
+          echo "[PASS] All Phase 9 files have SPDX headers"

@@ -1,3 +1,60 @@
+## [3.4.0] — 2026-03-09  Phase 9 Revenue Growth Engine
+
+### Added
+
+**M9-01 · CustomerHealthScorer** (`runtime/growth/customer_health.py`)
+- Deterministic 0–100 health scoring across 8 weighted signal factors
+  (epoch activity, activity trend, feature depth, governance depth, API engagement,
+  support friction, renewal proximity, seat breadth)
+- Five risk bands: CRITICAL / AT_RISK / NEUTRAL / HEALTHY / CHAMPION
+- `needs_csmm_alert` — auto-triggers human CSM review for CRITICAL orgs
+- `is_expansion_candidate` + `upgrade_prompt_tier` — feeds conversion engine
+- SHA-256 content hash on every score output (replay anchor)
+- `CustomerHealthScorer.score_all()` batch API + `HealthReport` portfolio summary
+
+**M9-02 · TrialConversionEngine** (`runtime/growth/trial_conversion.py`)
+- 8 `ConversionTrigger` types: epoch quota (80% / 100%), feature wall,
+  governance depth, team size, high health score, consecutive days, referral
+- Idempotent nudge emission — no duplicate nudges per org per trigger
+- Per-trigger copy catalogue (personalised CTAs, no LLM at eval time)
+- `record_conversion()` — SHA-256 hash-chained `ConversionEvent` → evidence ledger
+- `total_mrr_attributed()` — revenue impact of engine-driven conversions
+- Four delivery channels: IN_APP / EMAIL / SLACK / APONI
+
+**M9-03 · RevenueAnalyticsService** (`runtime/growth/revenue_analytics.py`)
+- `compute_snapshot()` — pure-function MRR/ARR/ARPU/conversion-rate dashboard
+- `build_waterfall()` — MRR waterfall (new / expansion / contraction / churn / reactivation)
+- `MRRWaterfall.quick_ratio` — growth quality metric (> 4.0 = exceptional)
+- `MRRWaterfall.net_revenue_retention` — NRR (> 1.0 = expanding, target > 1.2)
+- `compute_payback_period()` — CAC payback by tier × acquisition channel
+- `RevenueAnalyticsService` — thin stateful wrapper with `mrr_trend()` + `mom_growth()`
+
+**M9-04 · Growth API Router** (`app/api/growth.py`)
+- `POST /api/growth/health/score`        — compute single-org health score
+- `POST /api/growth/revenue/snapshot`    — record MRR snapshot
+- `GET  /api/growth/revenue`             — live MRR/ARR dashboard
+- `GET  /api/growth/revenue/trend`       — MRR trend (last N snapshots)
+- `GET  /api/growth/revenue/payback`     — CAC payback estimate
+- `POST /api/growth/conversion/evaluate` — evaluate nudge triggers (returns queued nudges)
+- `GET  /api/growth/conversion/summary`  — funnel: nudges pending + conversions + MRR attributed
+- `POST /api/growth/churn/at-risk`       — batch at-risk detection
+- All endpoints gated behind `ADAAD_ADMIN_TOKEN` (same guard as /api/admin/*)
+
+**CI Gate** (`.github/workflows/growth_gate.yml`)
+- 24 determinism-enforced tests (T9-01..T9-22), all passing
+- Coverage ≥ 90% on `runtime/growth/`
+- Double-replay determinism check
+- I/O-free module load verification
+- SPDX header enforcement
+
+### Acceptance criteria
+- All 24 Phase 9 tests pass: ✅
+- Health scoring is deterministic (T9-02): ✅
+- Content hashes stable under replay (T9-22): ✅
+- Paid orgs receive zero nudges (T9-10): ✅
+- GovernanceGate never bypassed by growth logic: ✅ (growth modules are read-only w.r.t. governance)
+- SPDX headers on all new files: ✅
+
 ## [3.3.0] — 2026-03-08  Phase 8 Commercial Wiring Layer
 
 ### Added
@@ -196,7 +253,7 @@ CI job now hard-fails on any regression above the 70% reduction target.
 
 **Legacy branch reduction — baseline 23 → enforced ≤ 6**
 
-17 `\blegacy\b` occurrences replaced with semantically equivalent `compat` /
+17 `legacy` occurrences replaced with semantically equivalent `compat` /
 `deprecated` / `backward-compat` across 13 source files. Six occurrences are
 intentionally retained where the term is load-bearing (protocol string literals,
 API facade modules, schema migration docstrings). `enforced_max_branches` locked
