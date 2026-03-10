@@ -8,33 +8,33 @@
   </a>
   &nbsp;
   <img alt="Version" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FInnovativeAI-adaad%2FADAAD%2Fmain%2FVERSION&query=%24.version&label=version&color=00d4ff&style=flat-square&labelColor=060d14"/>
-  <img alt="Phase" src="https://img.shields.io/badge/phase-6.1%20active-f59e0b?style=flat-square&labelColor=060d14"/>
+  <img alt="Phase" src="https://img.shields.io/badge/phase-12%20campaign%20blitz-f59e0b?style=flat-square&labelColor=060d14"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11.9-7b61ff?style=flat-square&labelColor=060d14"/>
   <img alt="Android" src="https://img.shields.io/badge/android-free-3ddc84?style=flat-square&labelColor=060d14"/>
   &nbsp;
   <img alt="Governance" src="https://img.shields.io/badge/governance-fail--closed-ef4444?style=flat-square&labelColor=060d14"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e?style=flat-square&labelColor=060d14"/>
+  <img alt="PyPI" src="https://img.shields.io/badge/pip_install-adaad-00d4ff?style=flat-square&labelColor=060d14"/>
 </p>
 
 <br/>
 
 <p align="center">
-  <strong>AI agents that improve your codebase — constitutionally gated at every step.</strong>
+  <strong>The only AI coding assistant that can legally prove what it did — and why.</strong>
 </p>
 
 <p align="center">
-  ADAAD proposes code mutations, scores them with a genetic algorithm, and applies only what passes<br/>
-  deterministic replay verification + a 16-rule constitutional policy engine.<br/>
-  <em>If anything fails, the pipeline halts. No exceptions. No workarounds.</em>
+  Three Claude-powered AI agents continuously improve your codebase. Every proposed mutation is scored by a<br/>
+  genetic algorithm, then must pass a 16-rule constitutional policy engine before a single byte changes.<br/>
+  <em>Cryptographically audited. Deterministically replayable. Constitutionally governed. Free forever.</em>
 </p>
 
-<br/>
-
 <p align="center">
-  <a href="#-start-in-60-seconds"><strong>Quick Start</strong></a> ·
+  <a href="#-start-in-60-seconds"><strong>⚡ Quick Start</strong></a> ·
   <a href="#how-the-loop-works"><strong>How It Works</strong></a> ·
+  <a href="#vs-copilot-cursor-codeium"><strong>vs Copilot / Cursor</strong></a> ·
   <a href="#-android-app--free"><strong>Android App</strong></a> ·
-  <a href="#whats-active-now"><strong>Current Status</strong></a> ·
+  <a href="#pricing"><strong>Pricing</strong></a> ·
   <a href="docs/CONSTITUTION.md"><strong>Constitution</strong></a> ·
   <a href="ROADMAP.md"><strong>Roadmap</strong></a>
 </p>
@@ -45,10 +45,33 @@
 
 **ADAAD** (Autonomous Device-Anchored Adaptive Development) is an open-source AI governance and autonomous code mutation system built by **[InnovativeAI LLC](https://github.com/InnovativeAI-adaad)**.
 
-It was conceived, designed, and architected entirely by **Dustin L. Reid** — Founder of InnovativeAI LLC and sole architect of ADAAD — with the conviction that autonomous AI systems must be governed by hard rules, not soft suggestions.
+Conceived, designed, and architected entirely by **Dustin L. Reid** — Founder of InnovativeAI LLC — with one founding conviction:
 
 > *"Autonomy without accountability isn't progress — it's drift. ADAAD makes every decision traceable, every mutation defensible, and every failure visible."*
 > — **Dustin L. Reid**, Founder, InnovativeAI LLC
+
+### The core problem ADAAD solves
+
+Every AI coding tool today — Copilot, Cursor, Codeium — **suggests code but cannot prove it is safe, correct, or auditable.** When something breaks, you don't know what the AI changed, why, or whether it was tested. ADAAD fixes this at the architectural level, not the policy level.
+
+---
+
+## vs Copilot / Cursor / Codeium
+
+| Capability | Copilot | Cursor | Codeium | **ADAAD** |
+|:-----------|:-------:|:------:|:-------:|:---------:|
+| AI-powered code suggestions | ✅ | ✅ | ✅ | ✅ |
+| Autonomous code mutation | — | — | — | ✅ |
+| Constitutional governance gate | — | — | — | ✅ |
+| Cryptographic audit trail | — | — | — | ✅ |
+| Deterministic replay | — | — | — | ✅ |
+| Genetic algorithm candidate ranking | — | — | — | ✅ |
+| Self-calibrating fitness weights | — | — | — | ✅ |
+| Federated multi-repo support | — | — | — | ✅ |
+| Autonomous roadmap self-amendment | — | — | — | ✅ |
+| Free tier, MIT licensed | — | — | Partial | ✅ |
+| Android companion app | — | — | — | ✅ |
+| Legally auditable output | — | — | — | ✅ |
 
 ---
 
@@ -56,9 +79,7 @@ It was conceived, designed, and architected entirely by **Dustin L. Reid** — F
 
 Three Claude-powered AI agents continuously propose code improvements. Those proposals compete in a genetic-algorithm population — crossed, mutated, and ranked. The fittest candidates advance to a **constitutional gate**: 16 deterministic rules, evaluated in order. One blocking failure halts everything.
 
-<p align="center">
-  <img src="docs/assets/adaad-flow.svg" width="860" alt="ADAAD mutation pipeline: propose → simulate → replay-verify → policy gate → execute → evidence"/>
-</p>
+[![ADAAD mutation pipeline: propose → simulate → replay-verify → policy gate → execute → evidence](docs/assets/adaad-flow.svg)](docs/assets/adaad-flow.svg)
 
 After every epoch, scoring weights self-calibrate via momentum gradient descent. Mutation strategies that perform well gain influence. Underperformers decay. **The system learns which kinds of improvements are worth making — without ever bypassing governance.**
 
@@ -66,12 +87,10 @@ After every epoch, scoring weights self-calibrate via momentum gradient descent.
 
 ## Three agents. One loop.
 
-<p align="center">
-  <img src="docs/assets/adaad-agents.svg" width="680" alt="Architect, Dream, and Beast agent personas"/>
-</p>
+[![Architect, Dream, and Beast agent personas](docs/assets/adaad-agents.svg)](docs/assets/adaad-agents.svg)
 
 | Agent | Personality | Focus |
-|:---|:---|:---|
+| --- | --- | --- |
 | 🏛️ **Architect** | Systematic, structural | Long-term coherence, dependency cleanup, interface contracts |
 | 💭 **Dream** | Creative, exploratory | Novel approaches, experimental rewrites, lateral improvements |
 | 🐉 **Beast** | Aggressive, performance-first | Throughput gains, complexity reduction, raw optimization |
@@ -86,6 +105,14 @@ Each agent competes on merit inside the same governed pipeline. The **Governance
 ## ⚡ Start in 60 seconds
 
 ```bash
+pip install adaad          # or: git clone + python onboard.py
+adaad --dry-run            # see what would change, nothing is modified
+adaad --run                # first governed epoch
+```
+
+**Or clone and run manually:**
+
+```bash
 git clone https://github.com/InnovativeAI-adaad/ADAAD.git
 cd ADAAD
 python onboard.py
@@ -97,8 +124,6 @@ python onboard.py
 
 <details>
 <summary><strong>What onboarding does, step by step</strong></summary>
-
-<br/>
 
 ```
 onboard.py
@@ -216,6 +241,10 @@ print(f"Duration:    {result.duration_seconds:.1f}s")
   <td><strong>📝&nbsp; Roadmap Self-Amendment</strong></td>
   <td>The engine proposes changes to its own roadmap. Humans approve. No auto-merge path exists — by constitutional invariant.</td>
 </tr>
+<tr>
+  <td><strong>📣&nbsp; Autonomous Marketing Engine</strong></td>
+  <td>Governed autonomous distribution across Dev.to, Hashnode, Reddit, awesome-lists, PyPI, and Hacker News. ADAAD promotes itself.</td>
+</tr>
 </table>
 
 ---
@@ -232,25 +261,48 @@ Download the latest APK from [GitHub Releases](../../releases/latest).
 
 ---
 
+## Pricing
+
+> **Constitutional guarantee:** Every tier runs the identical GovernanceGate and the same 16-rule constitutional policy engine. Paying more buys capacity and tooling — never a weaker gate.
+
+| | **Community** | **Pro** | **Enterprise** |
+|---|:---:|:---:|:---:|
+| **Price** | Free forever | **$49 / month** | **$499 / month** |
+| **Epochs / month** | 50 | 500 | Unlimited |
+| **Candidates / epoch** | 3 | 10 | Unlimited |
+| **Federation nodes** | — | 3 | Unlimited |
+| **Android companion** | ✅ | ✅ | ✅ |
+| **Deterministic replay** | ✅ | ✅ | ✅ |
+| **Constitutional gating** | ✅ | ✅ | ✅ |
+| **Evidence ledger** | ✅ | ✅ | ✅ |
+| **Roadmap self-amendment** | — | ✅ | ✅ |
+| **Simulation DSL** | — | ✅ | ✅ |
+| **Webhook integrations** | — | ✅ | ✅ |
+| **Custom constitutional rules** | — | — | ✅ |
+| **Dedicated onboarding** | — | — | ✅ |
+| **99.9% SLA** | — | — | ✅ |
+
+[→ Full pricing details](PRICING.md)
+
+---
+
 ## What's Active Now
 
-> 🔄 **This section reflects live repository state.** Version, phase, and milestone status are always current.
+> 🔄 This section reflects live repository state. Version, phase, and milestone status are always current.
 
-**Phase 6 — Autonomous Roadmap Self-Amendment** is complete at `v3.1.0`. All milestones shipped and governed.
+**Phase 12 — Campaign Blitz v2** is the active distribution expansion lane. New channels: Hashnode, PyPI, additional awesome-list targets, Discord community seeding, and newsletter outreach.
 
 | Milestone | Status | Module |
 |:---|:---:|:---|
-| M6-01 `RoadmapAmendmentEngine` | ✅ shipped | `runtime/autonomy/roadmap_amendment_engine.py` |
-| M6-02 `ProposalDiffRenderer` | ✅ shipped | `runtime/autonomy/proposal_diff_renderer.py` |
-| M6-03 EvolutionLoop wire | ✅ shipped | `runtime/evolution/evolution_loop.py` |
-| M6-04 Federated propagation | ✅ shipped | `runtime/governance/federation/mutation_broker.py` |
-| M6-05 Android distribution | ✅ shipped | `.github/workflows/android-free-release.yml` |
+| M12-01 Hashnode dispatcher | ✅ shipped | `runtime/marketing/dispatchers.py` |
+| M12-02 PyPI package registration | ✅ shipped | `pyproject.toml` · `setup.cfg` |
+| M12-03 Expanded awesome-list PRs | ✅ shipped | `runtime/marketing/engine.py` |
+| M12-04 Discord community targets | ✅ shipped | `runtime/marketing/engine.py` |
+| M12-05 Newsletter outreach queue | ✅ shipped | `human_queue/newsletters.md` |
+| M12-06 README v3 (this file) | ✅ shipped | `README.md` |
 
-**Phase 6.1 — Simplification Contract Enforcement** is the active hardening lane at `v3.1.1`. Complexity budgets are now CI-enforced; legacy branch count is fail-closed at ≤ 6.
-
-📋 Full roadmap → [`ROADMAP.md`](ROADMAP.md)  
-🔖 Current version → [`VERSION`](VERSION)  
-📜 Phase procession → [`docs/governance/ADAAD_PR_PROCESSION_2026-03.md`](docs/governance/ADAAD_PR_PROCESSION_2026-03.md)
+📋 Full roadmap → [`ROADMAP.md`](ROADMAP.md)
+🔖 Current version → [`VERSION`](VERSION)
 
 ---
 
@@ -264,7 +316,7 @@ Constitution  →  Architecture Contract  →  ArchitectAgent Spec  →  PR Proc
 
 - **[Constitution](docs/CONSTITUTION.md)** — 14 hard rules. Cannot be overridden by any agent, operator, or PR.
 - **[Architecture Contract](docs/ARCHITECTURE_CONTRACT.md)** — Interface and boundary invariants across all modules.
-- **[ArchitectAgent Spec v3.1.0](docs/governance/ARCHITECT_SPEC_v3.1.0.md)** — Canonical spec for the Phase 6 governance baseline; Phase 6.1 active hardening lane.
+- **[ArchitectAgent Spec v3.1.0](docs/governance/ARCHITECT_SPEC_v3.1.0.md)** — Canonical spec for the governance baseline.
 - **[PR Procession Plan](docs/governance/ADAAD_PR_PROCESSION_2026-03.md)** — Controlling source for PR order, CI tier, and closure state.
 
 ---
@@ -277,17 +329,27 @@ Constitution  →  Architecture Contract  →  ArchitectAgent Spec  →  PR Proc
 | 🧠 Understand the architecture | [Architecture Contract](docs/ARCHITECTURE_CONTRACT.md) |
 | 🛡️ Review governance posture | [Security](docs/SECURITY.md) · [Constitution](docs/CONSTITUTION.md) |
 | 📦 Ship a governed release | [Release checklist](docs/release/release_checklist.md) |
+| 💰 Understand pricing | [PRICING.md](PRICING.md) |
 | 📊 See the full docs index | [Docs Hub](docs/README.md) |
+| 🤝 Contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+---
+
+## Community & Support
+
+- 💬 **[GitHub Discussions](../../discussions)** — architecture questions, use cases, governance proposals
+- 🐛 **[Issues](../../issues)** — bug reports and feature requests (governed triage)
+- 📧 **Email** — enterprise@innovativeai.llc (Enterprise inquiries)
 
 ---
 
 ## About InnovativeAI LLC
 
-**InnovativeAI LLC** is an independent AI research and engineering company based in Blackwell, Oklahoma, focused on building governed, transparent, and production-grade autonomous AI systems.
+**InnovativeAI LLC** is an independent AI research and engineering company based in Blackwell, Oklahoma, USA — focused on building governed, transparent, and production-grade autonomous AI systems.
 
 ADAAD is InnovativeAI's flagship open-source project — a proof-of-concept and operational system demonstrating that autonomous AI development pipelines can be made auditable, deterministic, and constitutionally bound from day one.
 
-**Dustin L. Reid** — Founder of InnovativeAI LLC and sole architect of ADAAD — designed every layer of the system: the multi-agent mutation pipeline, genetic population management, self-calibrating fitness engine, constitutional governance model, and federated execution architecture.
+**Dustin L. Reid** — Founder of InnovativeAI LLC and sole architect of ADAAD — designed every layer: the multi-agent mutation pipeline, genetic population management, self-calibrating fitness engine, constitutional governance model, federated execution architecture, and the autonomous marketing distribution system.
 
 ---
 
@@ -295,7 +357,7 @@ ADAAD is InnovativeAI's flagship open-source project — a proof-of-concept and 
 
 ADAAD is released under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 
-Compliance metadata: [`LICENSES.md`](LICENSES.md) and [`NOTICE`](NOTICE)  
+Compliance metadata: [`LICENSES.md`](LICENSES.md) and [`NOTICE`](NOTICE)
 Compliance gate: `python scripts/validate_license_compliance.py`
 
 ---

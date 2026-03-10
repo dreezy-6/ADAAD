@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "adaad"
+version = "6.0.0"
+description = "Three AI agents improve your codebase — constitutionally gated, deterministically replayable, cryptographically auditable."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Dustin L. Reid", email = "dustin@innovativeai.llc"},
+]
+keywords = [
+    "ai", "autonomous", "code-mutation", "constitutional-ai", "governance",
+    "llm", "anthropic", "claude", "genetic-algorithm", "devtools",
+    "ai-agents", "code-quality", "audit", "replay", "open-source"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "anthropic>=0.49.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.7.0",
+    "rich>=13.0.0",
+    "typer>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+server = [
+    "gunicorn>=22.0.0",
+    "prometheus-client>=0.20.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/InnovativeAI-adaad/ADAAD"
+Repository = "https://github.com/InnovativeAI-adaad/ADAAD"
+Documentation = "https://github.com/InnovativeAI-adaad/ADAAD/blob/main/docs/README.md"
+"Bug Tracker" = "https://github.com/InnovativeAI-adaad/ADAAD/issues"
+Changelog = "https://github.com/InnovativeAI-adaad/ADAAD/blob/main/CHANGELOG.md"
+Funding = "https://github.com/sponsors/dreezy-6"
+
+[project.scripts]
+adaad = "app.main:cli_entry"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["adaad*", "app*", "core*", "runtime*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
