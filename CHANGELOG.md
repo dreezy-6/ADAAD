@@ -1,3 +1,57 @@
+## [6.1.0] — 2026-03-10  Phase 12 · Campaign Blitz v2 (Distribution Expansion)
+
+> **This release expands ADAAD's autonomous distribution surface.**
+> New free channels: Hashnode, PyPI, four additional awesome-list PRs,
+> Discord community targeting, newsletter outreach queue, and a dramatically
+> upgraded README v3 with competitive positioning.
+
+### Added
+
+**`README.md` v3** — complete rewrite:
+- "vs Copilot / Cursor / Codeium" comparison table
+- "The only AI coding assistant that can legally prove what it did — and why" headline
+- Phase 12 milestone table replacing stale Phase 6 table
+- PyPI badge + pricing section integrated
+- Community & Support section with discussion links
+
+**`runtime/marketing/hashnode_dispatcher.py`** — Hashnode GraphQL dispatcher
+- Free developer blogging platform, 1M+ monthly readers
+- Three ADAAD articles queued: intro, governance deep-dive, SaaS story
+- GraphQL `publishPost` mutation with tag and canonical URL support
+
+**`pyproject.toml`** — PyPI package configuration
+- `pip install adaad` now installable
+- 15 discovery keywords covering ai-agents, constitutional-ai, governance, etc.
+- `adaad` CLI entry point wired
+- Changelog, funding (GitHub Sponsors), and docs URLs
+
+**`.github/workflows/pypi_publish.yml`** — Automated PyPI release
+- Triggers on version tags (`v*.*.*`) after governance gate passes
+- PyPA Trusted Publishing (no long-lived secret)
+- Dry-run mode for validation
+
+**`.github/workflows/github_topics_sync.yml`** — Weekly metadata refresh
+- Keeps GitHub Discover topics and description current
+- Runs every Monday + on every push to main
+
+**Awesome-list PR expansion** (added to `runtime/marketing/engine.py`):
+- `awesome-selfhosted/awesome-selfhosted` (self-hosted framing)
+- `ml-tooling/best-of-ml-python` (ML practitioner audience)
+- `anthropics/anthropic-cookbook` (Claude-native positioning)
+- Existing 3 targets (e2b, Shubhamsaboo, vinta) preserved
+
+**`human_queue/newsletters.md`** — 16-channel outreach playbook:
+- Tier 1: Hacker News Show HN, Product Hunt, Indie Hackers
+- Tier 2: Reddit (ML, selfhosted, Python), Lobste.rs
+- Tier 3: TLDR, Import AI, Ben's Bites, Changelog, The Rundown AI, DevHunt
+- Tier 4: Platform listings + GitHub Marketplace ADAADchat
+
+**`human_queue/hackernews_show_hn.md`** — ready-to-paste HN post
+**`human_queue/indie_hackers_story.md`** — founder story for Indie Hackers
+
+### Changed
+- `VERSION` → `6.1.0`
+
 ## [6.0.0] — 2026-03-09  Phase 11 · Autonomous Marketing Engine (PRIMARY MISSION)
 
 > **This release redefines the repo's primary purpose.**

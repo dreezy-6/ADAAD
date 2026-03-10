@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: MIT
+# ADAAD Phase 12 — GitHub Topics & Description Auto-Sync
+#
+# Keeps the repo's GitHub Discover metadata (topics, description, website)
+# in sync on every push to main. Maximum organic discovery.
+# Runs the GitHubMetaDispatcher from the marketing engine directly.
+
+name: GitHub Topics Sync
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"   # Every Monday 6AM UTC — refresh topics weekly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync GitHub Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Sync GitHub topics and description
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python market.py --target github --dry-run=${{ github.event_name == 'schedule' && 'false' || 'false' }}

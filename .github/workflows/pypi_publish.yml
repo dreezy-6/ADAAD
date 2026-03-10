@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: MIT
+# ADAAD Phase 12 — PyPI Autonomous Distribution
+#
+# Publishes the `adaad` Python package to PyPI on every versioned release.
+# pip install adaad gives the community instant access to the CLI and SDK.
+#
+# Constitutional invariant: this workflow only triggers on tags matching
+# v[0-9]+.[0-9]+.[0-9]+ and only after the governance_strict_release_gate
+# passes. No package is published without a passing governance gate.
+#
+# Requires repository secret: PYPI_API_TOKEN
+
+name: PyPI Publish
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — build but do not upload to PyPI"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write  # required for trusted publishing
+
+jobs:
+  gate:
+    name: Governance Gate
+    uses: ./.github/workflows/governance_strict_release_gate.yml
+    secrets: inherit
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [gate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build wheel and sdist
+        run: python -m build
+
+      - name: Verify package
+        run: twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    environment:
+      name: pypi
+      url: https://pypi.org/project/adaad/
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+          verbose: true

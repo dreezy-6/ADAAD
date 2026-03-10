@@ -110,6 +110,43 @@ AWESOME_LIST_TARGETS = [
         "platform":        "github_pr",
         "min_interval_h":  0,
     },
+    # ── Phase 12 expansion targets ─────────────────────────────────────────
+    {
+        "target_id":       "awesome-selfhosted-pr",
+        "upstream_owner":  "awesome-selfhosted",
+        "upstream_repo":   "awesome-selfhosted",
+        "file_path":       "README.md",
+        "section_marker":  "Software Development - Testing",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) - Constitutional AI governance for autonomous code mutation. Three competing AI agents, 16-rule policy gate, cryptographic audit ledger, deterministic replay. ([Source Code]({REPO_URL})) `MIT` `Python`",
+        "pr_title":        "Add ADAAD — self-hosted constitutional AI code mutation engine (MIT, Python)",
+        "pr_body":         f"Adding ADAAD: a self-hosted autonomous code mutation system governed by a constitutional policy engine.\n\n**Why awesome-selfhosted:**\n- Fully self-hostable: runs on your hardware, no external data dependency beyond the Claude API\n- MIT licensed, Community tier free forever\n- No telemetry: the evidence ledger is append-only and stored in your own repo\n- Python 3.11+, single `python onboard.py` setup\n\n**What it does:**\n- 3 AI agents (Architect/Dream/Beast) compete to improve your codebase\n- Genetic algorithm ranks candidates; 16-rule constitutional gate approves or blocks\n- Every decision is SHA-256 hash-chained and deterministically replayable\n\nRepo: {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "best-of-ml-python-pr",
+        "upstream_owner":  "ml-tooling",
+        "upstream_repo":   "best-of-ml-python",
+        "file_path":       "README.md",
+        "section_marker":  "Code Quality",
+        "addition_line":   f"- <b><a href=\"{REPO_URL}\">ADAAD</a></b>  ⭐ - Constitutionally governed autonomous code mutation. Three Claude-powered agents compete via genetic algorithm; 16-rule policy gate is the sole approval authority. Deterministic replay. MIT.",
+        "pr_title":        "Add ADAAD — constitutional AI code mutation to best-of-ml-python",
+        "pr_body":         f"ADAAD is a production-grade Python system for governed autonomous code improvement.\n\nKey technical facts:\n- Multi-agent mutation pipeline (Architect / Dream / Beast personas)\n- BLX-alpha genetic algorithm with elite preservation and UCB1 bandit\n- 16-rule constitutional gate — fail-closed, architectural enforcement\n- SHA-256 hash-chained evidence ledger\n- Momentum gradient descent weight adaptation\n- Thompson sampling for non-stationary reward detection\n\nMIT. Python 3.11. Free Community tier. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-claude-models-pr",
+        "upstream_owner":  "anthropics",
+        "upstream_repo":   "anthropic-cookbook",
+        "file_path":       "README.md",
+        "section_marker":  "Agents",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Production multi-agent system: three Claude agents compete via genetic algorithm, governed by a 16-rule constitutional gate. Deterministic replay, SHA-256 audit ledger. MIT.",
+        "pr_title":        "Add ADAAD — constitutional multi-agent Claude coding system to cookbook",
+        "pr_body":         f"ADAAD is a production system demonstrating multi-agent Claude usage in a governed pipeline.\n\nClaude usage pattern:\n- Three distinct agent personas (Architect, Dream, Beast) each called with different system prompts\n- Responses scored by a genetic algorithm and ranked by fitness\n- Only constitutional-gate-approved mutations execute\n- Every API call is logged to an append-only evidence ledger\n\nReal-world demonstration of: multi-agent orchestration, structured output, governed tool use.\n\nMIT. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
 ]
 
 # ── Dev.to articles ───────────────────────────────────────────────────────
