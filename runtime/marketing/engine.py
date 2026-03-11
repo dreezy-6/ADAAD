@@ -48,6 +48,8 @@ class EngineConfig:
     anthropic_api_key:    str = ""
     github_token:         str = ""
     devto_api_key:        str = ""
+    hashnode_token:       str = ""
+    hashnode_pub_id:      str = ""
     reddit_client_id:     str = ""
     reddit_client_secret: str = ""
     reddit_username:      str = ""
@@ -57,6 +59,7 @@ class EngineConfig:
     state_dir:            str = "marketing/state"
     drafts_dir:           str = "marketing/drafts"
     human_queue_dir:      str = "marketing/human_queue"
+    articles_dir:         str = "marketing/articles"
 
 
 # ─── Static content library ─────────────────────────────────────────────────
@@ -132,6 +135,67 @@ AWESOME_LIST_TARGETS = [
         "addition_line":   f"- <b><a href=\"{REPO_URL}\">ADAAD</a></b>  ⭐ - Constitutionally governed autonomous code mutation. Three Claude-powered agents compete via genetic algorithm; 16-rule policy gate is the sole approval authority. Deterministic replay. MIT.",
         "pr_title":        "Add ADAAD — constitutional AI code mutation to best-of-ml-python",
         "pr_body":         f"ADAAD is a production-grade Python system for governed autonomous code improvement.\n\nKey technical facts:\n- Multi-agent mutation pipeline (Architect / Dream / Beast personas)\n- BLX-alpha genetic algorithm with elite preservation and UCB1 bandit\n- 16-rule constitutional gate — fail-closed, architectural enforcement\n- SHA-256 hash-chained evidence ledger\n- Momentum gradient descent weight adaptation\n- Thompson sampling for non-stationary reward detection\n\nMIT. Python 3.11. Free Community tier. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    # ── Phase 13 expansion targets ─────────────────────────────────────────
+    {
+        "target_id":       "awesome-ai-safety-pr",
+        "upstream_owner":  "hari-sikchi",
+        "upstream_repo":   "awesome-ai-safety",
+        "file_path":       "README.md",
+        "section_marker":  "Tools",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Constitutionally governed autonomous code mutation. 16-rule policy gate, SHA-256 audit ledger, deterministic replay. No mutation executes without cryptographic proof it was evaluated correctly. MIT.",
+        "pr_title":        "Add ADAAD — constitutional AI governance for autonomous code mutation",
+        "pr_body":         f"ADAAD provides constitutional governance for AI code mutation.\n\nRelevance to AI safety:\n- 16 hard rules evaluated deterministically — no fuzzy approval\n- GovernanceGate is the only approval authority — architecturally enforced\n- SHA-256 hash-chained evidence ledger — no retroactive modification possible\n- Deterministic replay — byte-identical re-execution of any past decision\n- Fail-closed: one blocking rule failure = full halt, named failure mode logged\n\nThis is a practical implementation of constrained autonomy for AI systems that modify code.\n\nMIT. Python 3.11. Free Community tier. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-llm-tools-pr",
+        "upstream_owner":  "underlines",
+        "upstream_repo":   "awesome-llm",
+        "file_path":       "README.md",
+        "section_marker":  "Development Tools",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Autonomous code mutation governed by a constitutional policy engine. Three Claude agents + genetic algorithm + 16-rule gate. SHA-256 audit trail. MIT, free tier.",
+        "pr_title":        "Add ADAAD — constitutionally governed LLM code mutation system",
+        "pr_body":         f"ADAAD is a production-grade system using LLMs for governed autonomous code improvement.\n\n- 3 Claude-powered agents (Architect/Dream/Beast) propose code mutations\n- BLX-alpha genetic algorithm ranks candidates\n- 16-rule constitutional gate — one failure = full halt\n- Deterministic replay verification\n- SHA-256 hash-chained evidence ledger\n\nMIT. Python 3.11. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-devtools-pr",
+        "upstream_owner":  "moimikey",
+        "upstream_repo":   "awesome-devtools",
+        "file_path":       "README.md",
+        "section_marker":  "AI",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Autonomous AI code mutation with constitutional governance. Three competing Claude agents, genetic algorithm, 16-rule policy gate, SHA-256 audit ledger. Free, MIT.",
+        "pr_title":        "Add ADAAD — autonomous AI code mutation with constitutional governance",
+        "pr_body":         f"ADAAD is an open-source developer tool where AI agents autonomously improve codebases under strict constitutional governance.\n\nKey features for devtools users:\n- pip install adaad — single command install\n- adaad --dry-run — preview changes without modifying anything\n- Self-hosted, no telemetry, MIT\n- Android companion app (free)\n- Governance dashboard: python server.py\n\n{REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-indie-pr",
+        "upstream_owner":  "mezod",
+        "upstream_repo":   "awesome-indie",
+        "file_path":       "README.md",
+        "section_marker":  "Developer Tools",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Open-source + SaaS: constitutionally governed autonomous code mutation. Free Community tier (MIT) + Pro ($49/mo) + Enterprise ($499/mo). Built solo by Dustin L. Reid.",
+        "pr_title":        "Add ADAAD — open-source/SaaS AI governance devtool (indie founder)",
+        "pr_body":         f"ADAAD is an indie-founder-built open-source SaaS — constitutional AI governance for autonomous code mutation.\n\nBusiness model:\n- Community: MIT, self-hosted, free forever\n- Pro: $49/month\n- Enterprise: $499/month\n\nBuilt solo by Dustin L. Reid (InnovativeAI LLC, Blackwell Oklahoma) across 900+ commits.\n\n{REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-open-source-supporters-pr",
+        "upstream_owner":  "zachflower",
+        "upstream_repo":   "awesome-open-source-supporters",
+        "file_path":       "README.md",
+        "section_marker":  "Developer Tools",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Constitutionally governed autonomous code mutation. Full-featured Community tier free forever (MIT).",
+        "pr_title":        "Add ADAAD — free-forever open-source AI governance tool",
+        "pr_body":         f"ADAAD offers a full-featured Community tier free forever, with no governance degradation at the free tier.\n\nOpen-source commitment:\n- MIT licensed\n- Self-hosted\n- Community tier includes: full constitutional gate, evidence ledger, deterministic replay, Android app\n- Free users get the same 16-rule governance as $499/mo Enterprise\n\n{REPO_URL}",
         "platform":        "github_pr",
         "min_interval_h":  0,
     },
@@ -500,6 +564,9 @@ class AutonomousMarketingEngine:
         self._gh_meta  = GitHubMetaDispatcher(cfg.github_token)
         self._gh_pr    = GitHubPRDispatcher(cfg.github_token)
         self._devto    = DevToDispatcher(cfg.devto_api_key)
+        from runtime.marketing.hashnode_dispatcher import HashnodeDispatcher, HASHNODE_ARTICLES
+        self._hashnode = HashnodeDispatcher(cfg.hashnode_token, cfg.hashnode_pub_id)
+        self._hashnode_articles = HASHNODE_ARTICLES
         self._reddit   = RedditDispatcher(
             cfg.reddit_client_id, cfg.reddit_client_secret,
             cfg.reddit_username, cfg.reddit_password,
@@ -523,6 +590,8 @@ class AutonomousMarketingEngine:
         # Dev.to articles
         if target_filter in ("all", "devto"):
             self._run_devto(results)
+        if target_filter in ("all", "hashnode"):
+            self._run_hashnode(results)
 
         # Awesome-list PRs
         if target_filter in ("all", "prs"):
@@ -601,6 +670,42 @@ class AutonomousMarketingEngine:
             self._record(target_id, "github_meta", "metadata", None, r, results)
 
     # ── Dev.to ──────────────────────────────────────────────────────────────
+
+
+    def _run_hashnode(self, results: dict) -> None:
+        """Publish pre-written articles to Hashnode (free, 1M+ monthly devs)."""
+        if not self._cfg.hashnode_token or not self._cfg.hashnode_pub_id:
+            log.warning("HASHNODE_TOKEN or HASHNODE_PUB_ID not set — skipping Hashnode")
+            results["skipped"] += len(self._hashnode_articles)
+            return
+        for article in self._hashnode_articles:
+            tid = article["target_id"]
+            ok, reason = self._gate.check(tid, min_interval_h=0)
+            if not ok:
+                log.info("Gate: %s — %s", tid, reason)
+                results["skipped"] += 1
+                continue
+            if self._cfg.dry_run:
+                log.info("[DRY RUN] Would publish Hashnode: %s", article["title"])
+                results["dry_run"] += 1
+                continue
+            # Load pre-written article body from file
+            import pathlib
+            body_file = pathlib.Path(self._cfg.articles_dir) / f"devto_{article['body_key']}.md"
+            if body_file.exists():
+                body = body_file.read_text()
+            else:
+                body = _generate_devto_body(self._cfg.anthropic_api_key, article["body_key"])
+            r = self._hashnode.publish(
+                title=article["title"],
+                subtitle=article.get("subtitle", ""),
+                content_markdown=body,
+                tags=article.get("tags", []),
+                canonical_url=article.get("canonical_url"),
+            )
+            self._record(tid, "hashnode", "article", article["title"],
+                        type("R", (), {"success": r.success, "live_url": r.live_url, "error": r.error})(),
+                        results)
 
     def _run_devto(self, results: dict) -> None:
         if not self._cfg.devto_api_key:

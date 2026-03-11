@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: MIT
+# ADAAD Phase 13 — Growth Blitz on Release
+#
+# Fires on every new GitHub Release (version tag push).
+# Hits every platform simultaneously for maximum launch-day exposure.
+# Also fires weekly on Sunday night to keep the repo warm in search indexes.
+
+name: 📈 Growth Blitz
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  schedule:
+    - cron: "0 22 * * 0"   # Sunday 10PM UTC — weekly warmup
+
+permissions:
+  contents: write
+
+jobs:
+  blitz:
+    name: 🚀 Full Platform Blast
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Install dependencies
+        run: pip install -r requirements.server.txt --quiet
+
+      - name: GitHub metadata refresh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python market.py --target github
+
+      - name: Awesome-list PR blitz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python market.py --target prs
+
+      - name: Dev.to publish
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEVTO_API_KEY:     ${{ secrets.DEVTO_API_KEY }}
+        run: python market.py --target devto
+
+      - name: Hashnode publish
+        env:
+          HASHNODE_TOKEN:  ${{ secrets.HASHNODE_TOKEN }}
+          HASHNODE_PUB_ID: ${{ secrets.HASHNODE_PUB_ID }}
+        run: python market.py --target hashnode
+
+      - name: Reddit posts
+        env:
+          ANTHROPIC_API_KEY:    ${{ secrets.ANTHROPIC_API_KEY }}
+          REDDIT_CLIENT_ID:     ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USERNAME:      ${{ secrets.REDDIT_USERNAME }}
+          REDDIT_PASSWORD:      ${{ secrets.REDDIT_PASSWORD }}
+        run: python market.py --target reddit
+
+      - name: Claude discovery run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python market.py --discover
+
+      - name: Human queue refresh
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python market.py --queue | tee marketing/human_queue/QUEUE_REPORT.md
+          python market.py --status
+
+      - name: Commit all state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/ || true
+          git diff --staged --quiet || git commit -m "chore(growth): release blitz [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+          git push || true

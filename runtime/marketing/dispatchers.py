@@ -88,11 +88,12 @@ OPTIMAL_TOPICS = [
     "governance", "llm", "python", "genetic-algorithm", "android",
     "saas", "devtools", "anthropic", "claude-api", "open-source",
     "ai-safety", "replay", "code-quality", "automation",
-]
+    "audit-trail", "deterministic",
+]  # 20 topics — GitHub max for discoverability
 
 REPO_DESCRIPTION = (
-    "Three AI agents improve your code — constitutionally gated, "
-    "deterministically replayable, cryptographically auditable. Free forever. MIT."
+    "Copilot suggests. Cursor autocompletes. ADAAD governs. "
+    "3 AI agents · 16-rule constitutional gate · SHA-256 audit trail. Free, MIT."
 )
 
 class GitHubMetaDispatcher:

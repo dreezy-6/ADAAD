@@ -1,36 +1,36 @@
 ---
 name: Bug report
-about: Report a reproducible problem in ADAAD
-labels: bug
+about: Something in the governed pipeline behaved incorrectly
+title: '[BUG] '
+labels: bug, needs-triage
+assignees: dreezy-6
 ---
 
-## Summary
-Describe the bug clearly.
+## What happened
 
-## Steps to reproduce
-1.
-2.
-3.
+<!-- Describe the bug clearly -->
 
 ## Expected behavior
-What should happen?
 
-## Actual behavior
-What happened instead?
+<!-- What should have happened under the governance rules? -->
+
+## Steps to reproduce
+
+```bash
+# Commands you ran
+```
 
 ## Environment
-- **OS**: (e.g., Ubuntu 22.04, macOS 14, Windows 11)
-- **Python version**: (`python --version`)
-- **ADAAD commit SHA**: (`git rev-parse HEAD`)
-- **Replay mode**: (`off` / `audit` / `strict`)
-- **Installation method**: (`source` / `venv`)
-- **Expected governance surface**: (`invariants` / `cryovant` / `replay` / `constitution` / `mutation` / `ui`)
 
-## Reproduction checklist
-- [ ] I can reproduce this consistently
-- [ ] I checked existing issues before filing
-- [ ] I retried in a fresh virtual environment
-- [ ] I reproduced on the latest main branch (or documented why not)
+- ADAAD version (`cat VERSION`): 
+- Python version: 
+- OS: 
+- Tier (Community/Pro/Enterprise): 
 
-## Logs / artifacts
-Paste relevant logs or link artifacts (metrics excerpts, replay output, stack traces).
+## Evidence ledger output (if available)
+
+<!-- Paste the relevant governance record from marketing/state/ or the evidence ledger -->
+
+## Additional context
+
+<!-- Any other information that helps -->
