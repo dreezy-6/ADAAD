@@ -73,7 +73,7 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--dry-run",   action="store_true", help="No API calls — show what would run")
-    parser.add_argument("--target",    choices=["devto","github","prs","reddit","twitter","all"], default="all")
+    parser.add_argument("--target",    choices=["devto","github","prs","reddit","twitter","mastodon","discussions","hashnode","all"], default="all")
     parser.add_argument("--discover",  action="store_true", help="Use Claude to find new exposure targets")
     parser.add_argument("--status",    action="store_true", help="Print coverage report, no actions")
     parser.add_argument("--queue",     action="store_true", help="Print human-action queue")
@@ -96,6 +96,8 @@ def main() -> int:
         reddit_username     = os.environ.get("REDDIT_USERNAME", ""),
         reddit_password     = os.environ.get("REDDIT_PASSWORD", ""),
         twitter_bearer      = os.environ.get("TWITTER_BEARER_TOKEN", ""),
+        mastodon_token      = os.environ.get("MASTODON_ACCESS_TOKEN", ""),
+        mastodon_instance   = os.environ.get("MASTODON_INSTANCE", "fosstodon.org"),
         dry_run             = dry_run,
         state_dir           = str(ROOT / "marketing" / "state"),
         drafts_dir          = str(ROOT / "marketing" / "drafts"),

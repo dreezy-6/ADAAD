@@ -34,6 +34,10 @@ from runtime.marketing.dispatchers import (
     RedditDispatcher,
     TwitterDispatcher,
     HumanQueueDispatcher,
+    MastodonDispatcher,
+    GitHubDiscussDispatcher,
+    MASTODON_POSTS,
+    DISCUSSION_SEEDS,
     DispatchResult,
 )
 
@@ -55,6 +59,9 @@ class EngineConfig:
     reddit_username:      str = ""
     reddit_password:      str = ""
     twitter_bearer:       str = ""
+    mastodon_token:       str = ""
+    mastodon_instance:    str = "fosstodon.org"
+    github_token_discuss: str = ""
     dry_run:              bool = False
     state_dir:            str = "marketing/state"
     drafts_dir:           str = "marketing/drafts"
@@ -642,6 +649,10 @@ class AutonomousMarketingEngine:
             cfg.reddit_username, cfg.reddit_password,
         )
         self._twitter  = TwitterDispatcher(cfg.twitter_bearer)
+        self._mastodon       = MastodonDispatcher(cfg.mastodon_token, cfg.mastodon_instance)
+        self._mastodon_posts  = MASTODON_POSTS
+        self._discussions     = GitHubDiscussDispatcher(cfg.github_token)
+        self._discussion_seeds = DISCUSSION_SEEDS
         self._hqueue   = HumanQueueDispatcher(cfg.human_queue_dir)
 
     # ── Public interface ────────────────────────────────────────────────────
@@ -674,6 +685,14 @@ class AutonomousMarketingEngine:
         # Twitter
         if target_filter in ("all", "twitter"):
             self._run_twitter(results)
+
+        # Mastodon
+        if target_filter in ("all", "mastodon"):
+            self._run_mastodon(results)
+
+        # GitHub Discussions
+        if target_filter in ("all", "discussions"):
+            self._run_discussions(results)
 
         # Always generate human-queue drafts (no API calls, just file writes)
         self._run_human_queue(results)
@@ -989,3 +1008,68 @@ class AutonomousMarketingEngine:
             results["failed"] += 1
             state.mark_failed(r.error or "unknown error")
         self._store.upsert_target(state)
+
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Mastodon
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _run_mastodon(self, results: dict) -> None:
+        """Post to fosstodon.org — the premier FOSS developer Mastodon instance."""
+        if not self._cfg.mastodon_token:
+            log.warning("MASTODON_ACCESS_TOKEN not set — skipping Mastodon")
+            results["skipped"] += len(self._mastodon_posts)
+            return
+
+        state = self._state.load()
+        for post in self._mastodon_posts:
+            tid = post["id"]
+            if state.get(tid, {}).get("posted"):
+                log.info("[mastodon] Already posted %s — skipping", tid)
+                continue
+
+            if self._cfg.dry_run:
+                log.info("[DRY RUN] Would toot: %s", post["text"][:80])
+                results["dry_run"] = results.get("dry_run", 0) + 1
+                continue
+
+            r = self._mastodon.post(post["text"])
+            self._record(tid, "mastodon", "status", post.get("angle", tid),
+                         r.live_url or "", r)
+            if r.success:
+                results["posted"] += 1
+            else:
+                results["errors"] += 1
+            time.sleep(30)  # Rate limit: respectful pace on fediverse
+
+    # ──────────────────────────────────────────────────────────────────────
+    # GitHub Discussions
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _run_discussions(self, results: dict) -> None:
+        """Seed GitHub Discussions — Google-indexed, surfaces in GitHub search."""
+        if not self._cfg.github_token:
+            log.warning("GITHUB_TOKEN not set — skipping Discussions")
+            results["skipped"] += len(self._discussion_seeds)
+            return
+
+        state = self._state.load()
+        for disc in self._discussion_seeds:
+            tid = disc["id"]
+            if state.get(tid, {}).get("posted"):
+                log.info("[discussions] Already created %s — skipping", tid)
+                continue
+
+            if self._cfg.dry_run:
+                log.info("[DRY RUN] Would create Discussion: %s", disc["title"])
+                results["dry_run"] = results.get("dry_run", 0) + 1
+                continue
+
+            r = self._discussions.create(disc["title"], disc["body"])
+            self._record(tid, "github_discussions", "discussion", disc["title"],
+                         r.live_url or "", r)
+            if r.success:
+                results["posted"] += 1
+            else:
+                results["errors"] += 1
+            time.sleep(5)

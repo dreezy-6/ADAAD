@@ -245,6 +245,72 @@ jobs:
           git diff --staged --quiet || git commit -m "chore(marketing): twitter [$(date -u '+%Y-%m-%d')]"
           git push || true
 
+
+  # ── Mastodon — fosstodon.org (FOSS dev community) ──────────────────────
+  mastodon:
+    name: 🐘 Mastodon (fosstodon.org)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      (github.event_name == 'schedule') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'all') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'mastodon')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Post to Mastodon (fosstodon.org)
+        env:
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          MASTODON_INSTANCE:     "fosstodon.org"
+          MARKETING_DRY_RUN:     ${{ inputs.dry_run || 'false' }}
+        run: python market.py --target mastodon
+      - name: Commit state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/state/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): mastodon [$(date -u '+%Y-%m-%d')]"
+          git push || true
+
+  # ── GitHub Discussions seed ─────────────────────────────────────────────
+  discussions:
+    name: 💬 GitHub Discussions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'all') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'discussions')
+    permissions:
+      discussions: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Seed GitHub Discussions
+        env:
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          MARKETING_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: python market.py --target discussions
+      - name: Commit state
+        run: |
+          git config user.name  "ADAAD Marketing Bot"
+          git config user.email "marketing-bot@innovativeai.dev"
+          git pull --rebase
+          git add marketing/state/ || true
+          git diff --staged --quiet || git commit -m "chore(marketing): discussions [$(date -u '+%Y-%m-%d')]"
+          git push || true
+
   # ── Weekly Claude discovery — every Monday ─────────────────────────────
   discover:
     name: 🔍 Claude Opportunity Discovery
@@ -280,7 +346,7 @@ jobs:
     name: 📋 Human Action Queue
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [devto, hashnode, awesome_prs, reddit]
+    needs: [devto, hashnode, awesome_prs, reddit, mastodon, discussions]
     if: always()
     steps:
       - uses: actions/checkout@v4

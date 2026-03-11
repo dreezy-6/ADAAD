@@ -487,3 +487,288 @@ class HumanQueueDispatcher:
             if item["target_id"] == target_id:
                 item["completed"] = True
         self._save_index()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Mastodon Dispatcher — fosstodon.org (FOSS dev community, free API)
+# ════════════════════════════════════════════════════════════════════════════
+
+MASTODON_HASHTAGS = "#OpenSource #AI #DevTools #Python #ConstitutionalAI #FOSS #AuditTrail"
+
+MASTODON_POSTS = [
+    {
+        "id":    "mastodon-launch",
+        "angle": "launch",
+        "text":  (
+            "Just open-sourced ADAAD — constitutional AI governance for autonomous code mutation.\n\n"
+            "3 Claude agents compete → genetic algorithm ranks → 16-rule governance gate "
+            "approves or halts → SHA-256 hash-chained audit trail.\n\n"
+            "Nothing ships without cryptographic proof. Free forever. MIT.\n\n"
+            "https://github.com/InnovativeAI-adaad/ADAAD\n\n"
+            "#OpenSource #AI #DevTools #Python #FOSS"
+        ),
+    },
+    {
+        "id":    "mastodon-audit-trail",
+        "angle": "audit_trail",
+        "text":  (
+            "The question every AI coding tool should answer but can't:\n\n"
+            "\"What exactly changed, when, under what conditions, and can you prove it?\"\n\n"
+            "ADAAD answers this with a SHA-256 hash-chained evidence ledger and "
+            "deterministic replay — re-run any past epoch, get byte-identical outputs.\n\n"
+            "https://github.com/InnovativeAI-adaad/ADAAD\n\n"
+            "#AI #AuditTrail #OpenSource #ConstitutionalAI"
+        ),
+    },
+    {
+        "id":    "mastodon-vs-copilot",
+        "angle": "comparison",
+        "text":  (
+            "Copilot suggests. Cursor autocompletes.\n\n"
+            "ADAAD governs — with 3 competing agents, a genetic algorithm, "
+            "a 16-rule constitutional gate, and a cryptographic audit trail.\n\n"
+            "The governance gate cannot be overridden. Architectural invariant, "
+            "not a config flag. Free, MIT, self-hosted.\n\n"
+            "pip install adaad\n"
+            "https://github.com/InnovativeAI-adaad/ADAAD\n\n"
+            "#DevTools #AI #FOSS #OpenSource"
+        ),
+    },
+    {
+        "id":    "mastodon-android",
+        "angle": "android",
+        "text":  (
+            "Monitor your AI code mutations from your phone.\n\n"
+            "ADAAD has a free Android companion app — watch epochs run, "
+            "review governance decisions, and inspect the audit trail "
+            "from anywhere.\n\n"
+            "The whole system is free forever. MIT licensed. Self-hosted.\n\n"
+            "https://github.com/InnovativeAI-adaad/ADAAD\n\n"
+            "#Android #FOSS #AI #OpenSource"
+        ),
+    },
+    {
+        "id":    "mastodon-free-forever",
+        "angle": "free",
+        "text":  (
+            "ADAAD Community tier:\n"
+            "✓ Full constitutional governance engine\n"
+            "✓ SHA-256 evidence ledger\n"
+            "✓ Deterministic replay\n"
+            "✓ Android companion app\n"
+            "✓ No telemetry\n"
+            "✓ Self-hosted\n"
+            "✓ MIT licensed\n"
+            "✓ Free forever\n\n"
+            "pip install adaad\n"
+            "https://github.com/InnovativeAI-adaad/ADAAD\n\n"
+            "#OpenSource #FOSS #AI #FreeSoftware"
+        ),
+    },
+]
+
+
+class MastodonDispatcher:
+    """Post status updates to a Mastodon instance (fosstodon.org by default).
+
+    Requires:
+      MASTODON_ACCESS_TOKEN — from instance settings → Applications → New Application
+      MASTODON_INSTANCE     — e.g. fosstodon.org (default)
+
+    API docs: https://docs.joinmastodon.org/client/intro/
+    """
+
+    def __init__(self, access_token: str, instance: str = "fosstodon.org"):
+        self._token    = access_token
+        self._instance = instance.rstrip("/")
+        self._api_base = f"https://{self._instance}/api/v1"
+
+    def post(self, text: str) -> "DispatchResult":
+        if not self._token:
+            return _err("mastodon", "MASTODON_ACCESS_TOKEN not set")
+
+        # Mastodon character limit: 500 on most instances
+        if len(text) > 500:
+            text = text[:497] + "…"
+
+        status_url = f"{self._api_base}/statuses"
+        payload    = json.dumps({"status": text, "visibility": "public"}).encode()
+        req = urllib.request.Request(
+            status_url,
+            data=payload,
+            headers={
+                "Authorization":  f"Bearer {self._token}",
+                "Content-Type":   "application/json",
+                "User-Agent":     "ADAAD-MarketingBot/6.2 (https://github.com/InnovativeAI-adaad/ADAAD)",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data    = json.loads(resp.read().decode())
+                post_url = data.get("url", "")
+                pid      = data.get("id", "")
+                log.info("[mastodon] Posted: %s", post_url)
+                return _ok("mastodon", post_url, pid)
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode()
+            return _err("mastodon", f"HTTP {e.code}: {raw[:200]}")
+        except Exception as exc:
+            return _err("mastodon", str(exc))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GitHub Discussions Dispatcher — SEO + developer community
+# ════════════════════════════════════════════════════════════════════════════
+
+DISCUSSION_SEEDS = [
+    {
+        "id":       "discussion-intro",
+        "title":    "Welcome to ADAAD — constitutional AI governance for your codebase",
+        "body":     (
+            "## What is ADAAD?\n\n"
+            "ADAAD is an open-source AI coding governance system. Three Claude-powered agents "
+            "(Architect, Dream, Beast) compete continuously to improve your codebase. Every "
+            "proposal passes a 16-rule constitutional governance gate before a single byte changes.\n\n"
+            "The outcome: **cryptographically auditable, deterministically replayable code mutations** "
+            "— SHA-256 hash-chained into an immutable evidence ledger.\n\n"
+            "## Why this matters\n\n"
+            "When your AI coding tool breaks production, can you answer:\n"
+            "- *What exactly changed?*\n"
+            "- *Under what conditions?*\n"
+            "- *With what evidence?*\n\n"
+            "Copilot and Cursor can't answer these questions. ADAAD is designed from the ground up "
+            "to answer them — with cryptographic proof.\n\n"
+            "## Get started\n\n"
+            "```bash\npip install adaad && adaad --dry-run\n```\n\n"
+            "Or clone: https://github.com/InnovativeAI-adaad/ADAAD\n\n"
+            "---\n"
+            "*Built by Dustin L. Reid · InnovativeAI LLC · Blackwell, Oklahoma*\n\n"
+            "Questions, ideas, or feedback? This is the right place."
+        ),
+    },
+    {
+        "id":       "discussion-faq",
+        "title":    "FAQ: Common questions about the Constitutional Gate and audit trail",
+        "body":     (
+            "## Frequently Asked Questions\n\n"
+            "**Q: Can the 16-rule constitutional gate be disabled?**\n"
+            "A: No. The GovernanceGate is an architectural invariant — it cannot be overridden "
+            "by any agent, operator, configuration flag, or pricing tier. This is not a policy. "
+            "It is baked into the code.\n\n"
+            "**Q: What is deterministic replay?**\n"
+            "A: Every epoch is computed from deterministic inputs (no system time, seeded RNG "
+            "anchored to epoch_id). Six months from now, you can re-run any past epoch from "
+            "its original inputs and get byte-identical outputs. If they diverge, the pipeline halts.\n\n"
+            "**Q: Is the SHA-256 ledger actually immutable?**\n"
+            "A: Each entry contains a SHA-256 hash of the previous entry. Modifying any past "
+            "entry breaks the hash chain. The system detects this and halts on any divergence.\n\n"
+            "**Q: How is ADAAD different from GitHub Copilot?**\n"
+            "A: Copilot is autocomplete. ADAAD is autonomous governed mutation with "
+            "cryptographic accountability. Copilot cannot add a constitutional gate without "
+            "rebuilding its architecture from scratch.\n\n"
+            "**Q: What does the free tier include?**\n"
+            "A: The full governance engine — all 16 rules, SHA-256 ledger, deterministic replay, "
+            "and Android companion app. 50 epochs/month, 3 candidates/epoch. MIT, self-hosted, no telemetry.\n\n"
+            "---\n\nPost your question below — Dustin responds to all of them."
+        ),
+    },
+    {
+        "id":       "discussion-show-and-tell",
+        "title":    "Show and tell: what are you using ADAAD to govern?",
+        "body":     (
+            "This thread is for sharing what you're using ADAAD on.\n\n"
+            "- What kind of codebase?\n"
+            "- Which agents are producing the most useful proposals?\n"
+            "- Has the constitutional gate caught anything you wouldn't have noticed?\n\n"
+            "Every use case helps shape the roadmap — which is itself governed by ADAAD.\n\n"
+            "Drop your setup below.\n\n"
+            "---\n*If you're new: pip install adaad && adaad --dry-run to start in 60 seconds.*"
+        ),
+    },
+]
+
+
+class GitHubDiscussDispatcher:
+    """Create and pin discussions in the ADAAD GitHub repository.
+
+    Uses the GitHub GraphQL API to create Discussions in a specified category.
+    Discussions are indexed by Google and surface in GitHub search — free SEO.
+
+    Requires:
+      GITHUB_TOKEN — standard GitHub Actions token works (discussions: write permission)
+    """
+
+    GQL_URL = "https://api.github.com/graphql"
+
+    def __init__(self, token: str, owner: str = "InnovativeAI-adaad", repo: str = "ADAAD"):
+        self._token = token
+        self._owner = owner
+        self._repo  = repo
+
+    def _gql(self, query: str, variables: dict) -> dict:
+        payload = json.dumps({"query": query, "variables": variables}).encode()
+        req = urllib.request.Request(
+            self.GQL_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type":  "application/json",
+                "User-Agent":    "ADAAD-MarketingBot/6.2",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read().decode())
+
+    def _get_repo_id_and_category(self) -> tuple:
+        """Return (repo_id, category_id) for the General or Announcements category."""
+        data = self._gql(
+            """query($owner:String!,$name:String!){
+               repository(owner:$owner,name:$name){
+                 id
+                 discussionCategories(first:10){
+                   nodes{id name}
+                 }
+               }
+            }""",
+            {"owner": self._owner, "name": self._repo},
+        )
+        repo = data.get("data", {}).get("repository", {})
+        repo_id = repo.get("id")
+        cats = repo.get("discussionCategories", {}).get("nodes", [])
+        cat_id = None
+        for cat in cats:
+            if cat["name"].lower() in ("general", "announcements", "q&a", "show and tell"):
+                cat_id = cat["id"]
+                break
+        if not cat_id and cats:
+            cat_id = cats[0]["id"]
+        return repo_id, cat_id
+
+    def create(self, title: str, body: str) -> "DispatchResult":
+        if not self._token:
+            return _err("github_discuss", "GITHUB_TOKEN not set")
+        try:
+            repo_id, cat_id = self._get_repo_id_and_category()
+            if not repo_id or not cat_id:
+                return _err("github_discuss", "Could not resolve repo/category IDs")
+            data = self._gql(
+                """mutation($input:CreateDiscussionInput!){
+                   createDiscussion(input:$input){
+                     discussion{url id}
+                   }
+                }""",
+                {"input": {"repositoryId": repo_id, "categoryId": cat_id,
+                           "title": title, "body": body}},
+            )
+            disc = data.get("data", {}).get("createDiscussion", {}).get("discussion", {})
+            url  = disc.get("url", "")
+            pid  = disc.get("id", "")
+            if url:
+                log.info("[github_discuss] Created: %s", url)
+                return _ok("github_discuss", url, pid)
+            errors = data.get("errors", [])
+            return _err("github_discuss", str(errors))
+        except Exception as exc:
+            return _err("github_discuss", str(exc))
