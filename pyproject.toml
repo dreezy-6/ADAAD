@@ -13,9 +13,11 @@ authors = [
     {name = "Dustin L. Reid", email = "dustin@innovativeai.llc"},
 ]
 keywords = [
-    "ai", "autonomous", "code-mutation", "constitutional-ai", "governance",
-    "llm", "anthropic", "claude", "genetic-algorithm", "devtools",
-    "ai-agents", "code-quality", "audit", "replay", "open-source"
+    "ai-agents", "autonomous-coding", "code-mutation", "constitutional-ai",
+    "governance", "llm", "python", "genetic-algorithm", "android",
+    "saas", "devtools", "anthropic", "claude-api", "open-source",
+    "ai-safety", "replay", "code-quality", "automation",
+    "audit-trail", "deterministic"
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

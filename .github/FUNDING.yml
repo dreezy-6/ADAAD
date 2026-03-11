@@ -1,4 +1,8 @@
-# Funding links intentionally limited until sponsorship program is launched.
-# Keep this file explicit to avoid empty placeholder arrays.
-github: [InnovativeAI-adaad]
-custom: []
+# ADAAD — GitHub Sponsors configuration
+# This file enables the "Sponsor" button on the GitHub repo page.
+# It's free visibility — GitHub promotes sponsored repos.
+
+github: [dreezy-6]
+custom:
+  - "https://innovativeai.io/adaad/upgrade?plan=pro"
+  - "https://innovativeai.io/adaad/enterprise"

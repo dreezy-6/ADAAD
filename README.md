@@ -7,8 +7,8 @@
     <img alt="CI" src="https://github.com/InnovativeAI-adaad/ADAAD/actions/workflows/ci.yml/badge.svg"/>
   </a>
   &nbsp;
-  <img alt="Version" src="https://img.shields.io/badge/version-6.1.0-00d4ff?style=flat-square&labelColor=060d14"/>
-  <img alt="Phase" src="https://img.shields.io/badge/phase-12%20–%20campaign%20blitz-f59e0b?style=flat-square&labelColor=060d14"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-6.2.0-00d4ff?style=flat-square&labelColor=060d14"/>
+  <img alt="Phase" src="https://img.shields.io/badge/phase-13%20–%20max%20exposure-f59e0b?style=flat-square&labelColor=060d14"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.11+-7b61ff?style=flat-square&labelColor=060d14"/>
   <img alt="Android" src="https://img.shields.io/badge/android-free-3ddc84?style=flat-square&labelColor=060d14"/>
   <img alt="PyPI" src="https://img.shields.io/badge/pip_install-adaad-00d4ff?style=flat-square&labelColor=060d14"/>
@@ -393,7 +393,8 @@ Explicit exclusions are part of the constitution:
 | 9 — Simulation DSL | ✅ | v4.0.0 | Replay harness, hypothetical constraint evaluation |
 | 10 — Aponi IDE integration | ✅ | v5.0.0 | Inline evidence viewer, mutation panel, replay inspector |
 | 11 — Autonomous marketing | ✅ | v6.0.0 | market.py, dispatchers, daily CI, 7-platform dispatch |
-| **12 — Campaign Blitz v2** | **✅** | **v6.1.0** | Hashnode, PyPI, 4 new awesome-list PRs, 16-channel outreach queue |
+| 12 — Campaign Blitz v2 | ✅ | v6.1.0 | Hashnode, PyPI, 4 new awesome-list PRs, 16-channel outreach queue |
+| **13 — Maximum Autonomous Exposure** | **✅** | **v6.2.0** | 15 awesome-list targets, 7 Reddit targets, Hashnode live, 20 AI directories, press kit, PH launch kit, rotating Twitter threads, growth.yml, discussions seeder |
 
 📋 Full roadmap → [ROADMAP.md](ROADMAP.md) · 🔖 Changelog → [CHANGELOG.md](CHANGELOG.md)
 

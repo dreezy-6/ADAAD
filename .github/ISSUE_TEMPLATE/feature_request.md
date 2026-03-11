@@ -1,22 +1,30 @@
 ---
 name: Feature request
-about: Suggest an enhancement for ADAAD
-labels: enhancement
+about: Propose an addition to ADAAD (will be reviewed by ArchitectAgent)
+title: '[FEAT] '
+labels: enhancement, roadmap-candidate
+assignees: dreezy-6
 ---
 
-## Problem statement
-What problem are you trying to solve?
+## What problem does this solve?
+
+<!-- Describe the gap in the current governance or mutation pipeline -->
 
 ## Proposed solution
-Describe your ideal solution.
 
-## Alternatives considered
-What alternatives did you evaluate?
+<!-- What would you like ADAAD to do? -->
 
-## Complexity estimate
-- [ ] Good first issue (< 2 hours)
-- [ ] Medium complexity (2-8 hours)
-- [ ] Major feature (> 8 hours)
+## Constitutional alignment
+
+<!-- Does this proposal conflict with any of the 14 constitutional rules?
+     See docs/CONSTITUTION.md -->
+
+## Tier
+
+- [ ] This should be a Community (free) feature
+- [ ] This should be a Pro ($49/mo) feature  
+- [ ] This should be an Enterprise ($499/mo) feature
 
 ## Additional context
-Any policy, governance, or safety implications?
+
+<!-- Anything else? Code examples, links, prior art? -->

@@ -31,6 +31,8 @@ ENVIRONMENT VARIABLES REQUIRED (set in GitHub Secrets):
 
 OPTIONAL:
   TWITTER_BEARER_TOKEN  — Twitter API v2 bearer token
+  HASHNODE_TOKEN        — Hashnode Personal Access Token
+  HASHNODE_PUB_ID       — Hashnode Publication (blog) ID
   MARKETING_DRY_RUN     — set to "true" to force dry-run mode
 
 Constitutional invariant: Every dispatch is logged to marketing/state/
@@ -87,6 +89,8 @@ def main() -> int:
         anthropic_api_key   = os.environ.get("ANTHROPIC_API_KEY", ""),
         github_token        = os.environ.get("GITHUB_TOKEN", ""),
         devto_api_key       = os.environ.get("DEVTO_API_KEY", ""),
+        hashnode_token      = os.environ.get("HASHNODE_TOKEN", ""),
+        hashnode_pub_id     = os.environ.get("HASHNODE_PUB_ID", ""),
         reddit_client_id    = os.environ.get("REDDIT_CLIENT_ID", ""),
         reddit_client_secret= os.environ.get("REDDIT_CLIENT_SECRET", ""),
         reddit_username     = os.environ.get("REDDIT_USERNAME", ""),
