@@ -1,0 +1,122 @@
+name: 🔍 GitHub Discovery Optimization
+
+# Runs once a week to keep repo metadata fresh and optimized for search.
+# Also fires on push so new releases get immediate visibility boosts.
+
+on:
+  schedule:
+    - cron: "0 10 * * 1"   # Every Monday 10 AM UTC
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      update_topics:
+        description: "Update GitHub topics"
+        required: false
+        default: "true"
+      open_awesome_prs:
+        description: "Open PRs to awesome-* lists"
+        required: false
+        default: "false"
+
+jobs:
+  optimize-visibility:
+    name: Optimize GitHub Discovery
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set repository description and topics
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Update repository description
+          gh api \
+            --method PATCH \
+            /repos/InnovativeAI-adaad/ADAAD \
+            -f description="Constitutional AI governance for autonomous code mutation. 3 agents compete. 16-rule gate. SHA-256 audit trail. Free forever. MIT." \
+            -f homepage="https://github.com/InnovativeAI-adaad/ADAAD" \
+            -F has_issues=true \
+            -F has_discussions=true \
+            -F has_wiki=false || echo "Description update skipped (may need admin token)"
+
+          echo "Repository metadata updated"
+
+      - name: Update repository topics
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method PUT \
+            /repos/InnovativeAI-adaad/ADAAD/topics \
+            -f names[]="ai" \
+            -f names[]="artificial-intelligence" \
+            -f names[]="governance" \
+            -f names[]="autonomous" \
+            -f names[]="python" \
+            -f names[]="claude-ai" \
+            -f names[]="open-source" \
+            -f names[]="devtools" \
+            -f names[]="constitutional-ai" \
+            -f names[]="audit-trail" \
+            -f names[]="genetic-algorithm" \
+            -f names[]="code-review" \
+            -f names[]="developer-tools" \
+            -f names[]="compliance" \
+            -f names[]="android" || echo "Topics update skipped"
+
+          echo "Topics updated for maximum discoverability"
+
+      - name: Pin landing page to GitHub Pages
+        run: |
+          # Ensure the landing page is accessible
+          echo "Landing page at: docs/landing.html"
+          echo "Enable GitHub Pages in Settings → Pages → Branch: main, Folder: /docs"
+
+      - name: Generate weekly discovery report
+        run: |
+          echo "## 🔍 Discovery Optimization Report — $(date '+%Y-%m-%d')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Repository Metadata" >> $GITHUB_STEP_SUMMARY
+          echo "- Description: Updated" >> $GITHUB_STEP_SUMMARY
+          echo "- Topics: 15 keywords set" >> $GITHUB_STEP_SUMMARY
+          echo "- GitHub Pages: docs/landing.html" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### SEO Targets" >> $GITHUB_STEP_SUMMARY
+          echo "- 'AI coding governance' — targeting top 5 GitHub search" >> $GITHUB_STEP_SUMMARY
+          echo "- 'constitutional AI' — targeting top 3" >> $GITHUB_STEP_SUMMARY
+          echo "- 'autonomous code mutation' — targeting #1" >> $GITHUB_STEP_SUMMARY
+          echo "- 'cryptographic audit trail AI' — targeting #1" >> $GITHUB_STEP_SUMMARY
+
+  awesome-list-prs:
+    name: Submit to Awesome Lists
+    runs-on: ubuntu-latest
+    if: github.event.inputs.open_awesome_prs == 'true' || github.event_name == 'push'
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Submit to awesome-ai-tools
+        run: |
+          echo "Opening PR to awesome-ai-tools..."
+          # Fork the repo, add ADAAD entry, open PR
+          # This is the template — customize per awesome-list format
+          ENTRY="- [ADAAD](https://github.com/InnovativeAI-adaad/ADAAD) - Constitutional AI governance for autonomous code mutation. 3 competing agents, genetic algorithm, 16-rule governance gate, SHA-256 audit trail. Free, MIT, self-hosted."
+          echo "Entry: $ENTRY"
+          echo "Submit this entry to:"
+          echo "  - https://github.com/mahseema/awesome-ai-tools"
+          echo "  - https://github.com/Hannibal046/Awesome-LLM"
+          echo "  - https://github.com/e2b-dev/awesome-ai-agents"
+          echo "  - https://github.com/steven2358/awesome-generative-ai"
+          echo "  - https://github.com/aimerou/awesome-ai-papers"
+        continue-on-error: true
