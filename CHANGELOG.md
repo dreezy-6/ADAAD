@@ -1,3 +1,44 @@
+## [6.2.0] — 2026-03-11  Phase 13 · Maximum Autonomous Exposure
+
+> **This release maximizes ADAAD's autonomous marketing surface to every reachable platform.**
+
+### Added
+
+**Marketing engine (Phase 13 — max exposure):**
+- Hashnode wired into `engine.py` and `autonomous_marketing.yml` (1M+ monthly readers)
+- 8 new awesome-list PR targets: `awesome-generative-ai`, `awesome-code-review`, `awesome-mlops`, `awesome-static-analysis`, `awesome-ai-safety`, `awesome-llm`, `awesome-devtools`, `awesome-indie`
+- Total awesome-list targets: **15** (was 6 in Phase 11, 11 in Phase 12)
+- 3 new Reddit targets: `r/SideProject`, `r/AIAgents`, `r/webdev`
+- Rotating 3-thread Twitter/X sequences with sharper competitive copy
+- `growth.yml` — full platform blast on every release tag + Sunday warmup
+- `discussions_seed.yml` — monthly GitHub Discussions seeder (Google-indexed)
+- `.github/FUNDING.yml` — GitHub Sponsors button activated
+- `.github/ISSUE_TEMPLATE/` — structured bug/feature issue templates
+- `marketing/articles/` — 3 pre-written articles (no Claude API dependency at publish time)
+
+**Human queue additions (Phase 13):**
+- `human_queue/producthunt_launch_kit.md` — full PH launch kit (tagline, copy, gallery spec, first comment, hunter DM template)
+- `human_queue/directory_submissions.md` — 20 AI/dev directories with submission copy
+- `human_queue/press_release.md` — publication-ready press release
+- `human_queue/press_kit.md` — quick-fact press kit for journalists/analysts
+- `human_queue/linkedin_posts.md` — 2 LinkedIn posts with technical and launch angles
+- `human_queue/youtube_script.md` — full 10-minute demo video script
+- `human_queue/discord_seeding.md` — 5 Discord server targets with template
+- `human_queue/lobsters_submission.md` — Lobste.rs submission with comment
+
+**GitHub repo optimization:**
+- Topics expanded to **20** (GitHub max) including `audit-trail`, `deterministic`
+- Repo description: "Copilot suggests. Cursor autocompletes. ADAAD governs."
+- `autonomous_marketing.yml` upgraded: 2x daily schedule (9AM + 3PM UTC), Hashnode job, growth.yml separate release trigger
+
+**README v4** (Phase 12.5):
+- New headline: "The only AI coding system that can prove — cryptographically — exactly what it changed and why"
+- "Copilot suggests. Cursor autocompletes. ADAAD governs." tagline
+- ASCII pipeline diagram
+- Added Devin to competitive comparison
+- "What will never be built" constitutional exclusions section
+- Complete Phase 1–12 history table
+
 ## [6.1.0] — 2026-03-10  Phase 12 · Campaign Blitz v2 (Distribution Expansion)
 
 > **This release expands ADAAD's autonomous distribution surface.**

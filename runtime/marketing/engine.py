@@ -199,6 +199,55 @@ AWESOME_LIST_TARGETS = [
         "platform":        "github_pr",
         "min_interval_h":  0,
     },
+    # ── Phase 13 additional awesome-list targets (8 more) ──────────────────
+    {
+        "target_id":       "awesome-generative-ai-pr",
+        "upstream_owner":  "steven2358",
+        "upstream_repo":   "awesome-generative-ai",
+        "file_path":       "README.md",
+        "section_marker":  "Coding tools",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Constitutional governance for autonomous AI code mutation. Three Claude agents compete via genetic algorithm. 16-rule policy gate. SHA-256 audit ledger. MIT.",
+        "pr_title":        "Add ADAAD — constitutional AI governance for autonomous code mutation",
+        "pr_body":         f"ADAAD is a production generative AI system for governed autonomous code improvement.\n\n- 3 Claude agents (Architect/Dream/Beast) compete to propose code mutations\n- BLX-alpha GA + UCB1 bandit for candidate ranking\n- 16-rule constitutional gate — fail-closed, architectural\n- SHA-256 hash-chained evidence ledger\n- Deterministic replay verification\n\nMIT. Python 3.11. Free Community tier. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-code-review-pr",
+        "upstream_owner":  "joho",
+        "upstream_repo":   "awesome-code-review",
+        "file_path":       "README.md",
+        "section_marker":  "Tools",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Autonomous code mutation with constitutional governance gate. Every AI-proposed change is SHA-256 audited and deterministically replayable. MIT.",
+        "pr_title":        "Add ADAAD — constitutionally governed autonomous code mutation (MIT)",
+        "pr_body":         f"ADAAD extends code review with autonomous governed mutation.\n\nRelevance to code review:\n- Constitutional gate evaluates every AI-proposed change before execution\n- SHA-256 evidence ledger makes every decision auditable\n- Deterministic replay: prove any past mutation decision was correct\n- Reviewer Reputation Engine calibrates governance pressure per reviewer (Pro)\n\n{REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-mlops-pr",
+        "upstream_owner":  "visenger",
+        "upstream_repo":   "awesome-mlops",
+        "file_path":       "README.md",
+        "section_marker":  "Feature Engineering",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) — Constitutional governance for autonomous AI code mutation. 16-rule policy engine, SHA-256 audit trail, deterministic replay. Governs AI changes to ML pipeline code. MIT.",
+        "pr_title":        "Add ADAAD — constitutional AI governance for ML pipeline code mutation",
+        "pr_body":         f"ADAAD provides constitutional governance for autonomous AI code mutation — relevant for MLOps teams governing AI-assisted changes to ML pipeline code.\n\n- Fail-closed governance gate\n- Deterministic replay for reproducibility\n- SHA-256 audit trail for compliance\n- Multi-repo federation for complex ML infrastructure\n\nMIT. Python 3.11. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
+    {
+        "target_id":       "awesome-static-analysis-pr",
+        "upstream_owner":  "analysis-tools-dev",
+        "upstream_repo":   "awesome-static-analysis",
+        "file_path":       "README.md",
+        "section_marker":  "Python",
+        "addition_line":   f"- [ADAAD]({REPO_URL}) :copyright: — Constitutionally governed autonomous code mutation. 16-rule policy gate, SHA-256 audit trail, deterministic replay. The governance gate functions as a static + dynamic analysis layer for AI-proposed mutations. MIT.",
+        "pr_title":        "Add ADAAD — constitutional governance as static analysis layer for AI code mutations",
+        "pr_body":         f"ADAAD's GovernanceGate functions as a constitutional policy engine evaluating AI-proposed code mutations before execution.\n\nRelevance to static analysis:\n- Rules evaluate: complexity budget, import surface delta, orphaned dependencies, test coverage delta\n- Evaluated deterministically — same inputs, same outputs, always\n- Audit trail is cryptographic — SHA-256 hash-chained\n\nMIT. Python 3.11. {REPO_URL}",
+        "platform":        "github_pr",
+        "min_interval_h":  0,
+    },
     {
         "target_id":       "awesome-claude-models-pr",
         "upstream_owner":  "anthropics",
@@ -268,6 +317,27 @@ REDDIT_TARGETS = [
         "subreddit":    "selfhosted",
         "kind":         "self",
         "title":        "ADAAD — self-hosted AI code mutation engine, one-click Railway/Docker deploy",
+        "min_interval_h": 2160,
+    },
+    {
+        "target_id":    "reddit-sideproject",
+        "subreddit":    "SideProject",
+        "kind":         "link",
+        "title":        "ADAAD — I built an AI that governs its own code mutations (constitutional gate, SHA-256 audit trail, free MIT)",
+        "min_interval_h": 2160,
+    },
+    {
+        "target_id":    "reddit-aiagents",
+        "subreddit":    "AIAgents",
+        "kind":         "self",
+        "title":        "ADAAD: three Claude agents compete via genetic algorithm — governed by a 16-rule constitutional gate (MIT, free)",
+        "min_interval_h": 2160,
+    },
+    {
+        "target_id":    "reddit-devtools",
+        "subreddit":    "webdev",
+        "kind":         "link",
+        "title":        "Show r/webdev: ADAAD — autonomous AI code mutation with a constitutional governance gate (MIT, free)",
         "min_interval_h": 2160,
     },
 ]
@@ -815,17 +885,41 @@ class AutonomousMarketingEngine:
             results["skipped"] += 1
             return
 
-        tweets = [
-            f"🧵 We built an autonomous AI coding engine that can never bypass its own governance rules. Here's how it works: [1/7] {REPO_URL}",
-            "Three Claude-powered agents — Architect 🏛️, Dream 💭, Beast 🐉 — continuously propose code improvements. They compete. A genetic algorithm ranks them. [2/7]",
-            "The winners hit a Constitutional Gate: 16 rules, evaluated in order. ONE failure = full halt. No exceptions. No workarounds. Not config — architecture. [3/7]",
-            "Every decision is SHA-256 hash-chained into an append-only evidence ledger. Every decision replays byte-identical. Divergence = halt. [4/7]",
-            "Scoring weights self-calibrate via momentum gradient descent. The system learns which mutation types are worth making across epochs. [5/7]",
-            f"Free forever (50 epochs/mo). Open source. MIT. Android app.\n\nQuickstart: `git clone {REPO_URL} && python onboard.py` [6/7]",
-            f"Built by @DustinReid / InnovativeAI LLC from Blackwell, Oklahoma 🦅\n\nStar the repo if this is interesting: {REPO_URL} [7/7]\n\n#AI #OpenSource #Python #AutonomousAgents #AIGovernance",
+        # Rotating threads — pick based on epoch count mod 3
+        import time
+        thread_idx = (int(time.time()) // 86400) % 3  # rotate daily
+
+        thread_a = [
+            f"Copilot suggests. Cursor autocompletes. ADAAD governs. Here's what that actually means: 🧵 [1/7] {REPO_URL}",
+            "Three Claude agents compete to improve your code. Architect 🏛️ hunts structural debt. Dream 💭 finds creative rewrites. Beast 🐉 optimizes performance. [2/7]",
+            "Proposals enter a genetic algorithm (BLX-alpha crossover, UCB1 bandit selection). Fittest candidates survive to the Constitutional Gate. [3/7]",
+            "The Gate: 16 rules, strict order. ONE failure = pipeline halt + named failure mode in the SHA-256 evidence ledger. No warnings. No soft blocks. [4/7]",
+            "The evidence ledger is append-only, hash-chained. Months later: re-run any past decision, get byte-identical outputs. Divergence = halt + delta log. [5/7]",
+            f"Scoring weights self-calibrate after every epoch (momentum GD). The system learns which mutations work for YOUR codebase. Community tier: free forever. [6/7]",
+            f"MIT. Self-hosted. Android app. No telemetry.\n\n`pip install adaad && adaad --dry-run`\n\nStar if useful: {REPO_URL}\n\n#AI #Python #OpenSource #DevTools #AIGovernance [7/7]",
         ]
+
+        thread_b = [
+            f"I got tired of AI coding tools that can suggest code but can't prove it was safe. So I built a governed alternative: 🧵 [1/6] {REPO_URL}",
+            "ADAAD's constitutional gate is the only surface that can approve code mutations. Not an agent. Not config. Not a higher pricing tier. Architecture. [2/6]",
+            "What 'deterministic replay' actually means: re-run any past AI decision from the original inputs → byte-identical output. If it diverges → HALT. [3/6]",
+            "This makes ADAAD's outputs legally auditable. Compliance audit? Production incident? You can prove what the AI changed and that the decision was correct. [4/6]",
+            "No other AI coding tool offers this. Not Copilot, not Cursor, not Devin. It's a different architectural category: governed autonomy vs. suggestion engines. [5/6]",
+            f"Free forever (MIT, self-hosted, full governance).\n\nCommunity · Pro $49/mo · Enterprise $499/mo\n\n{REPO_URL}\n\n#ConstitutionalAI #OpenSource #DevTools [6/6]",
+        ]
+
+        thread_c = [
+            f"What does it mean for an AI system to have a constitutional governance model? Here's how ADAAD implements it: 🧵 [1/5] {REPO_URL}",
+            "16 rules in strict priority order. Rule 1 (resource bounds) gates everything else. One block = halt. Every rule failure writes a named reason to the evidence ledger. [2/5]",
+            "The ledger is SHA-256 hash-chained. You can't insert, modify, or delete a record without breaking the chain. The replay harness detects this on re-run. [3/5]",
+            "Self-calibration: after each epoch, scoring weights update via momentum gradient descent (LR=0.05). Thompson sampling activates for non-stationary reward at ≥30 epochs. [4/5]",
+            f"The system is free, MIT, self-hosted.\n\nIf you're building in fintech, healthcare, or gov, or just tired of AI tools with no accountability, this is for you.\n\n{REPO_URL} [5/5]",
+        ]
+
+        threads = [thread_a, thread_b, thread_c]
+        tweets = threads[thread_idx]
         r = self._twitter.post_thread(tweets)
-        self._record(tid, "twitter", "thread", "ADAAD Launch Thread", r, results)
+        self._record(tid, "twitter", "thread", f"ADAAD Thread v{thread_idx+1}", r, results)
 
     # ── Human queue ─────────────────────────────────────────────────────────
 
